@@ -11,8 +11,11 @@ public class LlmServer : IDisposable
     string? _modelPath;
     string? _mmprojPath;
     Process? _process;
+    bool _thinkingEnabled;
 
     public ProviderConfig? CurrentProvider { get; private set; }
+
+    public void SetThinkingEnabled(bool enabled) => _thinkingEnabled = enabled;
 
     public void Configure(ProviderConfig provider)
     {
@@ -85,7 +88,7 @@ public class LlmServer : IDisposable
             $"--no-mmap " +
             "--jinja " +
             $"--temp {AppConfig.Temperature} --top-p {AppConfig.TopP} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} " +
-            "--reasoning off " +
+            $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
             $"--metrics --slots --perf";
     }
 

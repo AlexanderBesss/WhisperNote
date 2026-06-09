@@ -35,6 +35,20 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    bool _thinkingEnabled;
+    public bool ThinkingEnabled
+    {
+        get => _thinkingEnabled;
+        set
+        {
+            if (SetProperty(ref _thinkingEnabled, value))
+            {
+                _state.ThinkingEnabled = value;
+                RecordingManager.InfoText = value ? "Thinking mode enabled (restart server)" : "Thinking mode disabled (restart server)";
+            }
+        }
+    }
+
     bool _startupEnabled;
     public bool StartupEnabled
     {
@@ -78,6 +92,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         _selectedProviderIndex = state.ActiveProviderIndex;
         _autoOffloadVram = state.AutoOffloadVram;
+        _thinkingEnabled = state.ThinkingEnabled;
         _startupEnabled = StartupRegistry.IsEnabled();
 
         ServerCommand = new RelayCommand(_ => ServerManager.ToggleServer(s => RecordingManager.InfoText = s ?? ""));

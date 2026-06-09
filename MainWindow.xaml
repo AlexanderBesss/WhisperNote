@@ -128,6 +128,12 @@
                               ToolTip="Stop server after each request (free VRAM)">
                     <TextBlock Text="🧠" FontSize="14"/>
                 </ToggleButton>
+                <ToggleButton IsChecked="{Binding ThinkingEnabled, Mode=TwoWay}"
+                              Style="{StaticResource IconToggleButton}"
+                              Margin="0,0,8,0"
+                              ToolTip="Thinking mode (restart server to apply)">
+                    <TextBlock Text="💡" FontSize="14"/>
+                </ToggleButton>
                 <ToggleButton IsChecked="{Binding StartupEnabled, Mode=TwoWay}"
                               Style="{StaticResource IconToggleButton}"
                               Margin="0,0,8,0"

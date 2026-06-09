@@ -22,6 +22,11 @@ public class AppState
         get => _settings.AutoOffloadVram;
         set { _settings.AutoOffloadVram = value; _settings.Save(); }
     }
+    public bool ThinkingEnabled
+    {
+        get => _settings.ThinkingEnabled;
+        set { _settings.ThinkingEnabled = value; _settings.Save(); }
+    }
 
     public AppState(AppSettings settings)
     {

@@ -21,6 +21,7 @@ public class ServerStateManager : ViewModel, IDisposable
             throw new InvalidOperationException("No active provider configured. Check whispernote.json or restart to create defaults.");
         _server = new LlmServer();
         _server.Configure(provider);
+        _server.SetThinkingEnabled(_state.ThinkingEnabled);
         _transcription = new TranscriptionService(provider);
     }
 
@@ -166,6 +167,7 @@ public class ServerStateManager : ViewModel, IDisposable
 
                 _server = new LlmServer();
                 _server.Configure(provider);
+                _server.SetThinkingEnabled(_state.ThinkingEnabled);
                 _transcription = new TranscriptionService(provider);
             });
 

@@ -11,8 +11,8 @@ public class TranscriptionService : IDisposable
     readonly HttpClient _http;
     readonly ProviderConfig _provider;
 
-    const string SystemPrompt = "Transcribe the audio into proper English with correct grammar and punctuation (commas, question marks, etc.). Output only the single transcription, no alternatives.";
-    const string TranscriptionTemperature = "0.1";
+    const string SystemPrompt = "Transcribe the audio into proper English. You MUST correct all grammar errors. Fix subject-verb agreement ('i were' -> 'I was', 'she have' -> 'she has'), verb tenses, capitalization, and punctuation. Examples: 'i were going' -> 'I was going', 'she dont know' -> 'she doesn't know', 'they was here' -> 'they were here', 'he have done' -> 'he has done'. Output only the corrected transcription.";
+    const string TranscriptionTemperature = "0.3";
     const int RetryDelayMs = 3000;
 
     public TranscriptionService(ProviderConfig provider)
