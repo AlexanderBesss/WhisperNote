@@ -7,7 +7,6 @@ namespace WhisperNote;
 public partial class MainWindow : Window
 {
     readonly MainWindowViewModel _viewModel;
-    readonly InputFieldWatcher _inputWatcher;
 
     public MainWindow()
     {
@@ -16,13 +15,7 @@ public partial class MainWindow : Window
 
         InitializeComponent();
 
-        Closed += (_, _) =>
-        {
-            _viewModel.Dispose();
-            _inputWatcher?.Dispose();
-        };
-
-        _inputWatcher = new InputFieldWatcher(this);
+        Closed += (_, _) => _viewModel.Dispose();
         Deactivated += (_, _) => Opacity = 0.3;
         Activated += (_, _) => Opacity = 1.0;
     }
