@@ -11,6 +11,7 @@ public class AppSettings
 {
     public int ActiveProviderIndex { get; set; }
     public List<ProviderConfig> Providers { get; set; } = new();
+    public bool AutoOffloadVram { get; set; }
 
     static string ConfigPath() =>
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "whispernote.json");

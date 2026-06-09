@@ -21,6 +21,20 @@ public class MainWindowViewModel : ViewModel, IDisposable
         set => SetProperty(ref _lastTranscription, value);
     }
 
+    bool _autoOffloadVram;
+    public bool AutoOffloadVram
+    {
+        get => _autoOffloadVram;
+        set
+        {
+            if (SetProperty(ref _autoOffloadVram, value))
+            {
+                _state.AutoOffloadVram = value;
+                RecordingManager.InfoText = value ? "Auto-offload enabled" : "Auto-offload disabled";
+            }
+        }
+    }
+
     bool _startupEnabled;
     public bool StartupEnabled
     {
@@ -63,6 +77,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         RecordingManager = new RecordingStateManager();
 
         _selectedProviderIndex = state.ActiveProviderIndex;
+        _autoOffloadVram = state.AutoOffloadVram;
         _startupEnabled = StartupRegistry.IsEnabled();
 
         ServerCommand = new RelayCommand(_ => ServerManager.ToggleServer(s => RecordingManager.InfoText = s ?? ""));
@@ -94,7 +109,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         if (!string.IsNullOrEmpty(LastTranscription))
         {
-            CopyToClipboard(LastTranscription);
+            Clipboard.SetText(LastTranscription);
             RecordingManager.InfoText = "Copied to clipboard";
         }
         else
@@ -169,10 +184,16 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             var text = await ServerManager.TranscribeAsync(pcm, RecordingManager.ChannelCount);
 
+            if (_autoOffloadVram && ServerManager.IsLocal)
+            {
+                ServerManager.OffloadServer();
+                RecordingManager.InfoText = "Model offloaded from VRAM";
+            }
+
             if (!string.IsNullOrWhiteSpace(text))
             {
                 LastTranscription = text;
-                CopyToClipboard(text);
+                Clipboard.SetText(text);
                 RecordingManager.SetSuccessState(text);
                 Logger.Info("Success, copied to clipboard");
             }
@@ -185,18 +206,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             Logger.Error($"Transcription: {ex.Message}");
             RecordingManager.SetErrorState(ex.Message);
-        }
-    }
-
-    static void CopyToClipboard(string text)
-    {
-        try
-        {
-            Clipboard.SetText(text);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"Clipboard: {ex.Message}");
         }
     }
 

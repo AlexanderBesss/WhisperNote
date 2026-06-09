@@ -17,6 +17,11 @@ public class AppState
 
     public IReadOnlyList<ProviderConfig> Providers => _settings.Providers;
     public ObservableCollection<ProviderConfig> ProvidersObservable { get; }
+    public bool AutoOffloadVram
+    {
+        get => _settings.AutoOffloadVram;
+        set { _settings.AutoOffloadVram = value; _settings.Save(); }
+    }
 
     public AppState(AppSettings settings)
     {

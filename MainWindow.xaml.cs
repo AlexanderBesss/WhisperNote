@@ -21,4 +21,9 @@ public partial class MainWindow : Window
     }
 
     void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => DragMove();
+
+    void StatusScrollViewer_MouseEnter(object sender, MouseEventArgs e)
+    {
+        StatusScrollViewer.Focus();
+    }
 }

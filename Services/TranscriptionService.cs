@@ -11,7 +11,7 @@ public class TranscriptionService : IDisposable
     readonly HttpClient _http;
     readonly ProviderConfig _provider;
 
-    const string SystemPrompt = "Transcribe the audio into proper English with correct grammar. Output only the single transcription, no alternatives.";
+    const string SystemPrompt = "Transcribe the audio into proper English with correct grammar and punctuation (commas, question marks, etc.). Output only the single transcription, no alternatives.";
     const string TranscriptionTemperature = "0.1";
     const int RetryDelayMs = 3000;
 

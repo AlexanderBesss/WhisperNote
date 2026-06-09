@@ -195,6 +195,17 @@ public class ServerStateManager : ViewModel, IDisposable
 
     public Task<bool> IsServerReady() => _transcription.IsServerReady();
 
+    public void OffloadServer()
+    {
+        if (_server.IsRunning)
+        {
+            _server.Stop();
+            ServerDotColor = Brushes.Gray;
+            ServerStatusMessage = "Server offline";
+            ServerStatusTextColor = Brushes.Gray;
+        }
+    }
+
     public void Dispose()
     {
         _server.Dispose();
