@@ -69,6 +69,15 @@ public class AppSettings
             {
                 new()
                 {
+                    Name = "Gemma 4 E2B UD (local)",
+                    Type = "local",
+                    ApiEndpoint = "http://localhost:8082",
+                    Model = "gemma-4-E2B-it-UD-Q4_K_XL.gguf",
+                    Mmproj = "mmproj-gemma-4-E2B-it-BF16.gguf",
+                    ServerExe = @"llama\llama-server.exe"
+                },
+                new()
+                {
                     Name = "Gemma 4 E2B (local)",
                     Type = "local",
                     ApiEndpoint = "http://localhost:8082",
