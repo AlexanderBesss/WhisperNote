@@ -13,6 +13,8 @@ public class AppSettings
     public List<ProviderConfig> Providers { get; set; } = new();
     public bool AutoOffloadVram { get; set; }
     public bool ThinkingEnabled { get; set; }
+    public int HotkeyVirtualKeyCode { get; set; } = 0xA0;
+    public bool HotkeyEnabled { get; set; } = true;
 
     static string ConfigPath() =>
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "whispernote.json");
@@ -61,6 +63,8 @@ public class AppSettings
         return new AppSettings
         {
             ActiveProviderIndex = 0,
+            AutoOffloadVram = true,
+            ThinkingEnabled = true,
             Providers = new List<ProviderConfig>
             {
                 new()

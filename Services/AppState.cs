@@ -27,6 +27,16 @@ public class AppState
         get => _settings.ThinkingEnabled;
         set { _settings.ThinkingEnabled = value; _settings.Save(); }
     }
+    public int HotkeyVirtualKeyCode
+    {
+        get => _settings.HotkeyVirtualKeyCode;
+        set { _settings.HotkeyVirtualKeyCode = value; _settings.Save(); }
+    }
+    public bool HotkeyEnabled
+    {
+        get => _settings.HotkeyEnabled;
+        set { _settings.HotkeyEnabled = value; _settings.Save(); }
+    }
 
     public AppState(AppSettings settings)
     {

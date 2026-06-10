@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
@@ -23,6 +24,7 @@ public class ServerStateManager : ViewModel, IDisposable
         _server.Configure(provider);
         _server.SetThinkingEnabled(_state.ThinkingEnabled);
         _transcription = new TranscriptionService(provider);
+        App.RegisterServerForCleanup(_server);
     }
 
     Brush _serverDotColor = Brushes.Gray;
@@ -161,7 +163,6 @@ public class ServerStateManager : ViewModel, IDisposable
         {
             await Task.Run(() =>
             {
-                _server.Stop();
                 _server.Dispose();
                 _transcription.Dispose();
 
@@ -169,6 +170,7 @@ public class ServerStateManager : ViewModel, IDisposable
                 _server.Configure(provider);
                 _server.SetThinkingEnabled(_state.ThinkingEnabled);
                 _transcription = new TranscriptionService(provider);
+                App.RegisterServerForCleanup(_server);
             });
 
             if (provider.IsLocal)
@@ -192,8 +194,8 @@ public class ServerStateManager : ViewModel, IDisposable
         }
     }
 
-    public Task<string?> TranscribeAsync(byte[] pcm, int channels) =>
-        _transcription.Transcribe(pcm, channels);
+    public Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct) =>
+        _transcription.Transcribe(pcm, channels, ct: ct);
 
     public Task<bool> IsServerReady() => _transcription.IsServerReady();
 

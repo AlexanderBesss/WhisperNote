@@ -1,6 +1,7 @@
 using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Threading;
 using System.Threading.Tasks;
 using WhisperNote.Config;
 
@@ -11,7 +12,16 @@ public class TranscriptionService : IDisposable
     readonly HttpClient _http;
     readonly ProviderConfig _provider;
 
-    const string SystemPrompt = "Transcribe the audio into proper English. You MUST correct all grammar errors. Fix subject-verb agreement ('i were' -> 'I was', 'she have' -> 'she has'), verb tenses, capitalization, and punctuation. Examples: 'i were going' -> 'I was going', 'she dont know' -> 'she doesn't know', 'they was here' -> 'they were here', 'he have done' -> 'he has done'. Output only the corrected transcription.";
+    const string SystemPrompt = @"Transcribe the audio into proper English. Correct all errors:
+- Grammar: subject-verb agreement, verb tenses, pronouns
+- Spelling and word choice
+- Capitalization and punctuation
+- Convert numbers to words if appropriate
+- Translate any non-English speech to English
+- Remove filler words (um, uh, you know)
+- Maintain the original meaning and tone
+
+Output ONLY the corrected transcription. No explanations, no quotes, no extra text.";
     const string TranscriptionTemperature = "0.3";
     const int RetryDelayMs = 3000;
 
@@ -49,7 +59,7 @@ public class TranscriptionService : IDisposable
         }
     }
 
-    public async Task<string?> Transcribe(byte[] pcm, int channels = 1)
+    public async Task<string?> Transcribe(byte[] pcm, int channels = 1, CancellationToken ct = default)
     {
         if (channels > 1)
             pcm = AudioProcessor.DownmixToMono(pcm, channels);
@@ -61,7 +71,7 @@ public class TranscriptionService : IDisposable
         Logger.Info($"Model: {modelName}, WAV: {wavBytes.Length} bytes, duration: {durationSec:F2}s");
         AudioProcessor.LogAmplitude(pcm);
 
-        var raw = await SendWithRetry(wavBytes, modelName);
+        var raw = await SendWithRetry(wavBytes, modelName, ct);
 
         return TranscriptionParser.Parse(raw);
     }
@@ -82,21 +92,21 @@ public class TranscriptionService : IDisposable
 
     public void Dispose() => _http.Dispose();
 
-    async Task<string?> SendWithRetry(byte[] wavBytes, string modelName)
+    async Task<string?> SendWithRetry(byte[] wavBytes, string modelName, CancellationToken ct)
     {
         using var content = BuildFormContent(wavBytes, modelName);
-        using (var response = await _http.PostAsync("/v1/audio/transcriptions", content))
+        using (var response = await _http.PostAsync("/v1/audio/transcriptions", content, ct))
         {
-            var raw = await response.Content.ReadAsStringAsync();
+            var raw = await response.Content.ReadAsStringAsync(ct);
             Logger.Info($"Response [{response.StatusCode}]: {Truncate(raw)}");
 
             if (_provider.IsLocal && ShouldRetry(response, raw))
             {
                 Logger.Info("Retrying after 3s...");
-                await Task.Delay(RetryDelayMs);
+                await Task.Delay(RetryDelayMs, ct);
                 using var retryContent = BuildFormContent(wavBytes, modelName);
-                using var retryResponse = await _http.PostAsync("/v1/audio/transcriptions", retryContent);
-                raw = await retryResponse.Content.ReadAsStringAsync();
+                using var retryResponse = await _http.PostAsync("/v1/audio/transcriptions", retryContent, ct);
+                raw = await retryResponse.Content.ReadAsStringAsync(ct);
                 Logger.Info($"Retry response [{retryResponse.StatusCode}]: {Truncate(raw)}");
                 return raw;
             }

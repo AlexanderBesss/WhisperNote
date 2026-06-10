@@ -42,24 +42,39 @@ public class RecordingStateManager : ViewModel
         set => SetProperty(ref _infoText, value);
     }
 
-    public bool IsRecording => _recorder.IsRecording;
+    bool _isRecording;
+    public bool IsRecording
+    {
+        get => _isRecording;
+        private set => SetProperty(ref _isRecording, value);
+    }
     public int ChannelCount => _recorder.ChannelCount;
 
-    public async Task StartRecording()
+    bool _isProcessing;
+    public bool IsProcessing
+    {
+        get => _isProcessing;
+        private set => SetProperty(ref _isProcessing, value);
+    }
+
+    public async Task StartRecording(bool isHotkey = false)
     {
         await _recorder.StartAsync();
-        SetRecordingState(true);
+        IsRecording = true;
+        SetRecordingState(true, isHotkey);
     }
 
     public async Task<byte[]> StopRecording()
     {
         var pcm = await _recorder.StopAsync();
+        IsRecording = false;
         SetRecordingState(false);
         return pcm;
     }
 
     public void SetProcessingState()
     {
+        IsProcessing = true;
         StatusText = "Processing...";
         StatusTextColor = Brushes.LightBlue;
         InfoText = "Waiting for server...";
@@ -67,6 +82,7 @@ public class RecordingStateManager : ViewModel
 
     public void SetSuccessState(string text)
     {
+        IsProcessing = false;
         StatusText = text;
         StatusTextColor = Brushes.LimeGreen;
         InfoText = "Copied to clipboard";
@@ -74,6 +90,7 @@ public class RecordingStateManager : ViewModel
 
     public void SetErrorState(string message)
     {
+        IsProcessing = false;
         StatusText = "Error";
         StatusTextColor = Brushes.Red;
         InfoText = message;
@@ -81,6 +98,7 @@ public class RecordingStateManager : ViewModel
 
     public void SetNoTextState()
     {
+        IsProcessing = false;
         StatusText = "No text returned";
         StatusTextColor = Brushes.Gray;
         InfoText = "";
@@ -88,12 +106,13 @@ public class RecordingStateManager : ViewModel
 
     public void SetReadyState()
     {
+        IsProcessing = false;
         StatusText = "Ready";
         StatusTextColor = Brushes.Gray;
         InfoText = "";
     }
 
-    void SetRecordingState(bool recording)
+    void SetRecordingState(bool recording, bool isHotkey = false)
     {
         var recordingBrush = new SolidColorBrush(Color.FromArgb(100, 220, 50, 50));
         var defaultBrush = new SolidColorBrush(Color.FromArgb(0, 100, 100, 100));
@@ -103,7 +122,7 @@ public class RecordingStateManager : ViewModel
         {
             StatusText = "Recording...";
             StatusTextColor = Brushes.Orange;
-            InfoText = "Click to stop";
+            InfoText = isHotkey ? "Release hotkey to stop" : "Press button to stop";
         }
     }
 
