@@ -9,7 +9,7 @@ namespace WhisperNote.Config;
 
 public class AppSettings
 {
-    const int DefaultHotkeyVkCode = 0xA0;
+    const int DefaultHotkeyVkCode = 0x14;
 
     public int ActiveProviderIndex { get; set; }
     public List<ProviderConfig> Providers { get; set; } = new();
