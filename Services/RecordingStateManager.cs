@@ -1,20 +1,38 @@
-using System;
+  using System;
 using System.Threading.Tasks;
 using System.Windows.Media;
+using WhisperNote.Services;
 using WhisperNote.ViewModels;
 
 namespace WhisperNote.Services;
 
+public enum RecordingState
+{
+    Idle,
+    Recording,
+    Processing,
+    Success,
+    Error
+}
+
 public class RecordingStateManager : ViewModel
 {
     readonly AudioRecorder _recorder;
+    static readonly Brush DefaultBrush = new SolidColorBrush(Color.FromArgb(0, 100, 100, 100));
+    static readonly Brush RecordingBrush = new SolidColorBrush(Color.FromArgb(100, 220, 50, 50));
 
-    public RecordingStateManager()
+    RecordingState _state = RecordingState.Idle;
+    public RecordingState State
     {
-        _recorder = new AudioRecorder();
+        get => _state;
+        private set => SetProperty(ref _state, value);
     }
 
-    Brush _mainButtonBackground = new SolidColorBrush(Color.FromArgb(0, 100, 100, 100));
+    public bool IsRecording => State == RecordingState.Recording;
+    public bool IsProcessing => State == RecordingState.Processing;
+    public bool CanStart => State is RecordingState.Idle or RecordingState.Success or RecordingState.Error;
+
+    Brush _mainButtonBackground = DefaultBrush;
     public Brush MainButtonBackground
     {
         get => _mainButtonBackground;
@@ -42,87 +60,123 @@ public class RecordingStateManager : ViewModel
         set => SetProperty(ref _infoText, value);
     }
 
-    bool _isRecording;
-    public bool IsRecording
-    {
-        get => _isRecording;
-        private set => SetProperty(ref _isRecording, value);
-    }
     public int ChannelCount => _recorder.ChannelCount;
 
-    bool _isProcessing;
-    public bool IsProcessing
+    public RecordingStateManager()
     {
-        get => _isProcessing;
-        private set => SetProperty(ref _isProcessing, value);
+        _recorder = new AudioRecorder();
     }
 
     public async Task StartRecording(bool isHotkey = false)
     {
+        if (!CanStart)
+            throw new InvalidOperationException($"Cannot start recording in state {_state}");
+
         await _recorder.StartAsync();
-        IsRecording = true;
-        SetRecordingState(true, isHotkey);
+        TransitionTo(RecordingState.Recording, isHotkey);
     }
 
     public async Task<byte[]> StopRecording()
     {
+        if (State != RecordingState.Recording)
+        {
+            Logger.Info($"[StopRecording] state is {State}, not Recording, returning empty");
+            return Array.Empty<byte>();
+        }
+
         var pcm = await _recorder.StopAsync();
-        IsRecording = false;
-        SetRecordingState(false);
+        TransitionTo(RecordingState.Processing);
+        Logger.Info($"[StopRecording] done, pcm.Length={pcm.Length}, state={State}");
         return pcm;
     }
 
-    public void SetProcessingState()
+    public bool SetSuccess(string text)
     {
-        IsProcessing = true;
-        StatusText = "Processing...";
-        StatusTextColor = Brushes.LightBlue;
-        InfoText = "Waiting for server...";
+        if (State != RecordingState.Processing)
+            return false;
+
+        TransitionTo(RecordingState.Success, text: text);
+        return true;
     }
 
-    public void SetSuccessState(string text)
+    public bool SetError(string message)
     {
-        IsProcessing = false;
-        StatusText = text;
-        StatusTextColor = Brushes.LimeGreen;
-        InfoText = "Copied to clipboard";
+        if (State != RecordingState.Processing)
+            return false;
+
+        TransitionTo(RecordingState.Error, errorMsg: message);
+        return true;
     }
 
-    public void SetErrorState(string message)
+    public bool Cancel()
     {
-        IsProcessing = false;
-        StatusText = "Error";
-        StatusTextColor = Brushes.Red;
-        InfoText = message;
+        if (State != RecordingState.Processing)
+            return false;
+
+        TransitionTo(RecordingState.Idle);
+        return true;
     }
 
-    public void SetNoTextState()
+    public void Reset()
     {
-        IsProcessing = false;
-        StatusText = "No text returned";
-        StatusTextColor = Brushes.Gray;
-        InfoText = "";
+        TransitionTo(RecordingState.Idle);
     }
 
-    public void SetReadyState()
+    void TransitionTo(RecordingState next, bool isHotkey = false, string? text = null, string? errorMsg = null)
     {
-        IsProcessing = false;
-        StatusText = "Ready";
-        StatusTextColor = Brushes.Gray;
-        InfoText = "";
-    }
-
-    void SetRecordingState(bool recording, bool isHotkey = false)
-    {
-        var recordingBrush = new SolidColorBrush(Color.FromArgb(100, 220, 50, 50));
-        var defaultBrush = new SolidColorBrush(Color.FromArgb(0, 100, 100, 100));
-        MainButtonBackground = recording ? recordingBrush : defaultBrush;
-
-        if (recording)
+        Logger.Info($"[Transition] {State} → {next}");
+        var valid = (State, next) switch
         {
-            StatusText = "Recording...";
-            StatusTextColor = Brushes.Orange;
-            InfoText = isHotkey ? "Release hotkey to stop" : "Press button to stop";
+            (RecordingState.Idle, RecordingState.Recording) => true,
+            (RecordingState.Recording, RecordingState.Idle) => true,
+            (RecordingState.Recording, RecordingState.Processing) => true,
+            (RecordingState.Processing, RecordingState.Success) => true,
+            (RecordingState.Processing, RecordingState.Error) => true,
+            (RecordingState.Processing, RecordingState.Idle) => true,
+            (RecordingState.Success, RecordingState.Idle) => true,
+            (RecordingState.Success, RecordingState.Recording) => true,
+            (RecordingState.Error, RecordingState.Idle) => true,
+            (RecordingState.Error, RecordingState.Recording) => true,
+            (RecordingState.Idle, RecordingState.Idle) => true,
+            _ => false
+        };
+
+        if (!valid)
+            throw new InvalidOperationException($"Invalid transition: {State} → {next}");
+
+        State = next;
+
+        switch (next)
+        {
+            case RecordingState.Idle:
+                MainButtonBackground = DefaultBrush;
+                StatusText = "Ready";
+                StatusTextColor = Brushes.Gray;
+                InfoText = "";
+                break;
+            case RecordingState.Recording:
+                MainButtonBackground = RecordingBrush;
+                StatusText = "Recording...";
+                StatusTextColor = Brushes.Orange;
+                InfoText = isHotkey ? "Release hotkey to stop" : "Press button to stop";
+                break;
+            case RecordingState.Processing:
+                StatusText = "Processing...";
+                StatusTextColor = Brushes.LightBlue;
+                InfoText = "Waiting for server...";
+                break;
+            case RecordingState.Success:
+                MainButtonBackground = DefaultBrush;
+                StatusText = text ?? "";
+                StatusTextColor = Brushes.LimeGreen;
+                InfoText = "Copied to clipboard";
+                break;
+            case RecordingState.Error:
+                MainButtonBackground = DefaultBrush;
+                StatusText = "Error";
+                StatusTextColor = Brushes.Red;
+                InfoText = errorMsg ?? "";
+                break;
         }
     }
 

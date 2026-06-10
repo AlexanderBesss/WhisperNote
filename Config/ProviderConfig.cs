@@ -11,6 +11,7 @@ public class ProviderConfig
     public string Model { get; set; } = "";
     public string? Mmproj { get; set; }
     public string? ServerExe { get; set; }
+    public string? HfRepo { get; set; }
 
     [JsonIgnore]
     public bool IsLocal => Type == "local";

@@ -118,7 +118,8 @@
                 <Button Style="{StaticResource IconButton}"
                         Command="{Binding ServerCommand}" Margin="0,0,8,0"
                         ToolTip="Toggle Server">
-                    <TextBlock Text="⏻" FontSize="16"/>
+                    <TextBlock Text="⏻" FontSize="16"
+                               Foreground="{Binding ServerManager.ServerDotColor}"/>
                 </Button>
  
                 <ToggleButton IsChecked="{Binding AutoOffloadVram, Mode=TwoWay}"

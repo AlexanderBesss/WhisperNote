@@ -50,7 +50,8 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
         try
         {
-            using var response = await _http.GetAsync("/health");
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var response = await _http.GetAsync("/health", cts.Token);
             return response.IsSuccessStatusCode;
         }
         catch

@@ -8,6 +8,11 @@ public static class Logger
 {
     static readonly string LogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs.log");
 
+    static Logger()
+    {
+        File.Delete(LogPath);
+    }
+
     public static void Info(string message) => Log("INFO", message);
     public static void Error(string message) => Log("ERROR", message);
 

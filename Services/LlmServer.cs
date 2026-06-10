@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using WhisperNote.Config;
 
 namespace WhisperNote.Services;
@@ -37,6 +39,22 @@ public class LlmServer : IDisposable
             _serverExe = null;
             _modelPath = null;
             _mmprojPath = null;
+        }
+    }
+
+    public async Task EnsureModelsAsync(Action<string, long, long> progress, CancellationToken ct = default)
+    {
+        if (!IsLocal || CurrentProvider == null) return;
+        if (string.IsNullOrEmpty(CurrentProvider.HfRepo)) return;
+
+        var dir = AppDomain.CurrentDomain.BaseDirectory;
+        var modelDest = Path.Combine(dir, "models", CurrentProvider.Model);
+        await ModelDownloader.EnsureModelAsync(CurrentProvider.HfRepo, CurrentProvider.Model, modelDest, progress, ct);
+
+        if (!string.IsNullOrEmpty(CurrentProvider.Mmproj))
+        {
+            var mmprojDest = Path.Combine(dir, "models", CurrentProvider.Mmproj);
+            await ModelDownloader.EnsureModelAsync(CurrentProvider.HfRepo, CurrentProvider.Mmproj, mmprojDest, progress, ct);
         }
     }
 

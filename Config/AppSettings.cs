@@ -73,26 +73,9 @@ public class AppSettings
                     Type = "local",
                     ApiEndpoint = "http://localhost:8082",
                     Model = "gemma-4-E2B-it-UD-Q4_K_XL.gguf",
-                    Mmproj = "mmproj-gemma-4-E2B-it-BF16.gguf",
-                    ServerExe = @"llama\llama-server.exe"
-                },
-                new()
-                {
-                    Name = "Gemma 4 E2B (local)",
-                    Type = "local",
-                    ApiEndpoint = "http://localhost:8082",
-                    Model = "gemma-4-E2B-it-Q4_K_M.gguf",
-                    Mmproj = "mmproj-gemma-4-E2B-it-BF16.gguf",
-                    ServerExe = @"llama\llama-server.exe"
-                },
-                new()
-                {
-                    Name = "Gemma 4 12B (local)",
-                    Type = "local",
-                    ApiEndpoint = "http://localhost:8082",
-                    Model = "gemma-4-12B-it-QAT-Q4_0.gguf",
-                    Mmproj = "mmproj-gemma-4-12B-it-QAT-BF16.gguf",
-                    ServerExe = @"llama\llama-server.exe"
+                    Mmproj = "mmproj-BF16.gguf",
+                    ServerExe = @"llama\llama-server.exe",
+                    HfRepo = "unsloth/gemma-4-E2B-it-GGUF"
                 },
                 new()
                 {

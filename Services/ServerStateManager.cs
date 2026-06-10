@@ -51,12 +51,47 @@ public class ServerStateManager : ViewModel, IDisposable
     public bool IsServerRunning => _server.IsRunning;
     public bool IsLocal => _state.ActiveProvider?.IsLocal ?? false;
 
-    public void Start()
+   public async Task StartAsync(Action<string, long, long> progress)
     {
-        _server.Start();
-        ServerDotColor = Brushes.Orange;
-        ServerStatusMessage = "Launching...";
-        ServerStatusTextColor = Brushes.Orange;
+        if (_startingServer) return;
+        _startingServer = true;
+        try
+        {
+            await _server.EnsureModelsAsync(progress);
+            _server.Start();
+            ServerDotColor = Brushes.Orange;
+            ServerStatusMessage = "Launching...";
+            ServerStatusTextColor = Brushes.Orange;
+
+            for (int i = 0; i < 60; i++)
+            {
+                await Task.Delay(1000);
+                if (await _transcription.IsServerReady())
+                {
+                    ServerDotColor = Brushes.LimeGreen;
+                    ServerStatusMessage = "Server online";
+                    ServerStatusTextColor = Brushes.LimeGreen;
+                    return;
+                }
+            }
+
+            ServerDotColor = Brushes.Red;
+            ServerStatusMessage = "Server failed to start";
+            ServerStatusTextColor = Brushes.Red;
+            throw new TimeoutException("Server failed to start within 60 seconds");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Server start: {ex.Message}");
+            ServerDotColor = Brushes.Red;
+            ServerStatusMessage = ex.Message;
+            ServerStatusTextColor = Brushes.Red;
+            throw;
+        }
+        finally
+        {
+            _startingServer = false;
+        }
     }
 
     public async Task InitializeAsync()
@@ -111,10 +146,11 @@ public class ServerStateManager : ViewModel, IDisposable
             }
             else
             {
-                _server.Start();
-                ServerDotColor = Brushes.Orange;
-                ServerStatusMessage = "Launching...";
-                ServerStatusTextColor = Brushes.Orange;
+                _ = StartAsync((_, _, _) => { }).ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                        Logger.Error($"StartAsync: {t.Exception?.GetBaseException().Message}");
+                }, TaskContinuationOptions.OnlyOnFaulted);
             }
         }
         catch (Exception ex)
@@ -155,6 +191,7 @@ public class ServerStateManager : ViewModel, IDisposable
     }
 
     bool _switchingProvider;
+    bool _startingServer;
     public async Task SwitchProvider(ProviderConfig provider)
     {
         if (_switchingProvider) return;
