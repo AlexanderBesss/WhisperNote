@@ -184,7 +184,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
             _hotkeyVirtualKeyCode,
             async () =>
             {
-                Logger.Info($"[Hotkey press] CanStart={RecordingManager.CanStart}, state={RecordingManager.State}");
                 if (RecordingManager.CanStart)
                 {
                     _hotkeyPressed = true;
@@ -194,7 +193,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
             },
             async () =>
             {
-                Logger.Info($"[Hotkey release] _hotkeyPressed={_hotkeyPressed}, IsRecording={RecordingManager.IsRecording}, state={RecordingManager.State}");
                 _hotkeyPressed = false;
                 if (RecordingManager.IsRecording)
                 {
@@ -223,26 +221,16 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     async Task HandleRecord()
     {
-        var state = RecordingManager.State;
-        Logger.Info($"[HandleRecord] clicked, state={state}, isRecording={RecordingManager.IsRecording}, canStart={RecordingManager.CanStart}");
         try
         {
             if (RecordingManager.IsRecording)
             {
-                Logger.Info("[HandleRecord] stopping recording...");
                 var pcm = await RecordingManager.StopRecording();
-                Logger.Info($"[HandleRecord] stopped, pcm.Length={pcm.Length}, state after stop={RecordingManager.State}");
                 await ProcessAudio(pcm);
             }
             else if (RecordingManager.CanStart)
             {
-                Logger.Info("[HandleRecord] starting recording...");
                 await StartHoldRecord(isHotkey: false);
-                Logger.Info($"[HandleRecord] after StartHoldRecord, state={RecordingManager.State}");
-            }
-            else
-            {
-                Logger.Info($"[HandleRecord] cannot start, state={state}");
             }
         }
         catch (Exception ex)
@@ -254,38 +242,26 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     public async Task StartHoldRecord(bool isHotkey = true)
     {
-        Logger.Info($"[StartHoldRecord] isHotkey={isHotkey}, _hotkeyPressed={_hotkeyPressed}");
         var provider = _state.ActiveProvider;
         if (provider != null && provider.IsLocal && !ServerManager.IsServerRunning)
         {
-            Logger.Info("[StartHoldRecord] server not running, starting in background...");
             FireAndForget(ServerManager.StartAsync((msg, _, _) => RecordingManager.InfoText = msg), "StartServer");
         }
 
         if (isHotkey && !_hotkeyPressed)
-        {
-            Logger.Info("[StartHoldRecord] hotkey already released, aborting");
             return;
-        }
 
-        Logger.Info("[StartHoldRecord] starting recording...");
         await RecordingManager.StartRecording(isHotkey);
-        Logger.Info($"[StartHoldRecord] after StartRecording, state={RecordingManager.State}");
 
         if (isHotkey && !_hotkeyPressed && RecordingManager.IsRecording)
-        {
-            Logger.Info("[StartHoldRecord] hotkey released during start, auto-stopping");
             FireAndForget(StopHoldRecord(), "StopHoldRecord");
-        }
     }
 
     public async Task StopHoldRecord()
     {
-        Logger.Info($"[StopHoldRecord] entry, state={RecordingManager.State}");
         try
         {
             var pcm = await RecordingManager.StopRecording();
-            Logger.Info($"[StopHoldRecord] pcm.Length={pcm.Length}, state after stop={RecordingManager.State}");
             await ProcessAudio(pcm);
         }
         catch (Exception ex)
@@ -298,12 +274,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     async Task ProcessAudio(byte[] pcm)
     {
-        Logger.Info($"[ProcessAudio] pcm.Length={pcm.Length}, state={RecordingManager.State}");
         if (pcm.Length == 0)
         {
-            Logger.Info("[ProcessAudio] empty PCM, cancelling");
-            var cancelled = RecordingManager.Cancel();
-            Logger.Info($"[ProcessAudio] Cancel() returned {cancelled}, state={RecordingManager.State}");
+            RecordingManager.Cancel();
             return;
         }
 
@@ -343,12 +316,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
     async Task TranscribeAndHandleResultAsync(byte[] pcm, CancellationToken ct)
     {
         RecordingManager.InfoText = "Sending to LLM...";
-        Logger.Info("[ProcessAudio] sending to LLM...");
 
         try
         {
             var text = await ServerManager.TranscribeAsync(pcm, RecordingManager.ChannelCount, ct);
-            Logger.Info($"[ProcessAudio] transcription result length={text?.Length ?? 0}");
 
             if (ct.IsCancellationRequested)
             {
@@ -366,19 +337,16 @@ public class MainWindowViewModel : ViewModel, IDisposable
             {
                 LastTranscription = text;
                 Clipboard.SetText(text);
-                var ok = RecordingManager.SetSuccess(text);
-                Logger.Info($"[ProcessAudio] SetSuccess returned {ok}, state={RecordingManager.State}");
+                RecordingManager.SetSuccess(text);
                 NotificationSound.Play();
             }
             else
             {
-                Logger.Info("[ProcessAudio] empty result, cancelling");
                 _ = RecordingManager.Cancel();
             }
         }
         catch (OperationCanceledException)
         {
-            Logger.Info("[ProcessAudio] OperationCanceledException");
             _ = RecordingManager.Cancel();
         }
         catch (Exception ex)

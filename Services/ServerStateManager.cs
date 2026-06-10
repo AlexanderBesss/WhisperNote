@@ -21,7 +21,11 @@ public class ServerStateManager : ViewModel, IDisposable
     public ServerStatus Status
     {
         get => _status;
-        set => SetProperty(ref _status, value);
+        set
+        {
+            _status = value;
+            OnPropertyChanged();
+        }
     }
 
     public ServerStateManager(AppState state)

@@ -14,7 +14,11 @@ public static class Logger
     static Logger()
     {
         LogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs.log");
-        RotateIfNeeded();
+        try
+        {
+            File.WriteAllText(LogPath, "");
+        }
+        catch { }
     }
 
     static void RotateIfNeeded()

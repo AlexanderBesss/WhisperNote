@@ -15,6 +15,7 @@ public class GlobalKeyboardHook : IDisposable
     readonly Func<Task> _onKeyDown;
     readonly Func<Task> _onKeyUp;
     readonly Dispatcher _dispatcher;
+    bool _isKeyPressed;
 
     delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
     readonly HookProc _hookCallback;
@@ -61,25 +62,33 @@ public class GlobalKeyboardHook : IDisposable
 
     IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode >= 0)
-        {
-            var ks = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
-            if (ks.vkCode == (uint)_vkCode)
+       if (nCode >= 0)
             {
-                Func<Task>? handler = wParam switch
+                var ks = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+                if (ks.vkCode == (uint)_vkCode)
                 {
-                    (IntPtr)WM_KEYDOWN => _onKeyDown,
-                    (IntPtr)WM_KEYUP => _onKeyUp,
-                    _ => null
-                };
-                if (handler != null)
-                {
-                    InvokeHandler(handler, wParam == (IntPtr)WM_KEYDOWN ? "keydown" : "keyup");
-                    return (IntPtr)1;
+                    if (wParam == (IntPtr)WM_KEYDOWN)
+                    {
+                        if (_isKeyPressed)
+                            return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
+                        _isKeyPressed = true;
+                    }
+                    else if (wParam == (IntPtr)WM_KEYUP)
+                    {
+                        _isKeyPressed = false;
+                    }
+
+                    Func<Task>? handler = wParam switch
+                    {
+                        (IntPtr)WM_KEYDOWN => _onKeyDown,
+                        (IntPtr)WM_KEYUP => _onKeyUp,
+                        _ => null
+                    };
+                   if (handler != null)
+                        InvokeHandler(handler, wParam == (IntPtr)WM_KEYDOWN ? "keydown" : "keyup");
                 }
             }
-        }
-        return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
+            return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
     }
 
     void InvokeHandler(Func<Task> handler, string label)

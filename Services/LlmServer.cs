@@ -153,20 +153,23 @@ public class LlmServer : IDisposable
 
     public void Stop()
     {
-        if (_process != null && !_process.HasExited)
+        if (_process == null || _process.HasExited)
         {
-            try
-            {
-                Logger.Info($"Stopping server (PID: {_process.Id})");
-                _process.Kill();
-                _process.WaitForExit(WaitForExitTimeoutMs);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error($"Stop server: {ex.Message}");
-            }
+            _process = null;
+            return;
         }
-        _process = null;
+
+        try
+        {
+            Logger.Info($"Stopping server (PID: {_process.Id})");
+            _process.Kill();
+            if (_process.WaitForExit(WaitForExitTimeoutMs))
+                _process = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Stop server: {ex.Message}");
+        }
     }
 
     string ServerArgs()

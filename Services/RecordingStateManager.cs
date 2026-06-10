@@ -78,14 +78,10 @@ public class RecordingStateManager : ViewModel
     public async Task<byte[]> StopRecording()
     {
         if (State != RecordingState.Recording)
-        {
-            Logger.Info($"[StopRecording] state is {State}, not Recording, returning empty");
             return Array.Empty<byte>();
-        }
 
         var pcm = await _recorder.StopAsync();
         TransitionTo(RecordingState.Processing);
-        Logger.Info($"[StopRecording] done, pcm.Length={pcm.Length}, state={State}");
         return pcm;
     }
 
@@ -123,7 +119,6 @@ public class RecordingStateManager : ViewModel
 
     void TransitionTo(RecordingState next, bool isHotkey = false, string? text = null, string? errorMsg = null)
     {
-        Logger.Info($"[Transition] {State} → {next}");
         var valid = (State, next) switch
         {
             (RecordingState.Idle, RecordingState.Recording) => true,

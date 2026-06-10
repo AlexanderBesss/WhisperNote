@@ -87,26 +87,32 @@
                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
 
-                    <!-- Status text -->
-                        <StackPanel Grid.Column="1" Margin="16,0,0,0"
-                                    VerticalAlignment="Center">
-                            <ScrollViewer x:Name="StatusScrollViewer" MaxHeight="120"
+                   <!-- Status text -->
+                        <Grid Grid.Column="1" Margin="16,0,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <ScrollViewer x:Name="StatusScrollViewer" Grid.Row="0"
                                           VerticalScrollBarVisibility="Hidden"
                                           HorizontalScrollBarVisibility="Disabled"
                                           Focusable="True" FocusManager.IsFocusScope="True"
-                                          Padding="4,16,4,16">
+                                          Padding="4,0,4,0">
                                 <TextBlock Text="{Binding RecordingManager.StatusText}"
                                            FontSize="14" FontWeight="Medium"
                                            Foreground="{Binding RecordingManager.StatusTextKind, Converter={StaticResource StatusKindToBrushConverter}}"
                                            TextWrapping="Wrap"/>
                             </ScrollViewer>
-                       <TextBlock Text="{Binding RecordingManager.InfoText}"
-                                        FontSize="11" Foreground="#666"
-                                        Margin="0,4,0,0" TextWrapping="Wrap"/>
-                            <TextBlock Text="{Binding HotkeyName}"
+
+                            <TextBlock Grid.Row="1" Text="{Binding RecordingManager.InfoText}"
+                                       FontSize="11" Foreground="#666"
+                                       Margin="0,8,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Grid.Row="2" Text="{Binding HotkeyName}"
                                        FontSize="9" Foreground="#555"
                                        Margin="0,2,0,0" Opacity="0.7"/>
-                        </StackPanel>
+                        </Grid>
                     </Grid>
                 </Border>
             </Grid>
