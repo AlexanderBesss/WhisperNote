@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
-using WhisperNote.Services;
+using WhisperNote.ViewModels;
 
 namespace WhisperNote;
 
@@ -21,9 +21,4 @@ public partial class MainWindow : Window
     }
 
     void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => DragMove();
-
-    void StatusScrollViewer_MouseEnter(object sender, MouseEventArgs e)
-    {
-        StatusScrollViewer.Focus();
-    }
 }

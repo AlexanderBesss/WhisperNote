@@ -1,18 +1,28 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Media;
 using WhisperNote.Config;
+using WhisperNote.Models;
 using WhisperNote.ViewModels;
 
 namespace WhisperNote.Services;
 
 public class ServerStateManager : ViewModel, IDisposable
 {
+    const int StartMaxAttempts = 60;
+    const int StartPollIntervalMs = 1000;
+    const int WaitPollIntervalMs = 2000;
+
     LlmServer _server;
     TranscriptionService _transcription;
     readonly AppState _state;
+
+    ServerStatus _status = ServerStatus.Offline;
+    public ServerStatus Status
+    {
+        get => _status;
+        set => SetProperty(ref _status, value);
+    }
 
     public ServerStateManager(AppState state)
     {
@@ -27,71 +37,55 @@ public class ServerStateManager : ViewModel, IDisposable
         App.RegisterServerForCleanup(_server);
     }
 
-    Brush _serverDotColor = Brushes.Gray;
-    public Brush ServerDotColor
-    {
-        get => _serverDotColor;
-        set => SetProperty(ref _serverDotColor, value);
-    }
-
-    string _serverStatusMessage = "Server offline";
-    public string ServerStatusMessage
-    {
-        get => _serverStatusMessage;
-        set => SetProperty(ref _serverStatusMessage, value);
-    }
-
-    Brush _serverStatusTextColor = Brushes.Gray;
-    public Brush ServerStatusTextColor
-    {
-        get => _serverStatusTextColor;
-        set => SetProperty(ref _serverStatusTextColor, value);
-    }
-
     public bool IsServerRunning => _server.IsRunning;
     public bool IsLocal => _state.ActiveProvider?.IsLocal ?? false;
 
-   public async Task StartAsync(Action<string, long, long> progress)
+    public Task StartAsync(Action<string, long, long> progress)
     {
-        if (_startingServer) return;
-        _startingServer = true;
+        if (_startTask != null && !_startTask.IsCompleted)
+            return _startTask;
+
+        _startTask = StartCoreAsync(progress);
+        return _startTask;
+    }
+
+    async Task StartCoreAsync(Action<string, long, long> progress)
+    {
         try
         {
             await _server.EnsureModelsAsync(progress);
-            _server.Start();
-            ServerDotColor = Brushes.Orange;
-            ServerStatusMessage = "Launching...";
-            ServerStatusTextColor = Brushes.Orange;
+            await _server.StartAsync();
+            Status = ServerStatus.Launching;
 
-            for (int i = 0; i < 60; i++)
+            if (await WaitForReadyAsync(StartMaxAttempts, StartPollIntervalMs))
             {
-                await Task.Delay(1000);
-                if (await _transcription.IsServerReady())
-                {
-                    ServerDotColor = Brushes.LimeGreen;
-                    ServerStatusMessage = "Server online";
-                    ServerStatusTextColor = Brushes.LimeGreen;
-                    return;
-                }
+                Status = ServerStatus.Online;
+                return;
             }
 
-            ServerDotColor = Brushes.Red;
-            ServerStatusMessage = "Server failed to start";
-            ServerStatusTextColor = Brushes.Red;
             throw new TimeoutException("Server failed to start within 60 seconds");
         }
         catch (Exception ex)
         {
             Logger.Error($"Server start: {ex.Message}");
-            ServerDotColor = Brushes.Red;
-            ServerStatusMessage = ex.Message;
-            ServerStatusTextColor = Brushes.Red;
+            Status = ServerStatus.Failed(ex.Message);
             throw;
         }
         finally
         {
-            _startingServer = false;
+            _startTask = null;
         }
+    }
+
+    async Task<bool> WaitForReadyAsync(int maxAttempts, int pollIntervalMs)
+    {
+        for (int i = 0; i < maxAttempts; i++)
+        {
+            await Task.Delay(pollIntervalMs);
+            if (await _transcription.IsServerReady())
+                return true;
+        }
+        return false;
     }
 
     public async Task InitializeAsync()
@@ -99,26 +93,18 @@ public class ServerStateManager : ViewModel, IDisposable
         var provider = _state.ActiveProvider;
         if (provider == null)
         {
-            ServerDotColor = Brushes.Red;
-            ServerStatusMessage = "No provider configured";
-            ServerStatusTextColor = Brushes.Red;
+            Status = ServerStatus.Failed("No provider configured");
             return;
         }
         if (!provider.IsLocal)
         {
-            ServerDotColor = Brushes.LimeGreen;
-            ServerStatusMessage = $"Cloud · {provider.Name}";
-            ServerStatusTextColor = Brushes.LimeGreen;
+            Status = ServerStatus.Cloud(provider.Name);
             return;
         }
 
         var ready = await _transcription.IsServerReady();
         if (ready)
-        {
-            ServerDotColor = Brushes.LimeGreen;
-            ServerStatusMessage = "Server online";
-            ServerStatusTextColor = Brushes.LimeGreen;
-        }
+            Status = ServerStatus.Online;
     }
 
     public void ToggleServer(Action<string?> updateInfo)
@@ -140,9 +126,7 @@ public class ServerStateManager : ViewModel, IDisposable
             if (_server.IsRunning)
             {
                 _server.Stop();
-                ServerDotColor = Brushes.Gray;
-                ServerStatusMessage = "Server offline";
-                ServerStatusTextColor = Brushes.Gray;
+                Status = ServerStatus.Offline;
             }
             else
             {
@@ -168,30 +152,26 @@ public class ServerStateManager : ViewModel, IDisposable
 
         if (await _transcription.IsServerReady())
         {
-            ServerDotColor = Brushes.LimeGreen;
-            ServerStatusMessage = "Server online";
-            ServerStatusTextColor = Brushes.LimeGreen;
+            Status = ServerStatus.Online;
             return true;
         }
 
-        for (int i = 0; i < 60; i++)
+        for (int i = 0; i < StartMaxAttempts; i++)
         {
             if (await _transcription.IsServerReady())
             {
-                ServerDotColor = Brushes.LimeGreen;
-                ServerStatusMessage = "Server online";
-                ServerStatusTextColor = Brushes.LimeGreen;
+                Status = ServerStatus.Online;
                 return true;
             }
-            await Task.Delay(2000);
-            updateInfo($"Waiting for server ({i * 2 + 2}s)");
+            await Task.Delay(WaitPollIntervalMs);
+            updateInfo($"Waiting for server ({i * WaitPollIntervalMs / 1000 + WaitPollIntervalMs / 1000}s)");
         }
 
         return false;
     }
 
     bool _switchingProvider;
-    bool _startingServer;
+    Task? _startTask;
     public async Task SwitchProvider(ProviderConfig provider)
     {
         if (_switchingProvider) return;
@@ -212,16 +192,12 @@ public class ServerStateManager : ViewModel, IDisposable
 
             if (provider.IsLocal)
             {
-                ServerDotColor = Brushes.Gray;
-                ServerStatusMessage = "Server offline";
-                ServerStatusTextColor = Brushes.Gray;
+                Status = ServerStatus.Offline;
                 Logger.Info($"Provider changed to {provider.Name} ({provider.Model})");
             }
             else
             {
-                ServerDotColor = Brushes.LimeGreen;
-                ServerStatusMessage = $"Cloud · {provider.Name}";
-                ServerStatusTextColor = Brushes.LimeGreen;
+                Status = ServerStatus.Cloud(provider.Name);
                 Logger.Info($"Provider changed to {provider.Name} ({provider.Model})");
             }
         }
@@ -241,9 +217,7 @@ public class ServerStateManager : ViewModel, IDisposable
         if (_server.IsRunning)
         {
             _server.Stop();
-            ServerDotColor = Brushes.Gray;
-            ServerStatusMessage = "Server offline";
-            ServerStatusTextColor = Brushes.Gray;
+            Status = ServerStatus.Offline;
         }
     }
 

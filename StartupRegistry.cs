@@ -17,8 +17,9 @@ static class StartupRegistry
             if (key == null) return false;
             return key.GetValue(AppName) != null;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.Error($"StartupRegistry.IsEnabled: {ex.Message}");
             return false;
         }
     }
@@ -45,7 +46,7 @@ static class StartupRegistry
         }
         catch (Exception ex)
         {
-            Logger.Info($"Startup toggle error: {ex.Message}");
+            Logger.Error($"StartupRegistry.SetEnabled: {ex.Message}");
         }
     }
 }

@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using WhisperNote.Config;
@@ -9,6 +11,10 @@ namespace WhisperNote.Services;
 
 public class LlmServer : IDisposable
 {
+    const int WaitForExitTimeoutMs = 3000;
+    const int PortWaitTimeoutMs = 30000;
+    const int PortWaitIntervalMs = 500;
+
     string? _serverExe;
     string? _modelPath;
     string? _mmprojPath;
@@ -61,7 +67,7 @@ public class LlmServer : IDisposable
     public bool IsLocal => CurrentProvider?.IsLocal == true;
     public bool IsRunning => _process != null && !_process.HasExited;
 
-    public void Start()
+    public async Task StartAsync()
     {
         if (!IsLocal) return;
         if (_serverExe == null || !File.Exists(_serverExe))
@@ -69,16 +75,80 @@ public class LlmServer : IDisposable
 
         Stop();
 
+        if (!await WaitForPortFreeAsync())
+            throw new InvalidOperationException($"Port {AppConfig.ServerPort} is still in use after {PortWaitTimeoutMs}ms");
+
         _process = Process.Start(new ProcessStartInfo
         {
             FileName = _serverExe,
             Arguments = ServerArgs(),
             UseShellExecute = false,
             CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden
+            WindowStyle = ProcessWindowStyle.Hidden,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true
         }) ?? throw new InvalidOperationException("Failed to start server process");
 
+        _ = Task.Run(() => LogProcessOutput(_process));
         Logger.Info($"Server started (PID: {_process.Id})");
+    }
+
+    static async Task LogProcessOutput(Process process)
+    {
+        try
+        {
+            await Task.WhenAll(
+                ReadStreamAsync(process.StandardOutput, "[Server-out]"),
+                ReadStreamAsync(process.StandardError, "[Server-err]")
+            );
+        }
+        catch { }
+    }
+
+    static async Task ReadStreamAsync(StreamReader reader, string prefix)
+    {
+        try
+        {
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                if (!string.IsNullOrEmpty(line))
+                    Logger.Info($"{prefix} {line}");
+            }
+        }
+        catch { }
+    }
+
+    static bool IsPortInUse(int port)
+    {
+        try
+        {
+            var ipProps = IPGlobalProperties.GetIPGlobalProperties();
+            var listeners = ipProps.GetActiveTcpListeners();
+            foreach (var ep in listeners)
+            {
+                if (ep.Port == port)
+                    return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"IsPortInUse check failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    async Task<bool> WaitForPortFreeAsync()
+    {
+        var elapsed = 0;
+        while (IsPortInUse(AppConfig.ServerPort) && elapsed < PortWaitTimeoutMs)
+        {
+            Logger.Info($"Port {AppConfig.ServerPort} in use, waiting... ({elapsed}ms)");
+            await Task.Delay(PortWaitIntervalMs);
+            elapsed += PortWaitIntervalMs;
+        }
+        return !IsPortInUse(AppConfig.ServerPort);
     }
 
     public void Stop()
@@ -89,7 +159,7 @@ public class LlmServer : IDisposable
             {
                 Logger.Info($"Stopping server (PID: {_process.Id})");
                 _process.Kill();
-                _process.WaitForExit(3000);
+                _process.WaitForExit(WaitForExitTimeoutMs);
             }
             catch (Exception ex)
             {

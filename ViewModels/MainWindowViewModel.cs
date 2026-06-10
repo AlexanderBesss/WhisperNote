@@ -4,11 +4,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Media;
 using WhisperNote.Config;
-using WhisperNote.ViewModels;
+using WhisperNote.Services;
 
-namespace WhisperNote.Services;
+namespace WhisperNote.ViewModels;
 
 public class MainWindowViewModel : ViewModel, IDisposable
 {
@@ -93,11 +92,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 if (value)
                     InstallHook();
                 else
-                {
-       _keyboardHook?.Dispose();
-                    _keyboardHook = null;
-                    RecordingManager.InfoText = "Hotkey disabled";
-                }
+                    DisableHook();
             }
         }
     }
@@ -135,8 +130,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _ => $"VK_{vk:X}"
     };
 
- 
-
     public ObservableCollection<ProviderConfig> Providers => _state.ProvidersObservable;
 
     public ICommand ServerCommand { get; }
@@ -164,7 +157,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (_hotkeyEnabled)
             InstallHook();
 
-        _ = InitializeAsync();
+        FireAndForget(InitializeAsync(), "Initialize");
     }
 
     async Task InitializeAsync()
@@ -180,45 +173,52 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (SelectedProviderIndex < 0 || SelectedProviderIndex >= Providers.Count) return;
         var provider = Providers[SelectedProviderIndex];
         _state.SetActiveProvider(SelectedProviderIndex);
-        _ = ServerManager.SwitchProvider(provider);
+        FireAndForget(ServerManager.SwitchProvider(provider), "SwitchProvider");
         RecordingManager.InfoText = $"Provider: {provider.Name} ({provider.Model})";
     }
 
     void InstallHook()
     {
         _keyboardHook?.Dispose();
-       _keyboardHook = new GlobalKeyboardHook(
-             _hotkeyVirtualKeyCode,
-             async () =>
-             {
-                 Logger.Info($"[Hotkey press] CanStart={RecordingManager.CanStart}, state={RecordingManager.State}");
-                 if (RecordingManager.CanStart)
-                 {
-                     _hotkeyPressed = true;
-                     _ = StartHoldRecord(true);
-                 }
-                 await Task.CompletedTask;
-             },
-             async () =>
-             {
-                 Logger.Info($"[Hotkey release] _hotkeyPressed={_hotkeyPressed}, IsRecording={RecordingManager.IsRecording}, state={RecordingManager.State}");
-                 _hotkeyPressed = false;
-                 if (RecordingManager.IsRecording)
-                 {
-                     try
-                     {
-                         await StopHoldRecord();
-                     }
-                     catch (Exception ex)
-                     {
-                         Logger.Error($"[Hotkey release] exception: {ex.Message}");
-                         RecordingManager.Reset();
-                     }
-                 }
-             }
-         );
+        _keyboardHook = new GlobalKeyboardHook(
+            _hotkeyVirtualKeyCode,
+            async () =>
+            {
+                Logger.Info($"[Hotkey press] CanStart={RecordingManager.CanStart}, state={RecordingManager.State}");
+                if (RecordingManager.CanStart)
+                {
+                    _hotkeyPressed = true;
+                    FireAndForget(StartHoldRecord(true), "StartHoldRecord");
+                }
+                await Task.CompletedTask;
+            },
+            async () =>
+            {
+                Logger.Info($"[Hotkey release] _hotkeyPressed={_hotkeyPressed}, IsRecording={RecordingManager.IsRecording}, state={RecordingManager.State}");
+                _hotkeyPressed = false;
+                if (RecordingManager.IsRecording)
+                {
+                    try
+                    {
+                        await StopHoldRecord();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error($"[Hotkey release] exception: {ex.Message}");
+                        RecordingManager.Reset();
+                    }
+                }
+            }
+        );
         HotkeyName = VkCodeToString(_hotkeyVirtualKeyCode);
         RecordingManager.InfoText = $"Hotkey: {HotkeyName}";
+    }
+
+    void DisableHook()
+    {
+        _keyboardHook?.Dispose();
+        _keyboardHook = null;
+        RecordingManager.InfoText = "Hotkey disabled";
     }
 
     async Task HandleRecord()
@@ -252,30 +252,14 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-   public async Task StartHoldRecord(bool isHotkey = true)
+    public async Task StartHoldRecord(bool isHotkey = true)
     {
         Logger.Info($"[StartHoldRecord] isHotkey={isHotkey}, _hotkeyPressed={_hotkeyPressed}");
         var provider = _state.ActiveProvider;
         if (provider != null && provider.IsLocal && !ServerManager.IsServerRunning)
         {
-            Logger.Info("[StartHoldRecord] server not running, starting...");
-            try
-            {
-                RecordingManager.InfoText = "Starting server...";
-                await ServerManager.StartAsync((msg, downloaded, total) =>
-                {
-                    RecordingManager.InfoText = total > 0
-                        ? $"{msg} ({ModelDownloader.FormatBytes(downloaded)}/{ModelDownloader.FormatBytes(total)})"
-                        : msg;
-                });
-                Logger.Info("[StartHoldRecord] server started");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error($"[StartHoldRecord] server start: {ex.Message}");
-                RecordingManager.InfoText = ex.Message;
-                return;
-            }
+            Logger.Info("[StartHoldRecord] server not running, starting in background...");
+            FireAndForget(ServerManager.StartAsync((msg, _, _) => RecordingManager.InfoText = msg), "StartServer");
         }
 
         if (isHotkey && !_hotkeyPressed)
@@ -291,11 +275,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (isHotkey && !_hotkeyPressed && RecordingManager.IsRecording)
         {
             Logger.Info("[StartHoldRecord] hotkey released during start, auto-stopping");
-            _ = StopHoldRecord();
+            FireAndForget(StopHoldRecord(), "StopHoldRecord");
         }
     }
 
-   public async Task StopHoldRecord()
+    public async Task StopHoldRecord()
     {
         Logger.Info($"[StopHoldRecord] entry, state={RecordingManager.State}");
         try
@@ -305,11 +289,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
             await ProcessAudio(pcm);
         }
         catch (Exception ex)
-            {
-                Logger.Error($"[StopHoldRecord] exception: {ex.Message}");
-                RecordingManager.Reset();
-                RecordingManager.InfoText = "Failed to stop recording";
-            }
+        {
+            Logger.Error($"[StopHoldRecord] exception: {ex.Message}");
+            RecordingManager.Reset();
+            RecordingManager.InfoText = "Failed to stop recording";
+        }
     }
 
     async Task ProcessAudio(byte[] pcm)
@@ -330,34 +314,34 @@ public class MainWindowViewModel : ViewModel, IDisposable
         var provider = _state.ActiveProvider;
         if (provider != null && provider.IsLocal && !await ServerManager.IsServerReady())
         {
-            if (!ServerManager.IsServerRunning)
-            {
-                Logger.Info("[ProcessAudio] server not running, starting...");
-                RecordingManager.InfoText = "Starting server...";
-                try
-                {
-                    await ServerManager.StartAsync((msg, _, _) => RecordingManager.InfoText = msg);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error($"[ProcessAudio] server start failed: {ex.Message}");
-                    _ = RecordingManager.SetError(ex.Message);
-                    return;
-                }
-            }
-
-            Logger.Info("[ProcessAudio] server not ready, waiting...");
             RecordingManager.InfoText = "Waiting for server...";
-            var ready = await ServerManager.WaitForServerReady(s => RecordingManager.InfoText = s);
-            if (!ready)
-            {
-                Logger.Error("[ProcessAudio] server failed to start");
-                _ = RecordingManager.SetError("Server failed to start");
-                return;
-            }
-            Logger.Info("[ProcessAudio] server ready");
+            await EnsureServerStartedAsync();
         }
 
+        await TranscribeAndHandleResultAsync(pcm, ct);
+    }
+
+    async Task EnsureServerStartedAsync()
+    {
+        try
+        {
+            await ServerManager.StartAsync((msg, downloaded, total) =>
+            {
+                RecordingManager.InfoText = total > 0
+                    ? $"{msg} ({ModelDownloader.FormatBytes(downloaded)}/{ModelDownloader.FormatBytes(total)})"
+                    : msg;
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[ProcessAudio] server start failed: {ex.Message}");
+            _ = RecordingManager.SetError(ex.Message);
+            throw;
+        }
+    }
+
+    async Task TranscribeAndHandleResultAsync(byte[] pcm, CancellationToken ct)
+    {
         RecordingManager.InfoText = "Sending to LLM...";
         Logger.Info("[ProcessAudio] sending to LLM...");
 
@@ -404,33 +388,30 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    static void FireAndForget(Task task, string context)
+    {
+        _ = HandleAsync(task, context);
+    }
+
+    static async Task HandleAsync(Task task, string context)
+    {
+        try
+        {
+            await task;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Logger.Error($"[{context}] Background task failed: {ex.Message}");
+        }
+    }
+
     public void Dispose()
     {
         _transcriptionCts?.Cancel();
         _transcriptionCts?.Dispose();
-       _keyboardHook?.Dispose();
+        _keyboardHook?.Dispose();
         ServerManager.Dispose();
         RecordingManager.Dispose();
     }
-}
-
-public class RelayCommand : ICommand
-{
-    readonly Action<object?> _execute;
-    readonly Func<object?, bool>? _canExecute;
-
-    public RelayCommand(Action<object?> execute, Func<object?, bool>? canExecute = null)
-    {
-        _execute = execute;
-        _canExecute = canExecute;
-    }
-
-    public event EventHandler? CanExecuteChanged
-    {
-        add => CommandManager.RequerySuggested += value;
-        remove => CommandManager.RequerySuggested -= value;
-    }
-
-    public bool CanExecute(object? parameter) => _canExecute?.Invoke(parameter) ?? true;
-    public void Execute(object? parameter) => _execute(parameter);
 }

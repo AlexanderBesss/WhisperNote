@@ -9,9 +9,6 @@ namespace WhisperNote.Services;
 
 public class TranscriptionService : IDisposable
 {
-    readonly HttpClient _http;
-    readonly ProviderConfig _provider;
-
     const string SystemPrompt = @"Transcribe the audio into proper English. Correct all errors:
 - Grammar: subject-verb agreement, verb tenses, pronouns
 - Spelling and word choice
@@ -24,6 +21,12 @@ public class TranscriptionService : IDisposable
 Output ONLY the corrected transcription. No explanations, no quotes, no extra text.";
     const string TranscriptionTemperature = "0.3";
     const int RetryDelayMs = 3000;
+    const int TruncateMaxLen = 300;
+    const int HealthCheckTimeoutSeconds = 2;
+    const int HttpTimeoutMinutes = 5;
+
+    readonly HttpClient _http;
+    readonly ProviderConfig _provider;
 
     public TranscriptionService(ProviderConfig provider)
     {
@@ -31,7 +34,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         _http = new HttpClient
         {
             BaseAddress = new Uri(provider.ApiEndpoint.TrimEnd('/')),
-            Timeout = TimeSpan.FromMinutes(5)
+            Timeout = TimeSpan.FromMinutes(HttpTimeoutMinutes)
         };
 
         if (!string.IsNullOrEmpty(provider.ApiKey))
@@ -50,7 +53,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(HealthCheckTimeoutSeconds));
             using var response = await _http.GetAsync("/health", cts.Token);
             return response.IsSuccessStatusCode;
         }
@@ -119,6 +122,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
     static bool ShouldRetry(HttpResponseMessage response, string body) =>
         (int)response.StatusCode == 400 && body.Contains("Failed to load image or audio file");
 
-    static string Truncate(string s, int maxLen = 300) =>
-        s.Length <= maxLen ? s : s.Substring(0, maxLen);
+    static string Truncate(string s) =>
+        s.Length <= TruncateMaxLen ? s : s.Substring(0, TruncateMaxLen);
 }

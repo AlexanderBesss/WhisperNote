@@ -9,11 +9,13 @@ namespace WhisperNote.Config;
 
 public class AppSettings
 {
+    const int DefaultHotkeyVkCode = 0xA0;
+
     public int ActiveProviderIndex { get; set; }
     public List<ProviderConfig> Providers { get; set; } = new();
     public bool AutoOffloadVram { get; set; }
     public bool ThinkingEnabled { get; set; }
-    public int HotkeyVirtualKeyCode { get; set; } = 0xA0;
+    public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
     public bool HotkeyEnabled { get; set; } = true;
 
     static string ConfigPath() =>
@@ -32,8 +34,9 @@ public class AppSettings
                 return CreateDefault();
             return settings;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.Error($"Failed to load settings: {ex.Message}");
             return CreateDefault();
         }
     }

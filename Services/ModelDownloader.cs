@@ -9,6 +9,9 @@ namespace WhisperNote.Services;
 public static class ModelDownloader
 {
     const string HfBaseUrl = "https://huggingface.co";
+    const int DownloadBufferSize = 128 * 1024;
+    const int ProgressReportIntervalSeconds = 1;
+    static readonly TimeSpan DownloadTimeout = TimeSpan.FromHours(2);
 
     public static async Task EnsureModelAsync(
         string repo, string filename, string destPath,
@@ -28,7 +31,7 @@ public static class ModelDownloader
 
         using var client = new HttpClient
         {
-            Timeout = TimeSpan.FromHours(2)
+            Timeout = DownloadTimeout
         };
         client.DefaultRequestHeaders.Add("User-Agent", "WhisperNote/1.0");
 
@@ -42,28 +45,36 @@ public static class ModelDownloader
         progress($"Downloading {filename}...", 0, total);
 
         var tmpPath = destPath + ".tmp";
-        using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var file = File.Create(tmpPath);
-        var buffer = new byte[128 * 1024];
-        long downloaded = 0;
-        int read;
-        var lastReport = DateTimeOffset.UtcNow;
-
-        while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+        try
         {
-            await file.WriteAsync(buffer.AsMemory(0, read), ct);
-            downloaded += read;
-            if (DateTimeOffset.UtcNow - lastReport > TimeSpan.FromSeconds(1))
+            using var stream = await response.Content.ReadAsStreamAsync(ct);
+            using var file = File.Create(tmpPath);
+            var buffer = new byte[DownloadBufferSize];
+            long downloaded = 0;
+            int read;
+            var lastReport = DateTimeOffset.UtcNow;
+
+            while ((read = await stream.ReadAsync(buffer, ct)) > 0)
             {
-                progress($"Downloading {filename}...", downloaded, total);
-                lastReport = DateTimeOffset.UtcNow;
+                await file.WriteAsync(buffer.AsMemory(0, read), ct);
+                downloaded += read;
+                if (DateTimeOffset.UtcNow - lastReport > TimeSpan.FromSeconds(ProgressReportIntervalSeconds))
+                {
+                    progress($"Downloading {filename}...", downloaded, total);
+                    lastReport = DateTimeOffset.UtcNow;
+                }
             }
+
+            File.Move(tmpPath, destPath);
+            Logger.Info($"Downloaded {Path.GetFileName(destPath)} ({FormatBytes(downloaded)})");
+            progress($"Downloaded {filename}", downloaded, total);
         }
-
-        File.Move(tmpPath, destPath);
-
-        Logger.Info($"Downloaded {Path.GetFileName(destPath)} ({FormatBytes(downloaded)})");
-        progress($"Downloaded {filename}", downloaded, total);
+        catch
+        {
+            if (File.Exists(tmpPath))
+                File.Delete(tmpPath);
+            throw;
+        }
     }
 
     public static string FormatBytes(long bytes)

@@ -42,5 +42,4 @@ static class AudioProcessor
         var label = maxAmplitude < AmplitudeSilenceThreshold ? "likely SILENCE" : "audio detected";
         Logger.Info($"PCM max amplitude: {maxAmplitude} ({label})");
     }
-
 }

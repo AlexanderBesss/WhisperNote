@@ -1,6 +1,5 @@
-  using System;
+using System;
 using System.Threading.Tasks;
-using System.Windows.Media;
 using WhisperNote.Services;
 using WhisperNote.ViewModels;
 
@@ -17,9 +16,9 @@ public enum RecordingState
 
 public class RecordingStateManager : ViewModel
 {
+    const int AmplitudeSilenceThreshold = 500;
+
     readonly AudioRecorder _recorder;
-    static readonly Brush DefaultBrush = new SolidColorBrush(Color.FromArgb(0, 100, 100, 100));
-    static readonly Brush RecordingBrush = new SolidColorBrush(Color.FromArgb(100, 220, 50, 50));
 
     RecordingState _state = RecordingState.Idle;
     public RecordingState State
@@ -32,13 +31,6 @@ public class RecordingStateManager : ViewModel
     public bool IsProcessing => State == RecordingState.Processing;
     public bool CanStart => State is RecordingState.Idle or RecordingState.Success or RecordingState.Error;
 
-    Brush _mainButtonBackground = DefaultBrush;
-    public Brush MainButtonBackground
-    {
-        get => _mainButtonBackground;
-        set => SetProperty(ref _mainButtonBackground, value);
-    }
-
     string _statusText = "Ready";
     public string StatusText
     {
@@ -46,11 +38,11 @@ public class RecordingStateManager : ViewModel
         set => SetProperty(ref _statusText, value);
     }
 
-    Brush _statusTextColor = new SolidColorBrush(Color.FromRgb(204, 204, 204));
-    public Brush StatusTextColor
+    string _statusTextKind = "Gray";
+    public string StatusTextKind
     {
-        get => _statusTextColor;
-        set => SetProperty(ref _statusTextColor, value);
+        get => _statusTextKind;
+        set => SetProperty(ref _statusTextKind, value);
     }
 
     string _infoText = "";
@@ -58,6 +50,13 @@ public class RecordingStateManager : ViewModel
     {
         get => _infoText;
         set => SetProperty(ref _infoText, value);
+    }
+
+    string _mainButtonBackgroundKind = "Default";
+    public string MainButtonBackgroundKind
+    {
+        get => _mainButtonBackgroundKind;
+        set => SetProperty(ref _mainButtonBackgroundKind, value);
     }
 
     public int ChannelCount => _recorder.ChannelCount;
@@ -149,32 +148,32 @@ public class RecordingStateManager : ViewModel
         switch (next)
         {
             case RecordingState.Idle:
-                MainButtonBackground = DefaultBrush;
+                MainButtonBackgroundKind = "Default";
                 StatusText = "Ready";
-                StatusTextColor = Brushes.Gray;
+                StatusTextKind = "Gray";
                 InfoText = "";
                 break;
             case RecordingState.Recording:
-                MainButtonBackground = RecordingBrush;
+                MainButtonBackgroundKind = "Recording";
                 StatusText = "Recording...";
-                StatusTextColor = Brushes.Orange;
+                StatusTextKind = "Orange";
                 InfoText = isHotkey ? "Release hotkey to stop" : "Press button to stop";
                 break;
             case RecordingState.Processing:
                 StatusText = "Processing...";
-                StatusTextColor = Brushes.LightBlue;
+                StatusTextKind = "LightBlue";
                 InfoText = "Waiting for server...";
                 break;
             case RecordingState.Success:
-                MainButtonBackground = DefaultBrush;
+                MainButtonBackgroundKind = "Default";
                 StatusText = text ?? "";
-                StatusTextColor = Brushes.LimeGreen;
+                StatusTextKind = "Green";
                 InfoText = "Copied to clipboard";
                 break;
             case RecordingState.Error:
-                MainButtonBackground = DefaultBrush;
+                MainButtonBackgroundKind = "Default";
                 StatusText = "Error";
-                StatusTextColor = Brushes.Red;
+                StatusTextKind = "Red";
                 InfoText = errorMsg ?? "";
                 break;
         }

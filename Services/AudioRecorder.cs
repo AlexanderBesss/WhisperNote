@@ -8,6 +8,8 @@ namespace WhisperNote.Services;
 
 public class AudioRecorder : IDisposable
 {
+    const int DisposeTimeoutMs = 2000;
+
     WaveInEvent? _waveIn;
     MemoryStream? _pcmStream;
     readonly SemaphoreSlim _stateLock = new(1, 1);
@@ -15,7 +17,6 @@ public class AudioRecorder : IDisposable
     public bool IsRecording { get; private set; }
     public int ChannelCount { get; private set; }
 
-  
     public async Task StartAsync()
     {
         await _stateLock.WaitAsync();
@@ -102,7 +103,7 @@ public class AudioRecorder : IDisposable
 
     public void Dispose()
     {
-        if (_stateLock.Wait(2000))
+        if (_stateLock.Wait(DisposeTimeoutMs))
         {
             try
             {

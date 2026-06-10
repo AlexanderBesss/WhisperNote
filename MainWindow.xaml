@@ -26,9 +26,9 @@
                 <TextBlock Width="8" Height="8" Margin="8,0,0,0"
                            VerticalAlignment="Center"
                            Text="●" FontSize="8"
-                           Foreground="{Binding ServerManager.ServerDotColor}"/>
-                <TextBlock Text="{Binding ServerManager.ServerStatusMessage}" FontSize="11"
-                           Foreground="{Binding ServerManager.ServerStatusTextColor}"
+                           Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"/>
+                <TextBlock Text="{Binding ServerManager.Status.Message}" FontSize="11"
+                           Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"
                            VerticalAlignment="Center" Margin="6,0,0,0"
                            MaxWidth="80" TextTrimming="CharacterEllipsis"/>
                 <ComboBox ItemsSource="{Binding Providers}"
@@ -79,7 +79,7 @@
                         <Button Grid.Column="0"
                                 Style="{StaticResource CircleButton}"
                                 Width="64" Height="64"
-                                Background="{Binding RecordingManager.MainButtonBackground}"
+                                Background="{Binding RecordingManager.MainButtonBackgroundKind, Converter={StaticResource ButtonBackgroundKindToBrushConverter}}"
                                 BorderBrush="#555" BorderThickness="2"
                                 Command="{Binding RecordCommand}"
                                 Cursor="Hand">
@@ -94,11 +94,10 @@
                                           VerticalScrollBarVisibility="Hidden"
                                           HorizontalScrollBarVisibility="Disabled"
                                           Focusable="True" FocusManager.IsFocusScope="True"
-                                          MouseEnter="StatusScrollViewer_MouseEnter"
                                           Padding="4,16,4,16">
                                 <TextBlock Text="{Binding RecordingManager.StatusText}"
                                            FontSize="14" FontWeight="Medium"
-                                           Foreground="{Binding RecordingManager.StatusTextColor}"
+                                           Foreground="{Binding RecordingManager.StatusTextKind, Converter={StaticResource StatusKindToBrushConverter}}"
                                            TextWrapping="Wrap"/>
                             </ScrollViewer>
                        <TextBlock Text="{Binding RecordingManager.InfoText}"
@@ -119,9 +118,8 @@
                         Command="{Binding ServerCommand}" Margin="0,0,8,0"
                         ToolTip="Toggle Server">
                     <TextBlock Text="⏻" FontSize="16"
-                               Foreground="{Binding ServerManager.ServerDotColor}"/>
+                               Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"/>
                 </Button>
- 
                 <ToggleButton IsChecked="{Binding AutoOffloadVram, Mode=TwoWay}"
                               Style="{StaticResource IconToggleButton}"
                               Margin="0,0,8,0"
