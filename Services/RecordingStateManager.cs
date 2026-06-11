@@ -28,6 +28,7 @@ public class RecordingStateManager : ViewModel
         {
             SetProperty(ref _state, value);
             OnPropertyChanged(nameof(IsRecording));
+            OnPropertyChanged(nameof(IsProcessing));
         }
     }
 

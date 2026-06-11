@@ -18,7 +18,16 @@ public class MainWindowViewModel : ViewModel, IDisposable
     bool _hotkeyPressed;
     CancellationTokenSource? _transcriptionCts;
 
-    public double WindowOpacity => RecordingManager.IsRecording ? 1.0 : 0.85;
+    bool _isHighlighted;
+    Timer? _highlightTimer;
+
+    public double WindowOpacity => _isHighlighted || RecordingManager.IsRecording || RecordingManager.IsProcessing ? 1.0 : 0.85;
+
+    void SetHighlighted(bool value)
+    {
+        _isHighlighted = value;
+        OnPropertyChanged(nameof(WindowOpacity));
+    }
 
     string _lastTranscription = "";
     public string LastTranscription
@@ -148,8 +157,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
         RecordingManager = new RecordingStateManager();
         RecordingManager.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(RecordingStateManager.IsRecording))
+            if (e.PropertyName == nameof(RecordingStateManager.IsRecording) ||
+                e.PropertyName == nameof(RecordingStateManager.IsProcessing))
                 OnPropertyChanged(nameof(WindowOpacity));
+            if (RecordingManager.State == RecordingState.Success)
+            {
+                SetHighlighted(true);
+                _highlightTimer?.Dispose();
+                _highlightTimer = new Timer(_ => SetHighlighted(false), null, 3000, Timeout.Infinite);
+            }
         };
 
         _selectedProviderIndex = state.ActiveProviderIndex;
@@ -388,6 +404,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         _transcriptionCts?.Cancel();
         _transcriptionCts?.Dispose();
+        _highlightTimer?.Dispose();
         _keyboardHook?.Dispose();
         ServerManager.Dispose();
         RecordingManager.Dispose();
