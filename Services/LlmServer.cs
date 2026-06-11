@@ -165,7 +165,7 @@ public class LlmServer : IDisposable
         try
         {
             Logger.Info($"Stopping server (PID: {_process.Id})");
-            _process.Kill();
+            KillProcessTree(_process.Id);
             _process.WaitForExit(WaitForExitTimeoutMs);
         }
         catch (Exception ex)
@@ -176,6 +176,21 @@ public class LlmServer : IDisposable
         {
             _process = null;
         }
+    }
+
+    static void KillProcessTree(int pid)
+    {
+        try
+        {
+            using var psi = new ProcessStartInfo("taskkill", $"/F /T /PID {pid}")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true
+            };
+            Process.Start(psi)?.WaitForExit(WaitForExitTimeoutMs);
+        }
+        catch { }
     }
 
     string ServerArgs()
