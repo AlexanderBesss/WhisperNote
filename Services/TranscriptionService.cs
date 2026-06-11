@@ -112,11 +112,25 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
                 using var retryResponse = await _http.PostAsync("/v1/audio/transcriptions", retryContent, ct);
                 raw = await retryResponse.Content.ReadAsStringAsync(ct);
                 Logger.Info($"Retry response [{retryResponse.StatusCode}]: {Truncate(raw)}");
+                EnsureSuccess(retryResponse, raw);
                 return raw;
             }
 
+            EnsureSuccess(response, raw);
             return raw;
         }
+    }
+
+    static void EnsureSuccess(HttpResponseMessage response, string body)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var reason = string.IsNullOrWhiteSpace(response.ReasonPhrase)
+            ? response.StatusCode.ToString()
+            : response.ReasonPhrase;
+        throw new HttpRequestException(
+            $"Transcription failed ({(int)response.StatusCode} {reason}): {Truncate(body)}");
     }
 
     static bool ShouldRetry(HttpResponseMessage response, string body) =>

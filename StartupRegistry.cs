@@ -28,7 +28,7 @@ static class StartupRegistry
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKey, true);
+            using var key = Registry.CurrentUser.CreateSubKey(RunKey, true);
             if (key == null) return;
 
             if (enabled)
@@ -39,7 +39,7 @@ static class StartupRegistry
                     Logger.Error("Cannot add to startup: ProcessPath is null");
                     return;
                 }
-                key.SetValue(AppName, path);
+                key.SetValue(AppName, $"\"{path}\"");
             }
             else
                 key.DeleteValue(AppName, false);

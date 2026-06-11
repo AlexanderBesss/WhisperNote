@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using WhisperNote.Config;
 using WhisperNote.Services;
 
@@ -16,11 +17,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
     public RecordingStateManager RecordingManager { get; }
     GlobalKeyboardHook? _keyboardHook;
     bool _hotkeyPressed;
+    bool _pendingHotkeyStop;
+    readonly SemaphoreSlim _recordOperationLock = new(1, 1);
     CancellationTokenSource? _transcriptionCts;
 
     bool _isHighlighted;
     bool _isFocused;
-    Timer? _highlightTimer;
+    readonly DispatcherTimer _highlightTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
     public double WindowOpacity => _isHighlighted || _isFocused || RecordingManager.IsRecording || RecordingManager.IsProcessing ? 1.0 : 0.85;
 
@@ -162,6 +165,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _state = state;
         ServerManager = new ServerStateManager(state);
         RecordingManager = new RecordingStateManager();
+        _highlightTimer.Tick += (_, _) =>
+        {
+            _highlightTimer.Stop();
+            SetHighlighted(false);
+        };
         RecordingManager.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(RecordingStateManager.IsRecording) ||
@@ -170,8 +178,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
             if (RecordingManager.State == RecordingState.Success)
             {
                 SetHighlighted(true);
-                _highlightTimer?.Dispose();
-                _highlightTimer = new Timer(_ => SetHighlighted(false), null, 3000, Timeout.Infinite);
+                _highlightTimer.Stop();
+                _highlightTimer.Start();
             }
         };
 
@@ -183,7 +191,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _hotkeyVirtualKeyCode = state.HotkeyVirtualKeyCode;
         _hotkeyName = VkCodeToString(state.HotkeyVirtualKeyCode);
 
-        ServerCommand = new RelayCommand(_ => ServerManager.ToggleServer(s => RecordingManager.InfoText = s ?? ""));
+        ServerCommand = new RelayCommand(_ => FireAndForget(
+            ServerManager.ToggleServerAsync(s => RecordingManager.InfoText = s ?? ""),
+            "ToggleServer"));
         RecordCommand = new RelayCommand(_ => _ = HandleRecord());
         CloseCommand = new RelayCommand(_ => Application.Current.Shutdown());
 
@@ -204,6 +214,14 @@ public class MainWindowViewModel : ViewModel, IDisposable
     void OnProviderChanged()
     {
         if (SelectedProviderIndex < 0 || SelectedProviderIndex >= Providers.Count) return;
+        if (RecordingManager.IsRecording || RecordingManager.IsProcessing)
+        {
+            RecordingManager.InfoText = "Finish the current recording before switching providers";
+            _selectedProviderIndex = _state.ActiveProviderIndex;
+            OnPropertyChanged(nameof(SelectedProviderIndex));
+            return;
+        }
+
         var provider = Providers[SelectedProviderIndex];
         _state.SetActiveProvider(SelectedProviderIndex);
         FireAndForget(ServerManager.SwitchProvider(provider), "SwitchProvider");
@@ -220,6 +238,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 if (RecordingManager.CanStart)
                 {
                     _hotkeyPressed = true;
+                    _pendingHotkeyStop = false;
                     FireAndForget(StartHoldRecord(true), "StartHoldRecord");
                 }
                 await Task.CompletedTask;
@@ -229,15 +248,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 _hotkeyPressed = false;
                 if (RecordingManager.IsRecording)
                 {
-                    try
-                    {
-                        await StopHoldRecord();
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error($"[Hotkey release] exception: {ex.Message}");
-                        RecordingManager.Reset();
-                    }
+                    await StopHoldRecord(queueIfBusy: true);
                 }
             }
         );
@@ -254,26 +265,29 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     async Task HandleRecord()
     {
-        try
+        await RunRecordingOperation(HandleRecordCore, "HandleRecord");
+    }
+
+    async Task HandleRecordCore()
+    {
+        if (RecordingManager.IsRecording)
         {
-            if (RecordingManager.IsRecording)
-            {
-                var pcm = await RecordingManager.StopRecording();
-                await ProcessAudio(pcm);
-            }
-            else if (RecordingManager.CanStart)
-            {
-                await StartHoldRecord(isHotkey: false);
-            }
+            await StopAndProcessCore();
         }
-        catch (Exception ex)
+        else if (RecordingManager.CanStart)
         {
-            Logger.Error($"[HandleRecord] exception: {ex.Message}");
-            RecordingManager.Reset();
+            await StartHoldRecordCore(isHotkey: false);
         }
     }
 
     public async Task StartHoldRecord(bool isHotkey = true)
+    {
+        await RunRecordingOperation(
+            () => StartHoldRecordCore(isHotkey),
+            "StartHoldRecord");
+    }
+
+    async Task StartHoldRecordCore(bool isHotkey)
     {
         var provider = _state.ActiveProvider;
         if (provider != null && provider.IsLocal && !ServerManager.IsServerRunning)
@@ -286,22 +300,59 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         await RecordingManager.StartRecording(isHotkey);
 
-        if (isHotkey && !_hotkeyPressed && RecordingManager.IsRecording)
-            FireAndForget(StopHoldRecord(), "StopHoldRecord");
+        if (isHotkey && (!_hotkeyPressed || _pendingHotkeyStop) && RecordingManager.IsRecording)
+        {
+            _pendingHotkeyStop = false;
+            await StopAndProcessCore();
+        }
     }
 
-    public async Task StopHoldRecord()
+    public async Task StopHoldRecord(bool queueIfBusy = false)
     {
+        await RunRecordingOperation(
+            StopAndProcessCore,
+            "StopHoldRecord",
+            queueHotkeyStop: queueIfBusy,
+            failureInfo: "Failed to stop recording");
+    }
+
+    async Task StopAndProcessCore()
+    {
+        var pcm = await RecordingManager.StopRecording();
+        await ProcessAudio(pcm);
+    }
+
+    async Task RunRecordingOperation(
+        Func<Task> operation,
+        string context,
+        bool queueHotkeyStop = false,
+        string? failureInfo = null)
+    {
+        if (!await _recordOperationLock.WaitAsync(0))
+        {
+            if (queueHotkeyStop)
+                _pendingHotkeyStop = true;
+            return;
+        }
+
         try
         {
-            var pcm = await RecordingManager.StopRecording();
-            await ProcessAudio(pcm);
+            await operation();
+        }
+        catch (OperationCanceledException)
+        {
+            _ = RecordingManager.Cancel();
         }
         catch (Exception ex)
         {
-            Logger.Error($"[StopHoldRecord] exception: {ex.Message}");
+            Logger.Error($"[{context}] exception: {ex.Message}");
             RecordingManager.Reset();
-            RecordingManager.InfoText = "Failed to stop recording";
+            if (!string.IsNullOrEmpty(failureInfo))
+                RecordingManager.InfoText = failureInfo;
+        }
+        finally
+        {
+            _recordOperationLock.Release();
         }
     }
 
@@ -314,37 +365,55 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
 
         _transcriptionCts?.Cancel();
+        _transcriptionCts?.Dispose();
         _transcriptionCts = new CancellationTokenSource();
         var ct = _transcriptionCts.Token;
 
         var provider = _state.ActiveProvider;
         if (provider != null && provider.IsLocal && !await ServerManager.IsServerReady())
         {
-            RecordingManager.InfoText = "Waiting for server...";
-            await EnsureServerStartedAsync();
+            if (ServerManager.IsStarting)
+            {
+                RecordingManager.InfoText = "Waiting for server...";
+                if (!await ServerManager.WaitForServerReady(s => RecordingManager.InfoText = s))
+                {
+                    _ = RecordingManager.SetError("Server failed to start");
+                    return;
+                }
+            }
+            else
+            {
+                RecordingManager.InfoText = "Waiting for server...";
+                if (!await EnsureServerStartedAsync())
+                    return;
+            }
         }
 
         await TranscribeAndHandleResultAsync(pcm, ct);
     }
 
-    async Task EnsureServerStartedAsync()
+    async Task<bool> EnsureServerStartedAsync()
     {
         try
         {
             await ServerManager.StartAsync((msg, downloaded, total) =>
             {
-                RecordingManager.InfoText = total > 0
-                    ? $"{msg} ({ModelDownloader.FormatBytes(downloaded)}/{ModelDownloader.FormatBytes(total)})"
-                    : msg;
+                RecordingManager.InfoText = FormatProgressMessage(msg, downloaded, total);
             });
+            return true;
         }
         catch (Exception ex)
         {
             Logger.Error($"[ProcessAudio] server start failed: {ex.Message}");
             _ = RecordingManager.SetError(ex.Message);
-            throw;
+            return false;
         }
     }
+
+    static string FormatProgressMessage(string message, long downloaded, long total) =>
+        total > 0
+            ? $"{message} ({ModelDownloader.FormatBytes(downloaded)}/{ModelDownloader.FormatBytes(total)})"
+            : message;
 
     async Task TranscribeAndHandleResultAsync(byte[] pcm, CancellationToken ct)
     {
@@ -360,18 +429,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 return;
             }
 
-            if (_autoOffloadVram && ServerManager.IsLocal)
-            {
-                ServerManager.OffloadServer();
-                RecordingManager.InfoText = "Model offloaded from VRAM";
-            }
-
             if (!string.IsNullOrWhiteSpace(text))
             {
                 LastTranscription = text;
-                Clipboard.SetText(text);
+                var copied = TrySetClipboardText(text);
                 RecordingManager.SetSuccess(text);
+                if (!copied)
+                    RecordingManager.InfoText = "Transcribed, but clipboard was unavailable";
                 NotificationSound.Play();
+                await OffloadServerAfterSuccessAsync();
             }
             else
             {
@@ -386,6 +452,36 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             Logger.Error($"[ProcessAudio] exception: {ex.Message}");
             _ = RecordingManager.SetError(ex.Message);
+        }
+    }
+
+    async Task OffloadServerAfterSuccessAsync()
+    {
+        if (!_autoOffloadVram || !ServerManager.IsLocal)
+            return;
+
+        try
+        {
+            await ServerManager.OffloadServerAsync();
+            RecordingManager.InfoText = "Model offloaded from VRAM";
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[ProcessAudio] offload failed: {ex.Message}");
+        }
+    }
+
+    static bool TrySetClipboardText(string text)
+    {
+        try
+        {
+            Clipboard.SetText(text);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Clipboard.SetText failed: {ex.Message}");
+            return false;
         }
     }
 
@@ -411,7 +507,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         _transcriptionCts?.Cancel();
         _transcriptionCts?.Dispose();
-        _highlightTimer?.Dispose();
+        _highlightTimer.Stop();
+        _recordOperationLock.Dispose();
         _keyboardHook?.Dispose();
         ServerManager.Dispose();
         RecordingManager.Dispose();

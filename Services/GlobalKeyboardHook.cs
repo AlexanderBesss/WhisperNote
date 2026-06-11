@@ -10,6 +10,8 @@ public class GlobalKeyboardHook : IDisposable
     const int WH_KEYBOARD_LL = 13;
     const int WM_KEYDOWN = 0x0100;
     const int WM_KEYUP = 0x0101;
+    const int WM_SYSKEYDOWN = 0x0104;
+    const int WM_SYSKEYUP = 0x0105;
 
     readonly int _vkCode;
     readonly Func<Task> _onKeyDown;
@@ -62,34 +64,33 @@ public class GlobalKeyboardHook : IDisposable
 
     IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-       if (nCode >= 0)
+        if (nCode >= 0)
+        {
+            var ks = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+            if (ks.vkCode == (uint)_vkCode)
             {
-                var ks = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
-                if (ks.vkCode == (uint)_vkCode)
+                if (IsKeyDown(wParam))
                 {
-                    if (wParam == (IntPtr)WM_KEYDOWN)
-                    {
-                        if (_isKeyPressed)
-                            return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
-                        _isKeyPressed = true;
-                    }
-                    else if (wParam == (IntPtr)WM_KEYUP)
-                    {
-                        _isKeyPressed = false;
-                    }
-
-                    Func<Task>? handler = wParam switch
-                    {
-                        (IntPtr)WM_KEYDOWN => _onKeyDown,
-                        (IntPtr)WM_KEYUP => _onKeyUp,
-                        _ => null
-                    };
-                   if (handler != null)
-                        InvokeHandler(handler, wParam == (IntPtr)WM_KEYDOWN ? "keydown" : "keyup");
+                    if (_isKeyPressed)
+                        return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
+                    _isKeyPressed = true;
+                    InvokeHandler(_onKeyDown, "keydown");
+                }
+                else if (IsKeyUp(wParam))
+                {
+                    _isKeyPressed = false;
+                    InvokeHandler(_onKeyUp, "keyup");
                 }
             }
-            return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
+        }
+        return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
     }
+
+    static bool IsKeyDown(IntPtr message) =>
+        message == (IntPtr)WM_KEYDOWN || message == (IntPtr)WM_SYSKEYDOWN;
+
+    static bool IsKeyUp(IntPtr message) =>
+        message == (IntPtr)WM_KEYUP || message == (IntPtr)WM_SYSKEYUP;
 
     void InvokeHandler(Func<Task> handler, string label)
     {

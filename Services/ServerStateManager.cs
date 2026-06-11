@@ -16,6 +16,8 @@ public class ServerStateManager : ViewModel, IDisposable
     LlmServer _server;
     TranscriptionService _transcription;
     readonly AppState _state;
+    readonly SemaphoreSlim _operationLock = new(1, 1);
+    readonly object _startLock = new();
 
     ServerStatus _status = ServerStatus.Offline;
     public ServerStatus Status
@@ -41,22 +43,56 @@ public class ServerStateManager : ViewModel, IDisposable
         App.RegisterServerForCleanup(_server);
     }
 
+    async Task WithOperationLockAsync(Func<Task> operation, CancellationToken ct = default)
+    {
+        await _operationLock.WaitAsync(ct);
+        try
+        {
+            await operation();
+        }
+        finally
+        {
+            _operationLock.Release();
+        }
+    }
+
+    async Task<T> WithOperationLockAsync<T>(Func<Task<T>> operation, CancellationToken ct = default)
+    {
+        await _operationLock.WaitAsync(ct);
+        try
+        {
+            return await operation();
+        }
+        finally
+        {
+            _operationLock.Release();
+        }
+    }
+
     public bool IsServerRunning => _server.IsRunning;
     public bool IsLocal => _state.ActiveProvider?.IsLocal ?? false;
 
+    public bool IsStarting => _isStarting;
+
     public Task StartAsync(Action<string, long, long> progress)
     {
-        if (_startTask != null && !_startTask.IsCompleted)
-            return _startTask;
+        lock (_startLock)
+        {
+            if (_isStarting)
+                return _startTask ?? Task.CompletedTask;
 
-        _startTask = StartCoreAsync(progress);
-        return _startTask;
+            _isStarting = true;
+            _startTask = StartCoreAsync(progress);
+            return _startTask;
+        }
     }
 
     async Task StartCoreAsync(Action<string, long, long> progress)
     {
+        await _operationLock.WaitAsync();
         try
         {
+            _server.SetThinkingEnabled(_state.ThinkingEnabled);
             await _server.EnsureModelsAsync(progress);
             await _server.StartAsync();
             Status = ServerStatus.Launching;
@@ -77,7 +113,12 @@ public class ServerStateManager : ViewModel, IDisposable
         }
         finally
         {
-            _startTask = null;
+            lock (_startLock)
+            {
+                _isStarting = false;
+                _startTask = null;
+            }
+            _operationLock.Release();
         }
     }
 
@@ -106,12 +147,15 @@ public class ServerStateManager : ViewModel, IDisposable
             return;
         }
 
-        var ready = await _transcription.IsServerReady();
-        if (ready)
-            Status = ServerStatus.Online;
+        await WithOperationLockAsync(async () =>
+        {
+            var ready = await _transcription.IsServerReady();
+            if (ready)
+                Status = ServerStatus.Online;
+        });
     }
 
-    public void ToggleServer(Action<string?> updateInfo)
+    public async Task ToggleServerAsync(Action<string?> updateInfo)
     {
         var provider = _state.ActiveProvider;
         if (provider == null)
@@ -125,21 +169,24 @@ public class ServerStateManager : ViewModel, IDisposable
             return;
         }
 
+        var shouldStart = false;
         try
         {
-            if (_server.IsRunning)
+            await WithOperationLockAsync(async () =>
             {
-                _server.Stop();
-                Status = ServerStatus.Offline;
-            }
-            else
-            {
-                _ = StartAsync((_, _, _) => { }).ContinueWith(t =>
+                if (_server.IsRunning)
                 {
-                    if (t.IsFaulted)
-                        Logger.Error($"StartAsync: {t.Exception?.GetBaseException().Message}");
-                }, TaskContinuationOptions.OnlyOnFaulted);
-            }
+                    await Task.Run(() => _server.Stop());
+                    Status = ServerStatus.Offline;
+                }
+                else
+                {
+                    shouldStart = true;
+                }
+            });
+
+            if (shouldStart)
+                await StartAsync((_, _, _) => { });
         }
         catch (Exception ex)
         {
@@ -154,27 +201,31 @@ public class ServerStateManager : ViewModel, IDisposable
         if (provider == null || !provider.IsLocal)
             return true;
 
-        if (await _transcription.IsServerReady())
-        {
-            Status = ServerStatus.Online;
-            return true;
-        }
-
-        for (int i = 0; i < StartMaxAttempts; i++)
+        return await WithOperationLockAsync(async () =>
         {
             if (await _transcription.IsServerReady())
             {
                 Status = ServerStatus.Online;
                 return true;
             }
-            await Task.Delay(WaitPollIntervalMs);
-            updateInfo($"Waiting for server ({i * WaitPollIntervalMs / 1000 + WaitPollIntervalMs / 1000}s)");
-        }
 
-        return false;
+            for (int i = 0; i < StartMaxAttempts; i++)
+            {
+                if (await _transcription.IsServerReady())
+                {
+                    Status = ServerStatus.Online;
+                    return true;
+                }
+                await Task.Delay(WaitPollIntervalMs);
+                updateInfo($"Waiting for server ({i * WaitPollIntervalMs / 1000 + WaitPollIntervalMs / 1000}s)");
+            }
+
+            return false;
+        });
     }
 
     bool _switchingProvider;
+    bool _isStarting;
     Task? _startTask;
     public async Task SwitchProvider(ProviderConfig provider)
     {
@@ -182,7 +233,7 @@ public class ServerStateManager : ViewModel, IDisposable
         _switchingProvider = true;
         try
         {
-            await Task.Run(() =>
+            await WithOperationLockAsync(() => Task.Run(() =>
             {
                 _server.Dispose();
                 _transcription.Dispose();
@@ -192,18 +243,9 @@ public class ServerStateManager : ViewModel, IDisposable
                 _server.SetThinkingEnabled(_state.ThinkingEnabled);
                 _transcription = new TranscriptionService(provider);
                 App.RegisterServerForCleanup(_server);
-            });
+            }));
 
-            if (provider.IsLocal)
-            {
-                Status = ServerStatus.Offline;
-                Logger.Info($"Provider changed to {provider.Name} ({provider.Model})");
-            }
-            else
-            {
-                Status = ServerStatus.Cloud(provider.Name);
-                Logger.Info($"Provider changed to {provider.Name} ({provider.Model})");
-            }
+            UpdateProviderStatus(provider);
         }
         finally
         {
@@ -211,20 +253,44 @@ public class ServerStateManager : ViewModel, IDisposable
         }
     }
 
-    public Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct) =>
-        _transcription.Transcribe(pcm, channels, ct: ct);
-
-    public Task<bool> IsServerReady() => _transcription.IsServerReady();
-
-    public void OffloadServer()
+    void UpdateProviderStatus(ProviderConfig provider)
     {
-        _server.Stop();
-        Status = ServerStatus.Offline;
+        Status = provider.IsLocal
+            ? ServerStatus.Offline
+            : ServerStatus.Cloud(provider.Name);
+        Logger.Info($"Provider changed to {provider.Name} ({provider.Model})");
     }
+
+    public Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct) =>
+        WithOperationLockAsync(() => _transcription.Transcribe(pcm, channels, ct: ct), ct);
+
+    public Task<bool> IsServerReady() =>
+        WithOperationLockAsync(() => _transcription.IsServerReady());
+
+    public Task OffloadServerAsync() =>
+        WithOperationLockAsync(async () =>
+        {
+            await Task.Run(() => _server.Stop());
+            Status = ServerStatus.Offline;
+        });
 
     public void Dispose()
     {
-        _server.Dispose();
-        _transcription.Dispose();
+        if (!_operationLock.Wait(TimeSpan.FromSeconds(10)))
+        {
+            Logger.Error("Timed out waiting to dispose server manager");
+            return;
+        }
+
+        try
+        {
+            _server.Dispose();
+            _transcription.Dispose();
+        }
+        finally
+        {
+            _operationLock.Release();
+            _operationLock.Dispose();
+        }
     }
 }

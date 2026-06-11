@@ -13,12 +13,25 @@ public static class Logger
 
     static Logger()
     {
-        LogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs.log");
+        LogPath = AppPaths.LogPath;
         try
         {
-            File.WriteAllText(LogPath, "");
+            RotateIfNeeded();
+            EnsureLogFile();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Logger initialization failed: {ex.Message}");
+        }
+    }
+
+    public static void Initialize()
+    {
+    }
+
+    static void EnsureLogFile()
+    {
+        using var _ = File.Open(LogPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite);
     }
 
     static void RotateIfNeeded()
@@ -34,7 +47,10 @@ public static class Logger
                 File.Move(LogPath, backup);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Logger rotation failed: {ex.Message}");
+        }
     }
 
     public static void Info(string message) => Log("INFO", message);
@@ -46,6 +62,7 @@ public static class Logger
         {
             try
             {
+                RotateIfNeeded();
                 var line = $"{DateTime.Now:HH:mm:ss.fff} [{level}] {message}{Environment.NewLine}";
                 File.AppendAllText(LogPath, line);
             }

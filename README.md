@@ -19,4 +19,4 @@ Voice-to-text desktop app for Windows. Hold a key, speak, release — transcribe
 
 ## Configuration
 
-Edit `whispernote.json` to add providers, change the hotkey, or toggle auto-start.
+Edit `whispernote.json` in the application folder to add providers, change the hotkey, or toggle auto-start.

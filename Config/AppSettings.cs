@@ -18,8 +18,7 @@ public class AppSettings
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
     public bool HotkeyEnabled { get; set; } = true;
 
-    static string ConfigPath() =>
-        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "whispernote.json");
+    static string ConfigPath() => AppPaths.SettingsPath;
 
     public static AppSettings Load()
     {
@@ -27,11 +26,19 @@ public class AppSettings
         {
             var path = ConfigPath();
             if (!File.Exists(path))
-                return CreateDefault();
+            {
+                var defaults = CreateDefault();
+                defaults.Save();
+                return defaults;
+            }
             var json = File.ReadAllText(path);
             var settings = JsonSerializer.Deserialize<AppSettings>(json);
             if (settings?.Providers == null || settings.Providers.Count == 0)
-                return CreateDefault();
+            {
+                var defaults = CreateDefault();
+                defaults.Save();
+                return defaults;
+            }
             return settings;
         }
         catch (Exception ex)

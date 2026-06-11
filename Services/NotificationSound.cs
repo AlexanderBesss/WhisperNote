@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Media;
+using System.Threading.Tasks;
 
 namespace WhisperNote.Services;
 
@@ -50,15 +51,33 @@ static class NotificationSound
 
     public static void Play()
     {
+        _ = Task.Run(PlayCore);
+    }
+
+    static void PlayCore()
+    {
         try
         {
             using var ms = new MemoryStream(_beepWav);
             using var player = new SoundPlayer(ms);
-            player.Play();
+            player.PlaySync();
         }
         catch (Exception ex)
         {
             Logger.Error($"NotificationSound: {ex.Message}");
+            TryPlayFallback();
+        }
+    }
+
+    static void TryPlayFallback()
+    {
+        try
+        {
+            SystemSounds.Asterisk.Play();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"NotificationSound fallback: {ex.Message}");
         }
     }
 }

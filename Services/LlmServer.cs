@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using WhisperNote.Config;
@@ -28,16 +27,16 @@ public class LlmServer : IDisposable
     public void Configure(ProviderConfig provider)
     {
         CurrentProvider = provider;
-        var dir = AppDomain.CurrentDomain.BaseDirectory;
+        var dir = AppPaths.BaseDirectory;
 
         if (provider.IsLocal)
         {
             _serverExe = !string.IsNullOrEmpty(provider.ServerExe)
                 ? Path.Combine(dir, provider.ServerExe)
                 : Path.Combine(dir, AppConfig.ServerExeRelative);
-            _modelPath = Path.Combine(dir, "models", provider.Model);
+            _modelPath = AppPaths.ResolveModelPath(provider.Model);
             _mmprojPath = !string.IsNullOrEmpty(provider.Mmproj)
-                ? Path.Combine(dir, "models", provider.Mmproj)
+                ? AppPaths.ResolveModelPath(provider.Mmproj)
                 : null;
         }
         else
@@ -53,15 +52,38 @@ public class LlmServer : IDisposable
         if (!IsLocal || CurrentProvider == null) return;
         if (string.IsNullOrEmpty(CurrentProvider.HfRepo)) return;
 
-        var dir = AppDomain.CurrentDomain.BaseDirectory;
-        var modelDest = Path.Combine(dir, "models", CurrentProvider.Model);
-        await ModelDownloader.EnsureModelAsync(CurrentProvider.HfRepo, CurrentProvider.Model, modelDest, progress, ct);
+        _modelPath = await EnsureModelFileAsync(
+            CurrentProvider.HfRepo,
+            CurrentProvider.Model,
+            progress,
+            ct);
 
         if (!string.IsNullOrEmpty(CurrentProvider.Mmproj))
         {
-            var mmprojDest = Path.Combine(dir, "models", CurrentProvider.Mmproj);
-            await ModelDownloader.EnsureModelAsync(CurrentProvider.HfRepo, CurrentProvider.Mmproj, mmprojDest, progress, ct);
+            _mmprojPath = await EnsureModelFileAsync(
+                CurrentProvider.HfRepo,
+                CurrentProvider.Mmproj,
+                progress,
+                ct);
         }
+    }
+
+    static async Task<string> EnsureModelFileAsync(
+        string repo,
+        string fileName,
+        Action<string, long, long> progress,
+        CancellationToken ct)
+    {
+        var resolvedPath = AppPaths.ResolveModelPath(fileName);
+        if (File.Exists(resolvedPath))
+        {
+            Logger.Info($"Model exists: {resolvedPath}");
+            return resolvedPath;
+        }
+
+        var writablePath = AppPaths.WritableModelPath(fileName);
+        await ModelDownloader.EnsureModelAsync(repo, fileName, writablePath, progress, ct);
+        return writablePath;
     }
 
     public bool IsLocal => CurrentProvider?.IsLocal == true;
@@ -72,6 +94,10 @@ public class LlmServer : IDisposable
         if (!IsLocal) return;
         if (_serverExe == null || !File.Exists(_serverExe))
             throw new FileNotFoundException("llama-server.exe not found");
+        if (string.IsNullOrEmpty(_modelPath) || !File.Exists(_modelPath))
+            throw new FileNotFoundException("Model file not found", _modelPath);
+        if (!string.IsNullOrEmpty(_mmprojPath) && !File.Exists(_mmprojPath))
+            throw new FileNotFoundException("Multimodal projector file not found", _mmprojPath);
 
         Stop();
 
@@ -102,7 +128,10 @@ public class LlmServer : IDisposable
                 ReadStreamAsync(process.StandardError, "[Server-err]")
             );
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.Error($"Server output logging failed: {ex.Message}");
+        }
     }
 
     static async Task ReadStreamAsync(StreamReader reader, string prefix)
@@ -116,7 +145,10 @@ public class LlmServer : IDisposable
                     Logger.Info($"{prefix} {line}");
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.Error($"Server stream read failed: {ex.Message}");
+        }
     }
 
     static bool IsPortInUse(int port)
@@ -153,20 +185,20 @@ public class LlmServer : IDisposable
 
     public void Stop()
     {
-        if (_process == null)
+        var process = _process;
+        if (process == null)
             return;
 
-        if (_process.HasExited)
-        {
-            _process = null;
-            return;
-        }
+        _process = null;
 
         try
         {
-            Logger.Info($"Stopping server (PID: {_process.Id})");
-            KillProcessTree(_process.Id);
-            _process.WaitForExit(WaitForExitTimeoutMs);
+            if (!process.HasExited)
+            {
+                Logger.Info($"Stopping server (PID: {process.Id})");
+                KillProcessTree(process.Id);
+                process.WaitForExit(WaitForExitTimeoutMs);
+            }
         }
         catch (Exception ex)
         {
@@ -174,7 +206,7 @@ public class LlmServer : IDisposable
         }
         finally
         {
-            _process = null;
+            process.Dispose();
         }
     }
 
@@ -190,7 +222,10 @@ public class LlmServer : IDisposable
             };
             Process.Start(psi)?.WaitForExit(WaitForExitTimeoutMs);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.Error($"Kill process tree: {ex.Message}");
+        }
     }
 
     string ServerArgs()
