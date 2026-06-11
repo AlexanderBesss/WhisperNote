@@ -11,7 +11,8 @@
         AllowsTransparency="True"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
 
-    <Border Background="#1A1A1A" CornerRadius="12" Padding="20" ClipToBounds="True">
+    <Border Background="#1A1A1A" CornerRadius="12" Padding="20" ClipToBounds="True"
+            Opacity="{Binding WindowOpacity}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>

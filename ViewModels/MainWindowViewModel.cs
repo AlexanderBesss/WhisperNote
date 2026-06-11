@@ -18,6 +18,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
     bool _hotkeyPressed;
     CancellationTokenSource? _transcriptionCts;
 
+    public double WindowOpacity => RecordingManager.IsRecording ? 1.0 : 0.85;
+
     string _lastTranscription = "";
     public string LastTranscription
     {
@@ -144,6 +146,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _state = state;
         ServerManager = new ServerStateManager(state);
         RecordingManager = new RecordingStateManager();
+        RecordingManager.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(RecordingStateManager.IsRecording))
+                OnPropertyChanged(nameof(WindowOpacity));
+        };
 
         _selectedProviderIndex = state.ActiveProviderIndex;
         _autoOffloadVram = state.AutoOffloadVram;

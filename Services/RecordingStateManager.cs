@@ -24,7 +24,11 @@ public class RecordingStateManager : ViewModel
     public RecordingState State
     {
         get => _state;
-        private set => SetProperty(ref _state, value);
+        private set
+        {
+            SetProperty(ref _state, value);
+            OnPropertyChanged(nameof(IsRecording));
+        }
     }
 
     public bool IsRecording => State == RecordingState.Recording;
