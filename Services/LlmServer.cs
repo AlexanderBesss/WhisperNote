@@ -182,7 +182,7 @@ public class LlmServer : IDisposable
     {
         try
         {
-            using var psi = new ProcessStartInfo("taskkill", $"/F /T /PID {pid}")
+            var psi = new ProcessStartInfo("taskkill", $"/F /T /PID {pid}")
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
