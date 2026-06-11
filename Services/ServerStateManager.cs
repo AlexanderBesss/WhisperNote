@@ -218,11 +218,8 @@ public class ServerStateManager : ViewModel, IDisposable
 
     public void OffloadServer()
     {
-        if (_server.IsRunning)
-        {
-            _server.Stop();
-            Status = ServerStatus.Offline;
-        }
+        _server.Stop();
+        Status = ServerStatus.Offline;
     }
 
     public void Dispose()

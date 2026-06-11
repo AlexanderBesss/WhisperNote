@@ -121,6 +121,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     static string VkCodeToString(int vk) => vk switch
     {
+        0xA3 => "Right Ctrl",
+        0xA5 => "Right Alt",
         0x14 => "Caps Lock",
         0xA0 => "Left Shift",
         0xA1 => "Right Shift",
