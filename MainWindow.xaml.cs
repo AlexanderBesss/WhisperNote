@@ -15,6 +15,8 @@ public partial class MainWindow : Window
 
         InitializeComponent();
 
+        Activated += (_, _) => _viewModel.SetFocused(true);
+        Deactivated += (_, _) => _viewModel.SetFocused(false);
         Closed += (_, _) => _viewModel.Dispose();
     }
 

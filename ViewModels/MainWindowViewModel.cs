@@ -19,13 +19,20 @@ public class MainWindowViewModel : ViewModel, IDisposable
     CancellationTokenSource? _transcriptionCts;
 
     bool _isHighlighted;
+    bool _isFocused;
     Timer? _highlightTimer;
 
-    public double WindowOpacity => _isHighlighted || RecordingManager.IsRecording || RecordingManager.IsProcessing ? 1.0 : 0.85;
+    public double WindowOpacity => _isHighlighted || _isFocused || RecordingManager.IsRecording || RecordingManager.IsProcessing ? 1.0 : 0.85;
 
     void SetHighlighted(bool value)
     {
         _isHighlighted = value;
+        OnPropertyChanged(nameof(WindowOpacity));
+    }
+
+    public void SetFocused(bool value)
+    {
+        _isFocused = value;
         OnPropertyChanged(nameof(WindowOpacity));
     }
 
