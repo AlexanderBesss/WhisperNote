@@ -16,8 +16,6 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         Closed += (_, _) => _viewModel.Dispose();
-        Deactivated += (_, _) => Opacity = 0.3;
-        Activated += (_, _) => Opacity = 1.0;
     }
 
     void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => DragMove();
