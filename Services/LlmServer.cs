@@ -199,7 +199,7 @@ public class LlmServer : IDisposable
         return
             $"-m \"{_modelPath}\" " +
             mmprojArg +
-            $"--port {AppConfig.ServerPort} --host 0.0.0.0 " +
+            $"--port {AppConfig.ServerPort} --host 127.0.0.1 " +
             $"--gpu-layers {AppConfig.GpuLayers} --ctx-size {AppConfig.ContextSize} " +
             $"--cache-type-k q4_0 --cache-type-v q4_0 " +
             $"--flash-attn on " +
