@@ -11,7 +11,7 @@ namespace WhisperNote.Services;
 
 public class LlmServer : IDisposable
 {
-    const int WaitForExitTimeoutMs = 3000;
+    const int WaitForExitTimeoutMs = 10000;
     const int PortWaitTimeoutMs = 30000;
     const int PortWaitIntervalMs = 500;
 
