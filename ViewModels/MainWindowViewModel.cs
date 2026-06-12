@@ -24,7 +24,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     bool _isFocused;
     readonly DispatcherTimer _highlightTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
-    public double WindowOpacity => _isHighlighted || _isFocused || RecordingManager.IsRecording || RecordingManager.IsProcessing ? 1.0 : 0.85;
+    public double WindowOpacity => _isHighlighted || _isFocused || RecordingManager.IsRecording || RecordingManager.IsProcessing ? 1.0 : 0.55;
 
     void SetHighlighted(bool value)
     {
