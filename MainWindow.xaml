@@ -32,39 +32,11 @@
                            Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"
                            VerticalAlignment="Center" Margin="6,0,0,0"
                            MaxWidth="80" TextTrimming="CharacterEllipsis"/>
-                <ComboBox ItemsSource="{Binding Providers}"
-                          SelectedIndex="{Binding SelectedProviderIndex, Mode=TwoWay}"
-                          DisplayMemberPath="Name"
-                          Width="140" Margin="8,0,0,0"
-                          Background="#2A2A2A" Foreground="#CCC" BorderBrush="#444"
-                          FontSize="10" VerticalAlignment="Center" Padding="4,2">
-                    <ComboBox.ItemContainerStyle>
-                        <Style TargetType="ComboBoxItem">
-                            <Setter Property="Background" Value="#2A2A2A"/>
-                            <Setter Property="Foreground" Value="#CCC"/>
-                            <Setter Property="FontSize" Value="10"/>
-                            <Setter Property="Padding" Value="0"/>
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                            <Setter Property="VerticalContentAlignment" Value="Center"/>
-                            <Setter Property="MinHeight" Value="20"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ComboBoxItem">
-                                        <Border Background="{TemplateBinding Background}"
-                                                BorderBrush="#333" BorderThickness="0,0,0,1"
-                                                Padding="4,2"
-                                                SnapsToDevicePixels="True">
-                                            <ContentPresenter Content="{TemplateBinding Content}"
-                                                              ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </ComboBox.ItemContainerStyle>
-                </ComboBox>
+                <TextBlock Text="{Binding ActiveModuleName}"
+                           FontSize="10" Foreground="#999"
+                           VerticalAlignment="Center" Margin="8,0,0,0"
+                           MaxWidth="150" TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding ActiveModuleName}"/>
             </StackPanel>
 
             <!-- Main recording area -->

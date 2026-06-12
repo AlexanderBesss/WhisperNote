@@ -92,6 +92,7 @@ public class LlmServer : IDisposable
     public async Task StartAsync()
     {
         if (!IsLocal) return;
+        if (IsRunning) return;
         if (_serverExe == null || !File.Exists(_serverExe))
             throw new FileNotFoundException("llama-server.exe not found");
         if (string.IsNullOrEmpty(_modelPath) || !File.Exists(_modelPath))

@@ -39,6 +39,8 @@ public class AppSettings
                 defaults.Save();
                 return defaults;
             }
+            if (settings.NormalizeProviders())
+                settings.Save();
             return settings;
         }
         catch (Exception ex)
@@ -77,25 +79,44 @@ public class AppSettings
             ThinkingEnabled = true,
             Providers = new List<ProviderConfig>
             {
-                new()
-                {
-                    Name = "Gemma 4 E2B UD (local)",
-                    Type = "local",
-                    ApiEndpoint = "http://localhost:8082",
-                    Model = "gemma-4-E2B-it-UD-Q4_K_XL.gguf",
-                    Mmproj = "mmproj-BF16.gguf",
-                    ServerExe = @"llama\llama-server.exe",
-                    HfRepo = "unsloth/gemma-4-E2B-it-GGUF"
-                },
-                new()
-                {
-                    Name = "Whisper-1 (OpenAI)",
-                    Type = "openai",
-                    ApiEndpoint = "https://api.openai.com/v1",
-                    ApiKey = "",
-                    Model = "whisper-1"
-                }
+                CreateDefaultLocalProvider()
             }
         };
     }
+
+    bool NormalizeProviders()
+    {
+        var localProviders = Providers.FindAll(provider => provider.IsLocal);
+        var changed = localProviders.Count != Providers.Count;
+
+        if (localProviders.Count == 0)
+        {
+            localProviders.Add(CreateDefaultLocalProvider());
+            changed = true;
+        }
+
+        if (ActiveProviderIndex < 0 ||
+            ActiveProviderIndex >= localProviders.Count ||
+            !Providers[ActiveProviderIndex].IsLocal)
+        {
+            ActiveProviderIndex = 0;
+            changed = true;
+        }
+
+        if (changed)
+            Providers = localProviders;
+
+        return changed;
+    }
+
+    static ProviderConfig CreateDefaultLocalProvider() => new()
+    {
+        Name = "Gemma 4 E2B UD (local)",
+        Type = "local",
+        ApiEndpoint = "http://localhost:8082",
+        Model = "gemma-4-E2B-it-UD-Q4_K_XL.gguf",
+        Mmproj = "mmproj-BF16.gguf",
+        ServerExe = @"llama\llama-server.exe",
+        HfRepo = "unsloth/gemma-4-E2B-it-GGUF"
+    };
 }

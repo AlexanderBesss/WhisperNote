@@ -1,5 +1,4 @@
 using System;
-using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -90,16 +89,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    int _selectedProviderIndex;
-    public int SelectedProviderIndex
-    {
-        get => _selectedProviderIndex;
-        set
-        {
-            if (SetProperty(ref _selectedProviderIndex, value))
-                OnProviderChanged();
-        }
-    }
+    public string ActiveModuleName => _state.ActiveProvider?.Model ?? "No local module";
 
     bool _hotkeyEnabled;
     public bool HotkeyEnabled
@@ -154,8 +144,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _ => $"VK_{vk:X}"
     };
 
-    public ObservableCollection<ProviderConfig> Providers => _state.ProvidersObservable;
-
     public ICommand ServerCommand { get; }
     public ICommand RecordCommand { get; }
     public ICommand CloseCommand { get; }
@@ -183,7 +171,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
             }
         };
 
-        _selectedProviderIndex = state.ActiveProviderIndex;
         _autoOffloadVram = state.AutoOffloadVram;
         _thinkingEnabled = state.ThinkingEnabled;
         _startupEnabled = StartupRegistry.IsEnabled();
@@ -209,23 +196,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         AudioRecorder.LogAvailableDevices();
         Logger.Info("App started");
         await ServerManager.InitializeAsync();
-    }
-
-    void OnProviderChanged()
-    {
-        if (SelectedProviderIndex < 0 || SelectedProviderIndex >= Providers.Count) return;
-        if (RecordingManager.IsRecording || RecordingManager.IsProcessing)
-        {
-            RecordingManager.InfoText = "Finish the current recording before switching providers";
-            _selectedProviderIndex = _state.ActiveProviderIndex;
-            OnPropertyChanged(nameof(SelectedProviderIndex));
-            return;
-        }
-
-        var provider = Providers[SelectedProviderIndex];
-        _state.SetActiveProvider(SelectedProviderIndex);
-        FireAndForget(ServerManager.SwitchProvider(provider), "SwitchProvider");
-        RecordingManager.InfoText = $"Provider: {provider.Name} ({provider.Model})";
     }
 
     void InstallHook()

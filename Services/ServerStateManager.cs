@@ -78,6 +78,12 @@ public class ServerStateManager : ViewModel, IDisposable
     {
         lock (_startLock)
         {
+            if (_server.IsRunning)
+            {
+                Status = ServerStatus.Online;
+                return Task.CompletedTask;
+            }
+
             if (_isStarting)
                 return _startTask ?? Task.CompletedTask;
 
@@ -92,6 +98,12 @@ public class ServerStateManager : ViewModel, IDisposable
         await _operationLock.WaitAsync();
         try
         {
+            if (await _transcription.IsServerReady())
+            {
+                Status = ServerStatus.Online;
+                return;
+            }
+
             _server.SetThinkingEnabled(_state.ThinkingEnabled);
             await _server.EnsureModelsAsync(progress);
             await _server.StartAsync();
