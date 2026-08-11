@@ -85,6 +85,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             if (SetProperty(ref _startupEnabled, value))
             {
+                _state.StartupEnabled = value;
                 StartupRegistry.SetEnabled(value);
                 RecordingManager.InfoText = value ? "Added to startup" : "Removed from startup";
             }
@@ -99,19 +100,22 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             if (SetProperty(ref _useRemote, value))
             {
-                var targetIndex = value ? 1 : 0;
-                _state.SetActiveProvider(targetIndex);
+                _state.SetActiveProviderForMode(value);
                 var provider = _state.ActiveProvider;
                 if (provider != null)
                     FireAndForget(ServerManager.SwitchProvider(provider), "SwitchProvider");
                 RecordingManager.InfoText = value ? "Using remote LLM" : "Using local LLM";
                 CheckModelExists();
                 OnPropertyChanged(nameof(HardwareModeForeground));
+                OnPropertyChanged(nameof(ActiveModuleName));
+                OnPropertyChanged(nameof(ProviderMode));
             }
         }
     }
 
     public string ActiveModuleName => _state.ActiveProvider?.Model ?? "No local module";
+    public string CloudLlmUrl => _state.CloudLlmUrl;
+    public string ProviderMode => _useRemote ? "Cloud LLM" : "Local LLM";
 
     public Brush HardwareModeForeground => _useRemote ? new SolidColorBrush(Color.FromRgb(128, 128, 128)) : new SolidColorBrush(Color.FromRgb(124, 252, 0));
 
@@ -175,7 +179,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         set => SetProperty(ref _hotkeyName, value);
     }
 
-    static string VkCodeToString(int vk) => vk switch
+    internal static string VkCodeToString(int vk) => vk switch
     {
         0xA3 => "Right Ctrl",
         0xA5 => "Right Alt",
@@ -219,8 +223,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         _autoOffloadVram = state.AutoOffloadVram;
         _thinkingEnabled = state.ThinkingEnabled;
-        _startupEnabled = StartupRegistry.IsEnabled();
-        _useRemote = state.ActiveProviderIndex == 1;
+        _startupEnabled = state.StartupEnabled;
+        if (!_startupEnabled && StartupRegistry.IsEnabled())
+        {
+            _startupEnabled = true;
+            state.StartupEnabled = true;
+        }
+        _useRemote = state.ActiveProvider?.IsLocal == false;
         _hotkeyEnabled = state.HotkeyEnabled;
         _hotkeyVirtualKeyCode = state.HotkeyVirtualKeyCode;
         _hotkeyName = VkCodeToString(state.HotkeyVirtualKeyCode);
@@ -244,6 +253,35 @@ public class MainWindowViewModel : ViewModel, IDisposable
             InstallHook();
 
         FireAndForget(InitializeAsync(), "Initialize");
+    }
+
+    public void ApplySettings(
+        bool autoOffloadVram,
+        bool thinkingEnabled,
+        bool startupEnabled,
+        bool useRemote,
+        bool hotkeyEnabled,
+        int hotkeyVirtualKeyCode,
+        string cloudLlmUrl)
+    {
+        var endpointChanged = _state.SetCloudLlmUrl(cloudLlmUrl);
+        var providerModeChanged = _useRemote != useRemote;
+
+        AutoOffloadVram = autoOffloadVram;
+        ThinkingEnabled = thinkingEnabled;
+        StartupEnabled = startupEnabled;
+        HotkeyEnabled = hotkeyEnabled;
+        HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
+        UseRemote = useRemote;
+
+        if (endpointChanged && _useRemote && !providerModeChanged && _state.ActiveProvider != null)
+        {
+            FireAndForget(ServerManager.SwitchProvider(_state.ActiveProvider), "UpdateCloudProvider");
+        }
+
+        OnPropertyChanged(nameof(CloudLlmUrl));
+        OnPropertyChanged(nameof(ActiveModuleName));
+        OnPropertyChanged(nameof(ProviderMode));
     }
 
     async Task InitializeAsync()

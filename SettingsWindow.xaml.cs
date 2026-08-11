@@ -6,29 +6,35 @@ using WhisperNote.ViewModels;
 
 namespace WhisperNote;
 
-public partial class MainWindow : Window
+public partial class SettingsWindow : Window
 {
-    readonly MainWindowViewModel _viewModel;
+    readonly SettingsViewModel _viewModel;
 
-    public MainWindow()
+    public SettingsWindow(MainWindowViewModel mainViewModel)
     {
-        _viewModel = new MainWindowViewModel(App.AppState!);
-        DataContext = _viewModel;
-
         InitializeComponent();
-
-        Activated += (_, _) => _viewModel.SetFocused(true);
-        Deactivated += (_, _) => _viewModel.SetFocused(false);
-        Closed += (_, _) => _viewModel.Dispose();
+        _viewModel = new SettingsViewModel(mainViewModel);
+        DataContext = _viewModel;
+        PreviewKeyDown += SettingsWindow_PreviewKeyDown;
     }
 
-    void SettingsButton_Click(object sender, RoutedEventArgs e)
+    void SaveButton_Click(object sender, RoutedEventArgs e)
     {
-        var settingsWindow = new SettingsWindow(_viewModel)
-        {
-            Owner = this
-        };
-        settingsWindow.ShowDialog();
+        if (!_viewModel.TryApply())
+            return;
+
+        DialogResult = true;
+    }
+
+    void CancelButton_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+
+    void SettingsWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape)
+            return;
+
+        e.Handled = true;
+        DialogResult = false;
     }
 
     void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

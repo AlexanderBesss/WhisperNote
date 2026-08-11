@@ -10,11 +10,13 @@ namespace WhisperNote.Config;
 public class AppSettings
 {
     const int DefaultHotkeyVkCode = 0xA3;
+    public const string DefaultCloudLlmUrl = "http://192.168.0.96:8082";
 
     public int ActiveProviderIndex { get; set; }
     public List<ProviderConfig> Providers { get; set; } = new();
     public bool AutoOffloadVram { get; set; }
     public bool ThinkingEnabled { get; set; }
+    public bool StartupEnabled { get; set; }
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
     public bool HotkeyEnabled { get; set; } = true;
 
@@ -77,6 +79,7 @@ public class AppSettings
             ActiveProviderIndex = 0,
             AutoOffloadVram = true,
             ThinkingEnabled = true,
+            StartupEnabled = false,
             Providers = new List<ProviderConfig>
             {
                 CreateDefaultLocalProvider(),
@@ -103,6 +106,23 @@ public class AppSettings
             changed = true;
         }
 
+        foreach (var provider in Providers)
+        {
+            if (provider.IsLocal)
+                continue;
+
+            if (!TryNormalizeHttpEndpoint(provider.ApiEndpoint, out var normalizedEndpoint))
+            {
+                provider.ApiEndpoint = DefaultCloudLlmUrl;
+                changed = true;
+            }
+            else if (provider.ApiEndpoint != normalizedEndpoint)
+            {
+                provider.ApiEndpoint = normalizedEndpoint;
+                changed = true;
+            }
+        }
+
         if (ActiveProviderIndex < 0 || ActiveProviderIndex >= Providers.Count)
         {
             ActiveProviderIndex = 0;
@@ -110,6 +130,22 @@ public class AppSettings
         }
 
         return changed;
+    }
+
+    public static bool TryNormalizeHttpEndpoint(string? endpoint, out string normalizedEndpoint)
+    {
+        normalizedEndpoint = endpoint?.Trim().TrimEnd('/') ?? "";
+        if (!Uri.TryCreate(normalizedEndpoint, UriKind.Absolute, out var uri))
+            return false;
+
+        if ((uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
+            string.IsNullOrWhiteSpace(uri.Host))
+        {
+            normalizedEndpoint = "";
+            return false;
+        }
+
+        return true;
     }
 
     static ProviderConfig CreateDefaultLocalProvider() => new()
@@ -127,7 +163,7 @@ public class AppSettings
     {
         Name = "Remote (192.168.0.96)",
         Type = "remote",
-        ApiEndpoint = "http://192.168.0.96:8082",
+        ApiEndpoint = DefaultCloudLlmUrl,
         Model = "gemma-4-E2B-it-Q4_0.gguf"
     };
 }

@@ -21,42 +21,64 @@
             </Grid.RowDefinitions>
 
             <!-- Header -->
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
-                <TextBlock Text="WhisperNote" FontSize="16" FontWeight="SemiBold"
-                           Foreground="#E0E0E0" VerticalAlignment="Center"/>
-                <TextBlock Width="8" Height="8" Margin="8,0,0,0"
-                           VerticalAlignment="Center"
-                           Text="●" FontSize="8"
-                           Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"/>
-                <TextBlock Text="{Binding ServerManager.Status.Message}" FontSize="11"
-                           Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"
-                           VerticalAlignment="Center" Margin="6,0,0,0"
-                           MaxWidth="80" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Text="{Binding HardwareMode}"
-                             FontSize="9" FontWeight="SemiBold"
-                             Foreground="{Binding HardwareModeForeground}"
-                             VerticalAlignment="Center" Margin="8,0,0,0"
-                             Visibility="{Binding HardwareMode, Converter={StaticResource StringToVisibilityConverter}}"/>
-                <Button Command="{Binding DownloadModelCommand}"
-                        Style="{StaticResource IconButton}"
-                        Width="24" Height="24" Padding="0"
-                        VerticalAlignment="Center" Margin="6,0,0,0"
-                        Visibility="{Binding ModelMissing, Converter={StaticResource BooleanToVisibilityConverter}}"
-                        ToolTip="Download model">
-                    <TextBlock Text="⬇" FontSize="12" Foreground="#FFA500"/>
-                </Button>
-            </StackPanel>
+            <Grid Grid.Row="0" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" ClipToBounds="True">
+                    <TextBlock Text="WhisperNote" FontSize="16" FontWeight="SemiBold"
+                               Foreground="#E0E0E0" VerticalAlignment="Center"/>
+                    <TextBlock Width="8" Height="8" Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               Text="&#x2022;" FontSize="10"
+                               Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"/>
+                    <TextBlock Text="{Binding ServerManager.Status.Message}" FontSize="11"
+                               Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"
+                               VerticalAlignment="Center" Margin="6,0,0,0"
+                               MaxWidth="92" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding ProviderMode}"
+                               FontSize="9" FontWeight="SemiBold"
+                               Foreground="#888"
+                               VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <TextBlock Text="{Binding HardwareMode}"
+                               FontSize="9" FontWeight="SemiBold"
+                               Foreground="{Binding HardwareModeForeground}"
+                               VerticalAlignment="Center" Margin="6,0,0,0"
+                               Visibility="{Binding HardwareMode, Converter={StaticResource StringToVisibilityConverter}}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Command="{Binding DownloadModelCommand}"
+                            Style="{StaticResource IconButton}"
+                            Width="28" Height="28" Padding="0"
+                            VerticalAlignment="Center" Margin="6,0,6,0"
+                            Visibility="{Binding ModelMissing, Converter={StaticResource BooleanToVisibilityConverter}}"
+                            ToolTip="Download model">
+                        <TextBlock Text="&#x2B07;" FontSize="13" Foreground="#FFA500"/>
+                    </Button>
+                    <Button Style="{StaticResource IconButton}"
+                            Width="28" Height="28" Padding="0"
+                            VerticalAlignment="Center"
+                            Click="SettingsButton_Click"
+                            AutomationProperties.Name="Settings"
+                            ToolTip="Settings">
+                        <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#B8B8B8"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
 
             <!-- Main recording area -->
-             <Grid Grid.Row="1">
-                 <Border Background="#222" CornerRadius="16" Padding="20,12,20,12" ClipToBounds="True">
+            <Grid Grid.Row="1">
+                <Border Background="#222" CornerRadius="16" Padding="20,12,20,12" ClipToBounds="True">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
-                       <!-- Record button (click fallback) -->
+                        <!-- Record button (click fallback) -->
                         <Button Grid.Column="0"
                                 Style="{StaticResource CircleButton}"
                                 Width="64" Height="64"
@@ -65,10 +87,10 @@
                                 Command="{Binding RecordCommand}"
                                 Cursor="Hand">
                             <Ellipse Width="18" Height="18" Fill="#E0E0E0"
-                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                     HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Button>
 
-                   <!-- Status text -->
+                        <!-- Status text -->
                         <Grid Grid.Column="1" Margin="16,0,0,0">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*"/>
@@ -98,43 +120,20 @@
                 </Border>
             </Grid>
 
-            <!-- Bottom controls -->
+            <!-- Primary controls: server power remains on the main window. -->
             <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,16,0,0"
                         HorizontalAlignment="Center">
                 <Button Style="{StaticResource IconButton}"
-                        Command="{Binding ServerCommand}" Margin="0,0,8,0"
-                        ToolTip="Toggle Server">
-                    <TextBlock Text="⏻" FontSize="16"
+                        Command="{Binding ServerCommand}"
+                        Margin="0,0,8,0"
+                        ToolTip="Power LLM">
+                    <TextBlock Text="&#x23FB;" FontSize="17"
                                Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"/>
                 </Button>
-                <ToggleButton IsChecked="{Binding AutoOffloadVram, Mode=TwoWay}"
-                              Style="{StaticResource IconToggleButton}"
-                              Margin="0,0,8,0"
-                              ToolTip="Stop server after each request (free VRAM)">
-                    <TextBlock Text="🧠" FontSize="14"/>
-                </ToggleButton>
-                <ToggleButton IsChecked="{Binding ThinkingEnabled, Mode=TwoWay}"
-                              Style="{StaticResource IconToggleButton}"
-                              Margin="0,0,8,0"
-                              ToolTip="Thinking mode (restart server to apply)">
-                    <TextBlock Text="💡" FontSize="14"/>
-                </ToggleButton>
-                <ToggleButton IsChecked="{Binding StartupEnabled, Mode=TwoWay}"
-                              Style="{StaticResource IconToggleButton}"
-                              Margin="0,0,8,0"
-                              ToolTip="Run on Windows startup">
-                    <TextBlock Text="⚡" FontSize="16"/>
-                </ToggleButton>
-                <ToggleButton IsChecked="{Binding UseRemote, Mode=TwoWay}"
-                              Style="{StaticResource IconToggleButton}"
-                              Margin="0,0,8,0"
-                              ToolTip="Use remote LLM (192.168.0.96)">
-                    <TextBlock Text="🌐" FontSize="14"/>
-                </ToggleButton>
                 <Button Style="{StaticResource IconButton}"
                         Command="{Binding CloseCommand}"
                         ToolTip="Close">
-                    <TextBlock Text="✕" FontSize="14"/>
+                    <TextBlock Text="&#x2715;" FontSize="14"/>
                 </Button>
             </StackPanel>
         </Grid>
