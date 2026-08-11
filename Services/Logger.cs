@@ -54,6 +54,7 @@ public static class Logger
     }
 
     public static void Info(string message) => Log("INFO", message);
+    public static void Warn(string message) => Log("WARN", message);
     public static void Error(string message) => Log("ERROR", message);
 
     static void Log(string level, string message)

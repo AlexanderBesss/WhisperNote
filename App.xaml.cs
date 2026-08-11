@@ -8,6 +8,7 @@ namespace WhisperNote;
 public partial class App : Application
 {
     public static AppState? AppState { get; private set; }
+    public static HardwareBackend DetectedBackend { get; private set; } = HardwareBackend.Unknown;
     static LlmServer? _server;
 
     public static void RegisterServerForCleanup(LlmServer server) => _server = server;
@@ -16,6 +17,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
         Logger.Initialize();
+        DetectedBackend = HardwareDetector.Detect();
+        Logger.Info($"Hardware backend: {DetectedBackend}");
         var settings = AppSettings.Load();
         AppState = new AppState(settings);
 

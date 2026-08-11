@@ -71,6 +71,7 @@ public class ServerStateManager : ViewModel, IDisposable
 
     public bool IsServerRunning => _server.IsRunning;
     public bool IsLocal => _state.ActiveProvider?.IsLocal ?? false;
+    public HardwareBackend Backend => _server.Backend;
 
     public bool IsStarting => _isStarting;
 
@@ -278,6 +279,15 @@ public class ServerStateManager : ViewModel, IDisposable
 
     public Task<bool> IsServerReady() =>
         WithOperationLockAsync(() => _transcription.IsServerReady());
+
+    public async Task StopServerAsync()
+    {
+        await WithOperationLockAsync(async () =>
+        {
+            await Task.Run(() => _server.Stop());
+            Status = ServerStatus.Offline;
+        });
+    }
 
     public Task OffloadServerAsync() =>
         WithOperationLockAsync(async () =>

@@ -79,32 +79,35 @@ public class AppSettings
             ThinkingEnabled = true,
             Providers = new List<ProviderConfig>
             {
-                CreateDefaultLocalProvider()
+                CreateDefaultLocalProvider(),
+                CreateDefaultRemoteProvider()
             }
         };
     }
 
     bool NormalizeProviders()
     {
-        var localProviders = Providers.FindAll(provider => provider.IsLocal);
-        var changed = localProviders.Count != Providers.Count;
+        var changed = false;
+        var hasLocal = Providers.Exists(p => p.IsLocal);
+        var hasRemote = Providers.Exists(p => !p.IsLocal);
 
-        if (localProviders.Count == 0)
+        if (!hasLocal)
         {
-            localProviders.Add(CreateDefaultLocalProvider());
+            Providers.Insert(0, CreateDefaultLocalProvider());
             changed = true;
         }
 
-        if (ActiveProviderIndex < 0 ||
-            ActiveProviderIndex >= localProviders.Count ||
-            !Providers[ActiveProviderIndex].IsLocal)
+        if (!hasRemote)
+        {
+            Providers.Add(CreateDefaultRemoteProvider());
+            changed = true;
+        }
+
+        if (ActiveProviderIndex < 0 || ActiveProviderIndex >= Providers.Count)
         {
             ActiveProviderIndex = 0;
             changed = true;
         }
-
-        if (changed)
-            Providers = localProviders;
 
         return changed;
     }
@@ -114,9 +117,17 @@ public class AppSettings
         Name = "Gemma 4 E2B UD (local)",
         Type = "local",
         ApiEndpoint = "http://localhost:8082",
-        Model = "gemma-4-E2B-it-UD-Q4_K_XL.gguf",
+        Model = "gemma-4-E2B-it-Q4_0.gguf",
         Mmproj = "mmproj-BF16.gguf",
         ServerExe = @"llama\llama-server.exe",
         HfRepo = "unsloth/gemma-4-E2B-it-GGUF"
+    };
+
+    static ProviderConfig CreateDefaultRemoteProvider() => new()
+    {
+        Name = "Remote (192.168.0.96)",
+        Type = "remote",
+        ApiEndpoint = "http://192.168.0.96:8082",
+        Model = "gemma-4-E2B-it-Q4_0.gguf"
     };
 }

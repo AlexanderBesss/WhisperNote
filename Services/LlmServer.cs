@@ -19,8 +19,11 @@ public class LlmServer : IDisposable
     string? _mmprojPath;
     Process? _process;
     bool _thinkingEnabled;
+    HardwareBackend _backend = HardwareBackend.Unknown;
+    CancellationTokenSource? _downloadCts;
 
     public ProviderConfig? CurrentProvider { get; private set; }
+    public HardwareBackend Backend => _backend;
 
     public void SetThinkingEnabled(bool enabled) => _thinkingEnabled = enabled;
 
@@ -31,9 +34,19 @@ public class LlmServer : IDisposable
 
         if (provider.IsLocal)
         {
-            _serverExe = !string.IsNullOrEmpty(provider.ServerExe)
-                ? Path.Combine(dir, provider.ServerExe)
-                : Path.Combine(dir, AppConfig.ServerExeRelative);
+            if (!string.IsNullOrEmpty(provider.ServerExe))
+            {
+                _serverExe = Path.Combine(dir, provider.ServerExe);
+                _backend = App.DetectedBackend;
+            }
+            else
+            {
+                _backend = App.DetectedBackend;
+                // Use CUDA build (OpenVINO build has model loading issues)
+                _serverExe = Path.Combine(dir, AppConfig.CudaServerExeRelative);
+                if (_backend == HardwareBackend.IntelNpu)
+                    Logger.Warn("NPU detected but using CUDA build (OpenVINO build unstable)");
+            }
             _modelPath = AppPaths.ResolveModelPath(provider.Model);
             _mmprojPath = !string.IsNullOrEmpty(provider.Mmproj)
                 ? AppPaths.ResolveModelPath(provider.Mmproj)
@@ -52,11 +65,16 @@ public class LlmServer : IDisposable
         if (!IsLocal || CurrentProvider == null) return;
         if (string.IsNullOrEmpty(CurrentProvider.HfRepo)) return;
 
+        _downloadCts?.Cancel();
+        _downloadCts?.Dispose();
+        _downloadCts = new CancellationTokenSource();
+        var linkedCt = CancellationTokenSource.CreateLinkedTokenSource(ct, _downloadCts.Token).Token;
+
         _modelPath = await EnsureModelFileAsync(
             CurrentProvider.HfRepo,
             CurrentProvider.Model,
             progress,
-            ct);
+            linkedCt);
 
         if (!string.IsNullOrEmpty(CurrentProvider.Mmproj))
         {
@@ -105,7 +123,7 @@ public class LlmServer : IDisposable
         if (!await WaitForPortFreeAsync())
             throw new InvalidOperationException($"Port {AppConfig.ServerPort} is still in use after {PortWaitTimeoutMs}ms");
 
-        _process = Process.Start(new ProcessStartInfo
+        var startInfo = new ProcessStartInfo
         {
             FileName = _serverExe,
             Arguments = ServerArgs(),
@@ -114,7 +132,23 @@ public class LlmServer : IDisposable
             WindowStyle = ProcessWindowStyle.Hidden,
             RedirectStandardError = true,
             RedirectStandardOutput = true
-        }) ?? throw new InvalidOperationException("Failed to start server process");
+        };
+
+        if (_backend == HardwareBackend.IntelNpu)
+        {
+            startInfo.EnvironmentVariables["GGML_OPENVINO_DEVICE"] = "NPU";
+            startInfo.EnvironmentVariables["GGML_OPENVINO_PREFILL_CHUNK_SIZE"] = "512";
+            startInfo.EnvironmentVariables["GGML_OPENVINO_STATEFUL_EXECUTION"] = "0";
+
+            var ovRuntime = @"C:\Program Files (x86)\Intel\openvino_2026\runtime\bin\intel64\Release";
+            if (Directory.Exists(ovRuntime))
+            {
+                var existing = startInfo.EnvironmentVariables["PATH"] ?? Environment.GetEnvironmentVariable("PATH");
+                startInfo.EnvironmentVariables["PATH"] = ovRuntime + ";" + existing;
+            }
+        }
+
+        _process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start server process");
 
         _ = Task.Run(() => LogProcessOutput(_process));
         Logger.Info($"Server started (PID: {_process.Id})");
@@ -186,6 +220,10 @@ public class LlmServer : IDisposable
 
     public void Stop()
     {
+        _downloadCts?.Cancel();
+        _downloadCts?.Dispose();
+        _downloadCts = null;
+
         var process = _process;
         if (process == null)
             return;
@@ -231,6 +269,9 @@ public class LlmServer : IDisposable
 
     string ServerArgs()
     {
+        if (_backend == HardwareBackend.IntelNpu)
+            return NpuServerArgs();
+
         var mmprojArg = _mmprojPath != null ? $"--mmproj \"{_mmprojPath}\" --mmproj-offload " : "";
         return
             $"-m \"{_modelPath}\" " +
@@ -240,9 +281,26 @@ public class LlmServer : IDisposable
             $"--cache-type-k q4_0 --cache-type-v q4_0 " +
             $"--flash-attn on " +
             $"--batch-size {AppConfig.BatchSize} --ubatch-size {AppConfig.UBatchSize} " +
-            $"--no-mmap " +
             "--jinja " +
             $"--temp {AppConfig.Temperature} --top-p {AppConfig.TopP} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} " +
+            $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
+            $"--metrics --slots --perf";
+    }
+
+    string NpuServerArgs()
+    {
+        var mmprojArg = _mmprojPath != null ? $"--mmproj \"{_mmprojPath}\" " : "";
+        return
+            $"-m \"{_modelPath}\" " +
+            mmprojArg +
+            $"--port {AppConfig.ServerPort} --host 127.0.0.1 " +
+            $"--gpu-layers {AppConfig.NpuGpuLayers} " +
+            $"--parallel 1 " +
+            $"--ctx-size {AppConfig.NpuContextSize} " +
+            $"--cache-type-k q4_0 --cache-type-v q4_0 " +
+            $"--batch-size {AppConfig.NpuBatchSize} --ubatch-size {AppConfig.NpuUBatchSize} " +
+            "--jinja " +
+            $"--temp {AppConfig.Temperature} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} " +
             $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
             $"--metrics --slots --perf";
     }

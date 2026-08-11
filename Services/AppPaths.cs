@@ -27,5 +27,5 @@ public static class AppPaths
     }
 
     public static string WritableModelPath(string fileName) =>
-        Path.Combine(ModelsDirectory, fileName);
+        Path.Combine(BaseDirectory, "models", fileName);
 }

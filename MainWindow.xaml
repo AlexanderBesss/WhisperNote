@@ -32,11 +32,19 @@
                            Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"
                            VerticalAlignment="Center" Margin="6,0,0,0"
                            MaxWidth="80" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Text="{Binding ActiveModuleName}"
-                           FontSize="10" Foreground="#999"
-                           VerticalAlignment="Center" Margin="8,0,0,0"
-                           MaxWidth="150" TextTrimming="CharacterEllipsis"
-                           ToolTip="{Binding ActiveModuleName}"/>
+                <TextBlock Text="{Binding HardwareMode}"
+                             FontSize="9" FontWeight="SemiBold"
+                             Foreground="{Binding HardwareModeForeground}"
+                             VerticalAlignment="Center" Margin="8,0,0,0"
+                             Visibility="{Binding HardwareMode, Converter={StaticResource StringToVisibilityConverter}}"/>
+                <Button Command="{Binding DownloadModelCommand}"
+                        Style="{StaticResource IconButton}"
+                        Width="24" Height="24" Padding="0"
+                        VerticalAlignment="Center" Margin="6,0,0,0"
+                        Visibility="{Binding ModelMissing, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        ToolTip="Download model">
+                    <TextBlock Text="⬇" FontSize="12" Foreground="#FFA500"/>
+                </Button>
             </StackPanel>
 
             <!-- Main recording area -->
@@ -116,6 +124,12 @@
                               Margin="0,0,8,0"
                               ToolTip="Run on Windows startup">
                     <TextBlock Text="⚡" FontSize="16"/>
+                </ToggleButton>
+                <ToggleButton IsChecked="{Binding UseRemote, Mode=TwoWay}"
+                              Style="{StaticResource IconToggleButton}"
+                              Margin="0,0,8,0"
+                              ToolTip="Use remote LLM (192.168.0.96)">
+                    <TextBlock Text="🌐" FontSize="14"/>
                 </ToggleButton>
                 <Button Style="{StaticResource IconButton}"
                         Command="{Binding CloseCommand}"

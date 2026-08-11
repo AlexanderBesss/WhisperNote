@@ -27,6 +27,8 @@ public static class ModelDownloader
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
+        var tmpPath = Path.Combine(Path.GetDirectoryName(destPath)!, $"download_{Guid.NewGuid():N}.tmp");
+
         progress($"Downloading {filename}...", 0, 0);
 
         using var client = new HttpClient
@@ -44,7 +46,6 @@ public static class ModelDownloader
         var total = response.Content.Headers.ContentLength ?? 0;
         progress($"Downloading {filename}...", 0, total);
 
-        var tmpPath = destPath + ".tmp";
         try
         {
             using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -65,7 +66,21 @@ public static class ModelDownloader
                 }
             }
 
-            File.Move(tmpPath, destPath);
+            for (int i = 0; i < 5; i++)
+            {
+                try
+                {
+                    File.Copy(tmpPath, destPath, true);
+                    Logger.Info($"Downloaded {Path.GetFileName(destPath)} ({FormatBytes(downloaded)})");
+                    progress($"Downloaded {filename}", downloaded, total);
+                    try { File.Delete(tmpPath); } catch { }
+                    return;
+                }
+                catch (IOException) when (i < 4)
+                {
+                    await Task.Delay(500);
+                }
+            }
             Logger.Info($"Downloaded {Path.GetFileName(destPath)} ({FormatBytes(downloaded)})");
             progress($"Downloaded {filename}", downloaded, total);
         }

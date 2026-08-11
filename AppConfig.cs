@@ -8,8 +8,12 @@ public static class AppConfig
     public const int Channels = 1;
     public const string GpuLayers = "all";
     public const int ContextSize = 16384;
+    public const int NpuContextSize = 8192;
     public const int BatchSize = 512;
     public const int UBatchSize = 256;
+    public const int NpuGpuLayers = 16;
+    public const int NpuBatchSize = 1024;
+    public const int NpuUBatchSize = 512;
     public const double Temperature = 0.3;
     public const double TopP = 0.9;
     public const double MinP = 0.1;
@@ -17,5 +21,6 @@ public static class AppConfig
     public const int MaxTokens = 4096;
     public const int MicDeviceNumber = -1;
 
-    public const string ServerExeRelative = @"llama\llama-server.exe";
+    public const string CudaServerExeRelative = @"llama\llama-server.exe";
+    public const string NpuServerExeRelative = @"NPU\llama-ov\llama-server.exe";
 }

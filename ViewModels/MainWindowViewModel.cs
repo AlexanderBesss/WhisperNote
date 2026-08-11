@@ -1,8 +1,10 @@
-using System;
+    using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using WhisperNote.Config;
 using WhisperNote.Services;
@@ -89,7 +91,50 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    bool _useRemote;
+    public bool UseRemote
+    {
+        get => _useRemote;
+        set
+        {
+            if (SetProperty(ref _useRemote, value))
+            {
+                var targetIndex = value ? 1 : 0;
+                _state.SetActiveProvider(targetIndex);
+                var provider = _state.ActiveProvider;
+                if (provider != null)
+                    FireAndForget(ServerManager.SwitchProvider(provider), "SwitchProvider");
+                RecordingManager.InfoText = value ? "Using remote LLM" : "Using local LLM";
+                CheckModelExists();
+                OnPropertyChanged(nameof(HardwareModeForeground));
+            }
+        }
+    }
+
     public string ActiveModuleName => _state.ActiveProvider?.Model ?? "No local module";
+
+    public Brush HardwareModeForeground => _useRemote ? new SolidColorBrush(Color.FromRgb(128, 128, 128)) : new SolidColorBrush(Color.FromRgb(124, 252, 0));
+
+    string _hardwareMode = "";
+    public string HardwareMode
+    {
+        get => _hardwareMode;
+        set => SetProperty(ref _hardwareMode, value);
+    }
+
+    bool _modelMissing;
+    public bool ModelMissing
+    {
+        get => _modelMissing;
+        set => SetProperty(ref _modelMissing, value);
+    }
+
+    bool _downloadingModel;
+    public bool DownloadingModel
+    {
+        get => _downloadingModel;
+        set => SetProperty(ref _downloadingModel, value);
+    }
 
     bool _hotkeyEnabled;
     public bool HotkeyEnabled
@@ -147,6 +192,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     public ICommand ServerCommand { get; }
     public ICommand RecordCommand { get; }
     public ICommand CloseCommand { get; }
+    public ICommand DownloadModelCommand { get; }
 
     public MainWindowViewModel(AppState state)
     {
@@ -174,15 +220,25 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _autoOffloadVram = state.AutoOffloadVram;
         _thinkingEnabled = state.ThinkingEnabled;
         _startupEnabled = StartupRegistry.IsEnabled();
+        _useRemote = state.ActiveProviderIndex == 1;
         _hotkeyEnabled = state.HotkeyEnabled;
         _hotkeyVirtualKeyCode = state.HotkeyVirtualKeyCode;
         _hotkeyName = VkCodeToString(state.HotkeyVirtualKeyCode);
+        _hardwareMode = App.DetectedBackend switch
+        {
+            HardwareBackend.IntelNpu => "NPU",
+            HardwareBackend.NvidiaCuda => "GPU",
+            _ => ""
+        };
+
+        CheckModelExists();
 
         ServerCommand = new RelayCommand(_ => FireAndForget(
             ServerManager.ToggleServerAsync(s => RecordingManager.InfoText = s ?? ""),
             "ToggleServer"));
         RecordCommand = new RelayCommand(_ => _ = HandleRecord());
         CloseCommand = new RelayCommand(_ => Application.Current.Shutdown());
+        DownloadModelCommand = new RelayCommand(_ => FireAndForget(DownloadModelAsync(), "DownloadModel"));
 
         if (_hotkeyEnabled)
             InstallHook();
@@ -196,6 +252,65 @@ public class MainWindowViewModel : ViewModel, IDisposable
         AudioRecorder.LogAvailableDevices();
         Logger.Info("App started");
         await ServerManager.InitializeAsync();
+    }
+
+    void CheckModelExists()
+    {
+        var provider = _state.ActiveProvider;
+        if (provider == null || !provider.IsLocal || string.IsNullOrEmpty(provider.Model))
+        {
+            ModelMissing = false;
+            return;
+        }
+
+        var bundledPath = Path.Combine(AppPaths.BundledModelsDirectory, provider.Model);
+        var writablePath = AppPaths.WritableModelPath(provider.Model);
+        ModelMissing = !File.Exists(bundledPath) && !File.Exists(writablePath);
+    }
+
+    async Task DownloadModelAsync()
+    {
+        var provider = _state.ActiveProvider;
+        if (provider == null || string.IsNullOrEmpty(provider.HfRepo) || string.IsNullOrEmpty(provider.Model))
+        {
+            RecordingManager.InfoText = "No download source configured";
+            return;
+        }
+
+        DownloadingModel = true;
+        RecordingManager.InfoText = "Downloading model...";
+
+        try
+        {
+            RecordingManager.InfoText = "Stopping server to download model...";
+            await ServerManager.StopServerAsync();
+            await Task.Delay(1500);
+
+            var destPath = AppPaths.WritableModelPath(provider.Model);
+            await ModelDownloader.EnsureModelAsync(
+                provider.HfRepo,
+                provider.Model,
+                destPath,
+                (msg, downloaded, total) =>
+                {
+                    RecordingManager.InfoText = FormatProgressMessage(msg, downloaded, total);
+                });
+
+            if (File.Exists(destPath))
+            {
+                ModelMissing = false;
+                RecordingManager.InfoText = "Model downloaded successfully";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[DownloadModel] failed: {ex.Message}");
+            RecordingManager.InfoText = $"Download failed: {ex.Message}";
+        }
+        finally
+        {
+            DownloadingModel = false;
+        }
     }
 
     void InstallHook()
@@ -263,6 +378,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (provider != null && provider.IsLocal && !ServerManager.IsServerRunning)
         {
             FireAndForget(ServerManager.StartAsync((msg, _, _) => RecordingManager.InfoText = msg), "StartServer");
+        }
+        else if (provider != null && !provider.IsLocal)
+        {
+            RecordingManager.InfoText = "Connecting to remote LLM...";
         }
 
         if (isHotkey && !_hotkeyPressed)
