@@ -9,6 +9,7 @@
                 <ResourceDictionary Source="Styles/ToolTipStyle.xaml"/>
                 <ResourceDictionary Source="Styles/ButtonStyles.xaml"/>
                 <ResourceDictionary Source="Styles/ComboBoxStyle.xaml"/>
+                <ResourceDictionary Source="Styles/ScrollbarStyle.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <vm:StatusKindToBrushConverter x:Key="StatusKindToBrushConverter"/>
             <vm:ButtonBackgroundKindToBrushConverter x:Key="ButtonBackgroundKindToBrushConverter"/>
