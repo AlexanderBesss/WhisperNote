@@ -11,6 +11,13 @@ Voice-to-text desktop app for Windows. Hold a key, speak, release — transcribe
 - **VRAM offload** — stop server after each request to free GPU memory
 - **Run on startup** — optional Windows auto-start
 
+## Build
+
+For a manual build, right-click `build.cmd` and choose **Run**. It launches
+`build.ps1` with the required PowerShell execution-policy bypass and keeps the
+window open so errors remain visible. Pass `-Kill` when the running app must be
+force-closed before publishing.
+
 ## Requirements
 
 - Windows 10+
