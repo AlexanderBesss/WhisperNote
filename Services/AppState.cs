@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using WhisperNote.Config;
 
 namespace WhisperNote.Services;
@@ -13,6 +14,8 @@ public class AppState
     public ProviderConfig? CloudProvider => _settings.Providers.Find(provider => !provider.IsLocal);
 
     public string CloudLlmUrl => CloudProvider?.ApiEndpoint ?? "";
+    public IReadOnlyList<string> CloudLlmUrls =>
+        CloudProvider?.GetApiEndpoints() ?? System.Array.Empty<string>();
 
     public int ActiveProviderIndex
     {
@@ -75,19 +78,32 @@ public class AppState
         return true;
     }
 
-    public bool SetCloudLlmUrl(string? endpoint)
+    public bool SetCloudLlmUrls(IEnumerable<string> endpoints)
     {
         var provider = CloudProvider;
         if (provider == null)
             return false;
 
-        if (!AppSettings.TryNormalizeHttpEndpoint(endpoint, out var normalizedEndpoint))
+        var normalizedEndpoints = new List<string>();
+        foreach (var endpoint in endpoints)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint))
+                continue;
+            if (!AppSettings.TryNormalizeHttpEndpoint(endpoint, out var normalizedEndpoint))
+                return false;
+            normalizedEndpoints.Add(normalizedEndpoint);
+        }
+
+        if (normalizedEndpoints.Count == 0)
             return false;
 
-        if (provider.ApiEndpoint == normalizedEndpoint)
+        provider.ApiEndpoints ??= new List<string>();
+        if (provider.ApiEndpoints.SequenceEqual(normalizedEndpoints) &&
+            provider.ApiEndpoint == normalizedEndpoints[0])
             return false;
 
-        provider.ApiEndpoint = normalizedEndpoint;
+        provider.ApiEndpoints = normalizedEndpoints;
+        provider.ApiEndpoint = normalizedEndpoints[0];
         _settings.Save();
         return true;
     }

@@ -100,13 +100,47 @@
                                               VerticalAlignment="Center"/>
                             </Grid>
 
-                            <TextBlock Text="Cloud LLM URL" FontSize="12" Foreground="#CFCFCF"/>
-                            <TextBox Text="{Binding CloudLlmUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,6,0,0"
-                                     ToolTip="The HTTP or HTTPS base URL used by the cloud LLM"/>
-                            <TextBlock Text="{Binding CloudLlmUrlValidationMessage}"
-                                       Visibility="{Binding CloudLlmUrlValidationMessage, Converter={StaticResource StringToVisibilityConverter}}"
-                                       FontSize="10" Foreground="#FCA5A5" Margin="0,5,0,0"/>
+                            <TextBlock Text="Cloud LLM endpoints" FontSize="12" Foreground="#CFCFCF"/>
+                            <ItemsControl ItemsSource="{Binding CloudEndpoints}" Margin="0,3,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,5,0,0">
+                                            <TextBlock Text="{Binding DisplayName}" FontSize="10" Foreground="#888"/>
+                                            <Grid Margin="0,3,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox Text="{Binding Url, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                         ToolTip="HTTP or HTTPS base URL used by the cloud LLM"/>
+                                                <Button Grid.Column="1" Margin="6,0,0,0" Width="30"
+                                                        Command="{Binding DataContext.RemoveCloudEndpointCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        ToolTip="Remove backup endpoint">
+                                                    <TextBlock Text="&#x2715;" FontSize="11"/>
+                                                    <Button.Style>
+                                                        <Style TargetType="Button" BasedOn="{StaticResource ModernButton}">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsPrimary}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
+                                            </Grid>
+                                            <TextBlock Text="{Binding ValidationMessage}"
+                                                       Visibility="{Binding ValidationMessage, Converter={StaticResource StringToVisibilityConverter}}"
+                                                       FontSize="10" Foreground="#FCA5A5" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Content="+ Add backup endpoint"
+                                    Command="{Binding AddCloudEndpointCommand}"
+                                    Style="{StaticResource ModernButton}"
+                                    HorizontalAlignment="Left" Padding="10,5" Margin="0,8,0,0"
+                                    FontSize="10" Foreground="#CFCFCF"/>
                         </StackPanel>
                     </Border>
 
@@ -202,7 +236,7 @@
                 <Button Style="{StaticResource SettingsActionButton}"
                         Background="#2D8A4E" BorderBrush="#3FAE65" BorderThickness="1"
                         Foreground="White" Margin="8,0,0,0"
-                        IsEnabled="{Binding IsCloudLlmUrlValid}"
+                        IsEnabled="{Binding AreCloudEndpointsValid}"
                         Click="SaveButton_Click">Save settings</Button>
             </StackPanel>
         </Grid>

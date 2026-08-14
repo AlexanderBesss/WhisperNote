@@ -1,4 +1,5 @@
     using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -115,6 +116,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     public string ActiveModuleName => _state.ActiveProvider?.Model ?? "No local module";
     public string CloudLlmUrl => _state.CloudLlmUrl;
+    public IReadOnlyList<string> CloudLlmUrls => _state.CloudLlmUrls;
     public string ProviderMode => _useRemote ? "Cloud LLM" : "Local LLM";
 
     public Brush HardwareModeForeground => _useRemote ? new SolidColorBrush(Color.FromRgb(128, 128, 128)) : new SolidColorBrush(Color.FromRgb(124, 252, 0));
@@ -262,9 +264,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
         bool useRemote,
         bool hotkeyEnabled,
         int hotkeyVirtualKeyCode,
-        string cloudLlmUrl)
+        IReadOnlyList<string> cloudLlmUrls)
     {
-        var endpointChanged = _state.SetCloudLlmUrl(cloudLlmUrl);
+        var endpointChanged = _state.SetCloudLlmUrls(cloudLlmUrls);
         var providerModeChanged = _useRemote != useRemote;
 
         AutoOffloadVram = autoOffloadVram;
@@ -280,6 +282,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
 
         OnPropertyChanged(nameof(CloudLlmUrl));
+        OnPropertyChanged(nameof(CloudLlmUrls));
         OnPropertyChanged(nameof(ActiveModuleName));
         OnPropertyChanged(nameof(ProviderMode));
     }

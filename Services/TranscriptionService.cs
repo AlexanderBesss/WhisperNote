@@ -1,6 +1,7 @@
 using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using WhisperNote.Config;
@@ -29,11 +30,15 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
     readonly ProviderConfig _provider;
 
     public TranscriptionService(ProviderConfig provider)
+        : this(provider, new HttpClientHandler())
+    {
+    }
+
+    public TranscriptionService(ProviderConfig provider, HttpMessageHandler handler)
     {
         _provider = provider;
-        _http = new HttpClient
+        _http = new HttpClient(handler)
         {
-            BaseAddress = new Uri(provider.ApiEndpoint.TrimEnd('/')),
             Timeout = TimeSpan.FromMinutes(HttpTimeoutMinutes)
         };
 
@@ -54,7 +59,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(HealthCheckTimeoutSeconds));
-            using var response = await _http.GetAsync("/health", cts.Token);
+            using var response = await _http.GetAsync(BuildEndpointUri(_provider.ApiEndpoint, "/health"), cts.Token);
             return response.IsSuccessStatusCode;
         }
         catch
@@ -98,8 +103,12 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
     async Task<string?> SendWithRetry(byte[] wavBytes, string modelName, CancellationToken ct)
     {
+        if (!_provider.IsLocal)
+            return await SendWithEndpointFailover(wavBytes, modelName, ct);
+
         using var content = BuildFormContent(wavBytes, modelName);
-        using (var response = await _http.PostAsync("/v1/audio/transcriptions", content, ct))
+        using (var response = await _http.PostAsync(
+            BuildEndpointUri(_provider.ApiEndpoint, "/v1/audio/transcriptions"), content, ct))
         {
             var raw = await response.Content.ReadAsStringAsync(ct);
             Logger.Info($"Response [{response.StatusCode}]: {Truncate(raw)}");
@@ -109,7 +118,8 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
                 Logger.Info("Retrying after 3s...");
                 await Task.Delay(RetryDelayMs, ct);
                 using var retryContent = BuildFormContent(wavBytes, modelName);
-                using var retryResponse = await _http.PostAsync("/v1/audio/transcriptions", retryContent, ct);
+                using var retryResponse = await _http.PostAsync(
+                    BuildEndpointUri(_provider.ApiEndpoint, "/v1/audio/transcriptions"), retryContent, ct);
                 raw = await retryResponse.Content.ReadAsStringAsync(ct);
                 Logger.Info($"Retry response [{retryResponse.StatusCode}]: {Truncate(raw)}");
                 EnsureSuccess(retryResponse, raw);
@@ -120,6 +130,44 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
             return raw;
         }
     }
+
+    async Task<string?> SendWithEndpointFailover(
+        byte[] wavBytes,
+        string modelName,
+        CancellationToken ct)
+    {
+        Exception? lastFailure = null;
+        foreach (var endpoint in _provider.GetApiEndpoints())
+        {
+            try
+            {
+                using var content = BuildFormContent(wavBytes, modelName);
+                using var response = await _http.PostAsync(
+                    BuildEndpointUri(endpoint, "/v1/audio/transcriptions"), content, ct);
+                var raw = await response.Content.ReadAsStringAsync(ct);
+                Logger.Info($"Response from {endpoint} [{response.StatusCode}]: {Truncate(raw)}");
+                EnsureSuccess(response, raw);
+                return raw;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lastFailure = ex;
+                Logger.Error($"Cloud endpoint {endpoint} failed: {ex.Message}");
+            }
+        }
+
+        if (lastFailure != null)
+            ExceptionDispatchInfo.Capture(lastFailure).Throw();
+
+        throw new InvalidOperationException("No cloud transcription endpoint is configured.");
+    }
+
+    static Uri BuildEndpointUri(string endpoint, string path) =>
+        new(endpoint.TrimEnd('/') + path, UriKind.Absolute);
 
     static void EnsureSuccess(HttpResponseMessage response, string body)
     {

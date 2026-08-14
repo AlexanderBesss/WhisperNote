@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WhisperNote.Services;
@@ -111,14 +112,29 @@ public class AppSettings
             if (provider.IsLocal)
                 continue;
 
-            if (!TryNormalizeHttpEndpoint(provider.ApiEndpoint, out var normalizedEndpoint))
+            provider.ApiEndpoints ??= new List<string>();
+            var configuredEndpoints = provider.ApiEndpoints.Count > 0
+                ? provider.ApiEndpoints
+                : new List<string> { provider.ApiEndpoint };
+            var normalizedEndpoints = new List<string>();
+            foreach (var endpoint in configuredEndpoints)
             {
-                provider.ApiEndpoint = DefaultCloudLlmUrl;
+                if (TryNormalizeHttpEndpoint(endpoint, out var normalizedEndpoint))
+                    normalizedEndpoints.Add(normalizedEndpoint);
+            }
+
+            if (normalizedEndpoints.Count == 0)
+                normalizedEndpoints.Add(DefaultCloudLlmUrl);
+
+            if (!provider.ApiEndpoints.SequenceEqual(normalizedEndpoints))
+            {
+                provider.ApiEndpoints = normalizedEndpoints;
                 changed = true;
             }
-            else if (provider.ApiEndpoint != normalizedEndpoint)
+
+            if (provider.ApiEndpoint != normalizedEndpoints[0])
             {
-                provider.ApiEndpoint = normalizedEndpoint;
+                provider.ApiEndpoint = normalizedEndpoints[0];
                 changed = true;
             }
         }
@@ -164,6 +180,7 @@ public class AppSettings
         Name = "Remote (192.168.0.96)",
         Type = "remote",
         ApiEndpoint = DefaultCloudLlmUrl,
+        ApiEndpoints = new List<string> { DefaultCloudLlmUrl },
         Model = "gemma-4-E2B-it-Q4_0.gguf"
     };
 }
