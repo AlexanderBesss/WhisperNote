@@ -21,6 +21,11 @@
     <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
+    <None Include="tests\**\*.cs" />
+  </ItemGroup>
+
  <ItemGroup Condition="Exists('..\models\unsloth\gemma-4-E2B-it-GGUF\gemma-4-E2B-it-UD-Q4_K_XL.gguf')">
     <None Include="..\models\unsloth\gemma-4-E2B-it-GGUF\gemma-4-E2B-it-UD-Q4_K_XL.gguf" Link="models\gemma-4-E2B-it-UD-Q4_K_XL.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <None Include="..\models\lmstudio-community\gemma-4-E2B-it-GGUF\mmproj-gemma-4-E2B-it-BF16.gguf" Link="models\mmproj-BF16.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
