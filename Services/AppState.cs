@@ -48,6 +48,11 @@ public class AppState
         get => _settings.RemoteServerEnabled;
         set { _settings.RemoteServerEnabled = value; _settings.Save(); }
     }
+    public bool RemoteSettingsControlEnabled
+    {
+        get => _settings.RemoteSettingsControlEnabled;
+        set { _settings.RemoteSettingsControlEnabled = value; _settings.Save(); }
+    }
     public string RemoteListenEndpoint
     {
         get => _settings.RemoteListenEndpoint;
@@ -149,6 +154,7 @@ public class AppState
         RemoteProviderMode mode,
         string serverEndpoint,
         bool serverEnabled,
+        bool settingsControlEnabled,
         string listenEndpoint)
     {
         if (!AppSettings.TryNormalizeHttpEndpoint(serverEndpoint, out var normalizedServer) ||
@@ -158,6 +164,7 @@ public class AppState
         var changed = _settings.RemoteProviderMode != mode ||
             _settings.RemoteServerEndpoint != normalizedServer ||
             _settings.RemoteServerEnabled != serverEnabled ||
+            _settings.RemoteSettingsControlEnabled != settingsControlEnabled ||
             _settings.RemoteListenEndpoint != normalizedListen;
         if (!changed)
             return false;
@@ -165,6 +172,7 @@ public class AppState
         _settings.RemoteProviderMode = mode;
         _settings.RemoteServerEndpoint = normalizedServer;
         _settings.RemoteServerEnabled = serverEnabled;
+        _settings.RemoteSettingsControlEnabled = settingsControlEnabled;
         _settings.RemoteListenEndpoint = normalizedListen;
         _settings.Save();
         return true;

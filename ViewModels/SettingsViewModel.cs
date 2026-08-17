@@ -19,6 +19,7 @@ public sealed class SettingsViewModel : ViewModel
     RemoteProviderMode _remoteProviderMode;
     string _remoteServerEndpoint;
     bool _remoteServerEnabled;
+    bool _remoteSettingsControlEnabled;
     string _remoteListenEndpoint;
 
     public bool AutoOffloadVram
@@ -72,6 +73,11 @@ public sealed class SettingsViewModel : ViewModel
         get => _remoteServerEnabled;
         set { if (SetProperty(ref _remoteServerEnabled, value)) OnPropertyChanged(nameof(AreSettingsValid)); }
     }
+    public bool RemoteSettingsControlEnabled
+    {
+        get => _remoteSettingsControlEnabled;
+        set => SetProperty(ref _remoteSettingsControlEnabled, value);
+    }
     public string RemoteListenEndpoint
     {
         get => _remoteListenEndpoint;
@@ -113,6 +119,7 @@ public sealed class SettingsViewModel : ViewModel
         _remoteProviderMode = mainViewModel.RemoteProviderMode;
         _remoteServerEndpoint = mainViewModel.RemoteServerEndpoint;
         _remoteServerEnabled = mainViewModel.RemoteServerEnabled;
+        _remoteSettingsControlEnabled = mainViewModel.RemoteSettingsControlEnabled;
         _remoteListenEndpoint = mainViewModel.RemoteListenEndpoint;
         var endpoints = mainViewModel.CloudLlmUrls.Count > 0
             ? mainViewModel.CloudLlmUrls
@@ -154,6 +161,7 @@ public sealed class SettingsViewModel : ViewModel
             RemoteProviderMode,
             RemoteServerEndpoint,
             RemoteServerEnabled,
+            RemoteSettingsControlEnabled,
             RemoteListenEndpoint);
         return true;
     }

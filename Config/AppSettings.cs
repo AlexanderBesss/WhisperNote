@@ -25,6 +25,7 @@ public class AppSettings
     public RemoteProviderMode RemoteProviderMode { get; set; } = RemoteProviderMode.DirectApi;
     public string RemoteServerEndpoint { get; set; } = DefaultRemoteExecutionUrl;
     public bool RemoteServerEnabled { get; set; }
+    public bool RemoteSettingsControlEnabled { get; set; }
     public string RemoteListenEndpoint { get; set; } = DefaultRemoteListenEndpoint;
 
     static string ConfigPath() => AppPaths.SettingsPath;

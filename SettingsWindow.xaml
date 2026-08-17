@@ -186,9 +186,22 @@
                             <TextBlock Text="Listen endpoint" FontSize="12" Foreground="#CFCFCF"/>
                             <TextBox Text="{Binding RemoteListenEndpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      IsEnabled="{Binding RemoteServerEnabled}" Margin="0,6,0,0"
-                                     ToolTip="HTTP prefix to listen on; use 0.0.0.0 to bind all interfaces. LAN bindings may require a Windows URL ACL and firewall rule"/>
-                            <TextBlock Text="The default binds all interfaces. Keep the server instance in Local LLM mode and use only a trusted network; authentication and TLS are unchanged."
-                                       FontSize="10" Foreground="#777" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                                     ToolTip="HTTP endpoint to listen on; use 0.0.0.0 to bind all interfaces. Windows Firewall may still need a rule"/>
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Allow remote settings control" FontSize="13" Foreground="#E0E0E0"/>
+                                    <TextBlock Text="Let a remote client update VRAM offload and thinking mode."
+                                               FontSize="10" Foreground="#777" Margin="0,3,0,0"/>
+                                </StackPanel>
+                                <ToggleButton Grid.Column="1" Style="{StaticResource SettingsToggleButton}"
+                                              IsChecked="{Binding RemoteSettingsControlEnabled, Mode=TwoWay}"/>
+                            </Grid>
+                            <TextBlock Text="Only enable this on a trusted network. The remote protocol has no authentication or TLS."
+                                        FontSize="10" Foreground="#777" TextWrapping="Wrap" Margin="0,7,0,0"/>
                         </StackPanel>
                     </Border>
 

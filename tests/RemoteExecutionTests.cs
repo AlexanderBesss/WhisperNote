@@ -123,6 +123,33 @@ public class RemoteExecutionTests
         Assert.Equal(new byte[] { 4, 3, 2, 1 }, received);
     }
 
+    [Fact]
+    public async Task RemoteSettingsAreAppliedWhenServerAllowsControl()
+    {
+        var port = FreeTcpPort();
+        var listenEndpoint = $"http://0.0.0.0:{port}/whisper";
+        var clientEndpoint = $"http://127.0.0.1:{port}/whisper";
+        RemoteExecutionSettings? received = null;
+        using var server = new RemoteExecutionServer(
+            (_, _, _) => Task.FromResult<string?>("unused"),
+            () => true,
+            () => true,
+            (settings, _) =>
+            {
+                received = settings;
+                return Task.FromResult(settings);
+            });
+        await server.StartAsync(listenEndpoint);
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = clientEndpoint
+        });
+
+        Assert.True(await service.UpdateRemoteSettingsAsync(autoOffloadVram: false, thinkingEnabled: true));
+        Assert.Equal(new RemoteExecutionSettings(false, true), received);
+    }
+
     static AppSettings Settings() => new()
     {
         ActiveProviderIndex = 1,

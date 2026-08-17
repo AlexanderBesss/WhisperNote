@@ -157,9 +157,12 @@ public class ServerStateManager : ViewModel, IDisposable
         if (!provider.IsLocal)
         {
             if (provider.IsRemoteExecution)
-                Status = await _transcription.IsServerReady()
-                    ? ServerStatus.RemoteConnected
-                    : ServerStatus.RemoteUnavailable;
+            {
+                var ready = await _transcription.IsServerReady();
+                Status = ready ? ServerStatus.RemoteConnected : ServerStatus.RemoteUnavailable;
+                if (ready)
+                    await SyncRemoteSettingsAsync();
+            }
             else
                 Status = ServerStatus.Cloud(provider.Name);
             return;
@@ -272,9 +275,12 @@ public class ServerStateManager : ViewModel, IDisposable
 
             UpdateProviderStatus(provider);
             if (provider.IsRemoteExecution)
-                Status = await _transcription.IsServerReady()
-                    ? ServerStatus.RemoteConnected
-                    : ServerStatus.RemoteUnavailable;
+            {
+                var ready = await _transcription.IsServerReady();
+                Status = ready ? ServerStatus.RemoteConnected : ServerStatus.RemoteUnavailable;
+                if (ready)
+                    await SyncRemoteSettingsAsync();
+            }
         }
         finally
         {
@@ -304,6 +310,32 @@ public class ServerStateManager : ViewModel, IDisposable
                 Status = ServerStatus.RemoteUnavailable;
             throw;
         }
+    }
+
+    public Task<bool> SyncRemoteSettingsAsync(CancellationToken ct = default) =>
+        WithOperationLockAsync(() => _transcription.UpdateRemoteSettingsAsync(
+            _state.AutoOffloadVram,
+            _state.ThinkingEnabled,
+            ct), ct);
+
+    public async Task<RemoteExecutionSettings> ApplyRemoteSettingsAsync(
+        RemoteExecutionSettings settings,
+        CancellationToken ct)
+    {
+        await WithOperationLockAsync(async () =>
+        {
+            var thinkingChanged = _state.ThinkingEnabled != settings.ThinkingEnabled;
+            _state.AutoOffloadVram = settings.AutoOffloadVram;
+            _state.ThinkingEnabled = settings.ThinkingEnabled;
+            _server.SetThinkingEnabled(settings.ThinkingEnabled);
+
+            if (thinkingChanged && _server.IsRunning)
+            {
+                await Task.Run(() => _server.Stop());
+                Status = ServerStatus.Offline;
+            }
+        }, ct);
+        return settings;
     }
 
     public Task<bool> IsServerReady() =>

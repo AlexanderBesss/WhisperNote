@@ -17,6 +17,8 @@ public sealed class RemoteExecutionServer : IDisposable
     const int MaxHeaderBytes = 64 * 1024;
     readonly Func<byte[], int, CancellationToken, Task<string?>> _transcribe;
     readonly Func<bool> _isAvailable;
+    readonly Func<bool> _allowRemoteSettings;
+    readonly Func<RemoteExecutionSettings, CancellationToken, Task<RemoteExecutionSettings>>? _updateRemoteSettings;
     readonly SemaphoreSlim _requestLock = new(1, 1);
     TcpListener? _listener;
     CancellationTokenSource? _cts;
@@ -30,10 +32,14 @@ public sealed class RemoteExecutionServer : IDisposable
 
     public RemoteExecutionServer(
         Func<byte[], int, CancellationToken, Task<string?>> transcribe,
-        Func<bool>? isAvailable = null)
+        Func<bool>? isAvailable = null,
+        Func<bool>? allowRemoteSettings = null,
+        Func<RemoteExecutionSettings, CancellationToken, Task<RemoteExecutionSettings>>? updateRemoteSettings = null)
     {
         _transcribe = transcribe;
         _isAvailable = isAvailable ?? (() => true);
+        _allowRemoteSettings = allowRemoteSettings ?? (() => false);
+        _updateRemoteSettings = updateRemoteSettings;
     }
 
     public async Task StartAsync(string listenEndpoint)
@@ -122,6 +128,7 @@ public sealed class RemoteExecutionServer : IDisposable
 
                 var path = GetPath(request.Target);
                 var healthPath = EndpointPath("/health");
+                var settingsPath = EndpointPath("/api/settings");
                 var transcriptionPath = EndpointPath("/api/transcriptions");
 
                 if (request.Method == "GET" && path == healthPath)
@@ -132,6 +139,12 @@ public sealed class RemoteExecutionServer : IDisposable
                         available ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable,
                         new { status = available ? "ready" : "local-mode-required" },
                         serverCt);
+                    return;
+                }
+
+                if (request.Method == "POST" && path == settingsPath)
+                {
+                    await HandleRemoteSettingsAsync(stream, request.Body, serverCt);
                     return;
                 }
 
@@ -206,6 +219,71 @@ public sealed class RemoteExecutionServer : IDisposable
                 Logger.Error($"Remote execution request: {ex.Message}");
                 await TryWriteErrorAsync(stream, HttpStatusCode.ServiceUnavailable, "Local transcription unavailable", serverCt);
             }
+        }
+    }
+
+    async Task HandleRemoteSettingsAsync(NetworkStream stream, byte[] body, CancellationToken serverCt)
+    {
+        if (!_isAvailable())
+        {
+            await WriteJsonAsync(
+                stream,
+                HttpStatusCode.ServiceUnavailable,
+                new { error = "Server is not in Local LLM mode" },
+                serverCt);
+            return;
+        }
+
+        if (!_allowRemoteSettings())
+        {
+            await WriteJsonAsync(
+                stream,
+                HttpStatusCode.Forbidden,
+                new { error = "Remote settings control is disabled on the server" },
+                serverCt);
+            return;
+        }
+
+        if (_updateRemoteSettings == null)
+        {
+            await WriteJsonAsync(
+                stream,
+                HttpStatusCode.NotImplemented,
+                new { error = "Remote settings control is unavailable" },
+                serverCt);
+            return;
+        }
+
+        if (!await _requestLock.WaitAsync(0, serverCt))
+        {
+            await WriteJsonAsync(stream, HttpStatusCode.Conflict, new { error = "Server is busy" }, serverCt);
+            return;
+        }
+
+        try
+        {
+            var settings = JsonSerializer.Deserialize<RemoteExecutionSettings>(
+                body,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (settings == null)
+            {
+                await WriteJsonAsync(stream, HttpStatusCode.BadRequest, new { error = "Settings are required" }, serverCt);
+                return;
+            }
+
+            SetStatus("Applying remote settings");
+            var applied = await _updateRemoteSettings(settings, serverCt);
+            await WriteJsonAsync(
+                stream,
+                HttpStatusCode.OK,
+                new RemoteSettingsResponse(true, applied.AutoOffloadVram, applied.ThinkingEnabled),
+                serverCt);
+        }
+        finally
+        {
+            _requestLock.Release();
+            if (IsListening)
+                SetStatus($"Serving {_listenEndpoint}");
         }
     }
 
@@ -374,7 +452,9 @@ public sealed class RemoteExecutionServer : IDisposable
         HttpStatusCode.OK => "OK",
         HttpStatusCode.BadRequest => "Bad Request",
         HttpStatusCode.NotFound => "Not Found",
+        HttpStatusCode.Forbidden => "Forbidden",
         HttpStatusCode.Conflict => "Conflict",
+        HttpStatusCode.NotImplemented => "Not Implemented",
         HttpStatusCode.RequestEntityTooLarge => "Payload Too Large",
         HttpStatusCode.ServiceUnavailable => "Service Unavailable",
         _ => status.ToString()
@@ -421,3 +501,5 @@ public sealed class RemoteExecutionServer : IDisposable
 
 public sealed record RemoteTranscriptionRequest(byte[] Pcm, int Channels);
 public sealed record RemoteTranscriptionResponse(string? Text);
+public sealed record RemoteExecutionSettings(bool AutoOffloadVram, bool ThinkingEnabled);
+public sealed record RemoteSettingsResponse(bool Applied, bool AutoOffloadVram, bool ThinkingEnabled);

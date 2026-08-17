@@ -121,6 +121,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     public RemoteProviderMode RemoteProviderMode => _state.RemoteProviderMode;
     public string RemoteServerEndpoint => _state.RemoteServerEndpoint;
     public bool RemoteServerEnabled => _state.RemoteServerEnabled;
+    public bool RemoteSettingsControlEnabled => _state.RemoteSettingsControlEnabled;
     public string RemoteListenEndpoint => _state.RemoteListenEndpoint;
     public string ProviderMode => !_useRemote ? "Local LLM" :
         _state.RemoteProviderMode == RemoteProviderMode.RemoteExecution ? "Remote execution" : "Direct API";
@@ -213,7 +214,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
         ServerManager = new ServerStateManager(state);
         RemoteServer = new RemoteExecutionServer(
             ProcessRemoteRequestAsync,
-            () => _state.ActiveProvider?.IsLocal == true);
+            () => _state.ActiveProvider?.IsLocal == true,
+            () => _state.RemoteSettingsControlEnabled,
+            ApplyRemoteSettingsAsync);
         RemoteServer.StatusChanged += RemoteServer_StatusChanged;
         RecordingManager = new RecordingStateManager();
         _highlightTimer.Tick += (_, _) =>
@@ -279,12 +282,19 @@ public class MainWindowViewModel : ViewModel, IDisposable
         RemoteProviderMode remoteProviderMode,
         string remoteServerEndpoint,
         bool remoteServerEnabled,
+        bool remoteSettingsControlEnabled,
         string remoteListenEndpoint)
     {
         var endpointChanged = _state.SetCloudLlmUrls(cloudLlmUrls);
         var providerModeChanged = _useRemote != useRemote;
         var remoteSettingsChanged = _state.SetRemoteExecutionSettings(
-            remoteProviderMode, remoteServerEndpoint, remoteServerEnabled, remoteListenEndpoint);
+            remoteProviderMode,
+            remoteServerEndpoint,
+            remoteServerEnabled,
+            remoteSettingsControlEnabled,
+            remoteListenEndpoint);
+        var behaviorChanged = _state.AutoOffloadVram != autoOffloadVram ||
+            _state.ThinkingEnabled != thinkingEnabled;
 
         AutoOffloadVram = autoOffloadVram;
         ThinkingEnabled = thinkingEnabled;
@@ -308,7 +318,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
         OnPropertyChanged(nameof(RemoteProviderMode));
         OnPropertyChanged(nameof(RemoteServerEndpoint));
         OnPropertyChanged(nameof(RemoteServerEnabled));
+        OnPropertyChanged(nameof(RemoteSettingsControlEnabled));
         OnPropertyChanged(nameof(RemoteListenEndpoint));
+
+        if (behaviorChanged && _useRemote && !providerModeChanged &&
+            !endpointChanged && !remoteSettingsChanged &&
+            _state.ActiveProvider?.IsRemoteExecution == true)
+            FireAndForget(ServerManager.SyncRemoteSettingsAsync(), "SyncRemoteSettings");
     }
 
     async Task InitializeAsync()
@@ -341,6 +357,31 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (_state.AutoOffloadVram)
             await ServerManager.OffloadServerAsync();
         return text;
+    }
+
+    async Task<RemoteExecutionSettings> ApplyRemoteSettingsAsync(
+        RemoteExecutionSettings settings,
+        CancellationToken ct)
+    {
+        if (_state.ActiveProvider?.IsLocal != true)
+            throw new InvalidOperationException("This server instance must be in Local LLM mode to apply remote settings.");
+
+        var applied = await ServerManager.ApplyRemoteSettingsAsync(settings, ct);
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher != null && !dispatcher.CheckAccess())
+        {
+            await dispatcher.InvokeAsync(() =>
+            {
+                AutoOffloadVram = applied.AutoOffloadVram;
+                ThinkingEnabled = applied.ThinkingEnabled;
+            });
+        }
+        else
+        {
+            AutoOffloadVram = applied.AutoOffloadVram;
+            ThinkingEnabled = applied.ThinkingEnabled;
+        }
+        return applied;
     }
 
     void RemoteServer_StatusChanged(object? sender, EventArgs e)

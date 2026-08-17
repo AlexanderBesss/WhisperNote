@@ -104,6 +104,46 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         return result?.Text;
     }
 
+    public async Task<bool> UpdateRemoteSettingsAsync(
+        bool autoOffloadVram,
+        bool thinkingEnabled,
+        CancellationToken ct = default)
+    {
+        if (!_provider.IsRemoteExecution)
+            return false;
+
+        try
+        {
+            using var response = await _http.PostAsJsonAsync(
+                BuildEndpointUri(_provider.ApiEndpoint, "/api/settings"),
+                new RemoteExecutionSettings(autoOffloadVram, thinkingEnabled),
+                ct);
+            var raw = await response.Content.ReadAsStringAsync(ct);
+            Logger.Info($"Remote settings response [{response.StatusCode}]: {Truncate(raw)}");
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                Logger.Warn("Remote server does not allow remote settings control.");
+                return false;
+            }
+
+            EnsureSuccess(response, raw);
+            var result = JsonSerializer.Deserialize<RemoteSettingsResponse>(raw,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return result?.Applied == true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Remote settings sync failed: {ex.Message}");
+            return false;
+        }
+    }
+
     MultipartFormDataContent BuildFormContent(byte[] wavBytes, string modelName)
     {
         var boundary = $"----FormBoundary{Guid.NewGuid():N}";
