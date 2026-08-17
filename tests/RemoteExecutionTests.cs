@@ -102,7 +102,8 @@ public class RemoteExecutionTests
     public async Task ServerAcceptsClientRequestAndReturnsProcessorResult()
     {
         var port = FreeTcpPort();
-        var endpoint = $"http://localhost:{port}/whisper";
+        var listenEndpoint = $"http://0.0.0.0:{port}/whisper";
+        var clientEndpoint = $"http://127.0.0.1:{port}/whisper";
         byte[]? received = null;
         using var server = new RemoteExecutionServer((pcm, channels, _) =>
         {
@@ -110,11 +111,11 @@ public class RemoteExecutionTests
             Assert.Equal(1, channels);
             return Task.FromResult<string?>("Server transcription");
         });
-        await server.StartAsync(endpoint);
+        await server.StartAsync(listenEndpoint);
         using var service = new TranscriptionService(new ProviderConfig
         {
             Type = ProviderConfig.RemoteExecutionType,
-            ApiEndpoint = endpoint
+            ApiEndpoint = clientEndpoint
         });
 
         Assert.True(await service.IsServerReady());

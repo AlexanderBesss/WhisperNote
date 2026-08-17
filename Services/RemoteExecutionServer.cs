@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,17 +14,18 @@ namespace WhisperNote.Services;
 public sealed class RemoteExecutionServer : IDisposable
 {
     const long MaxRequestBytes = 64 * 1024 * 1024;
+    const int MaxHeaderBytes = 64 * 1024;
     readonly Func<byte[], int, CancellationToken, Task<string?>> _transcribe;
     readonly Func<bool> _isAvailable;
     readonly SemaphoreSlim _requestLock = new(1, 1);
-    HttpListener? _listener;
+    TcpListener? _listener;
     CancellationTokenSource? _cts;
     Task? _acceptTask;
     string _basePath = "";
     string _listenEndpoint = "";
 
     public string Status { get; private set; } = "Server role off";
-    public bool IsListening => _listener?.IsListening == true;
+    public bool IsListening => _listener?.Server.IsBound == true;
     public event EventHandler? StatusChanged;
 
     public RemoteExecutionServer(
@@ -31,54 +36,71 @@ public sealed class RemoteExecutionServer : IDisposable
         _isAvailable = isAvailable ?? (() => true);
     }
 
-    public Task StartAsync(string listenEndpoint)
+    public async Task StartAsync(string listenEndpoint)
     {
         Stop();
-        var prefix = listenEndpoint.TrimEnd('/') + "/";
-        _basePath = new Uri(prefix, UriKind.Absolute).AbsolutePath.TrimEnd('/');
-        var listener = new HttpListener();
-        listener.Prefixes.Add(CreateHttpListenerPrefix(prefix));
+
+        TcpListener? listener = null;
         try
         {
+            var endpoint = new Uri(listenEndpoint.TrimEnd('/') + "/", UriKind.Absolute);
+            if (endpoint.Scheme != Uri.UriSchemeHttp)
+                throw new InvalidOperationException("Remote execution only supports HTTP listen endpoints.");
+
+            var address = await ResolveListenAddressAsync(endpoint.Host);
+            listener = new TcpListener(address, endpoint.Port);
             listener.Start();
         }
         catch
         {
-            listener.Close();
+            listener?.Stop();
             SetStatus("Server bind failed");
             throw;
         }
 
+        var normalizedEndpoint = listenEndpoint.Trim().TrimEnd('/');
+        var parsedEndpoint = new Uri(normalizedEndpoint + "/", UriKind.Absolute);
+        _basePath = parsedEndpoint.AbsolutePath.TrimEnd('/');
         _listener = listener;
         _cts = new CancellationTokenSource();
-        _listenEndpoint = listenEndpoint;
-        SetStatus($"Serving {listenEndpoint}");
+        _listenEndpoint = normalizedEndpoint;
+        SetStatus($"Serving {_listenEndpoint}");
         _acceptTask = AcceptLoopAsync(listener, _cts.Token);
-        return Task.CompletedTask;
     }
 
-    static string CreateHttpListenerPrefix(string prefix)
+    static async Task<IPAddress> ResolveListenAddressAsync(string host)
     {
-        if (!Uri.TryCreate(prefix, UriKind.Absolute, out var uri) || uri.Host != "0.0.0.0")
-            return prefix;
+        if (host == "0.0.0.0" || host == "+" || host == "*")
+            return IPAddress.Any;
 
-        // HttpListener uses '+' for an all-interface binding; 0.0.0.0 is the
-        // user-facing endpoint format but is rejected as a listener prefix.
-        return new UriBuilder(uri) { Host = "+" }.Uri.AbsoluteUri;
+        if (IPAddress.TryParse(host, out var address))
+            return address;
+
+        var addresses = await Dns.GetHostAddressesAsync(host);
+        foreach (var candidate in addresses)
+        {
+            if (candidate.AddressFamily == AddressFamily.InterNetwork)
+                return candidate;
+        }
+
+        if (addresses.Length > 0)
+            return addresses[0];
+
+        throw new InvalidOperationException($"Could not resolve listen host '{host}'.");
     }
 
-    async Task AcceptLoopAsync(HttpListener listener, CancellationToken ct)
+    async Task AcceptLoopAsync(TcpListener listener, CancellationToken ct)
     {
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                var context = await listener.GetContextAsync().WaitAsync(ct);
-                _ = HandleAsync(context, ct);
+                var client = await listener.AcceptTcpClientAsync(ct);
+                _ = HandleAsync(client, ct);
             }
         }
         catch (OperationCanceledException) { }
-        catch (HttpListenerException) when (ct.IsCancellationRequested) { }
+        catch (SocketException) when (ct.IsCancellationRequested) { }
         catch (ObjectDisposedException) when (ct.IsCancellationRequested) { }
         catch (Exception ex)
         {
@@ -87,106 +109,276 @@ public sealed class RemoteExecutionServer : IDisposable
         }
     }
 
-    async Task HandleAsync(HttpListenerContext context, CancellationToken serverCt)
+    async Task HandleAsync(TcpClient client, CancellationToken serverCt)
     {
-        try
+        using (client)
+        using (var stream = client.GetStream())
         {
-            var path = context.Request.Url?.AbsolutePath.TrimEnd('/');
-            if (context.Request.HttpMethod == "GET" && path == _basePath + "/health")
-            {
-                var available = _isAvailable();
-                await WriteJsonAsync(
-                    context.Response,
-                    available ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable,
-                    new { status = available ? "ready" : "local-mode-required" },
-                    serverCt);
-                return;
-            }
-
-            if (context.Request.HttpMethod != "POST" || path != _basePath + "/api/transcriptions")
-            {
-                await WriteJsonAsync(context.Response, HttpStatusCode.NotFound, new { error = "Not found" }, serverCt);
-                return;
-            }
-
-            if (!_isAvailable())
-            {
-                await WriteJsonAsync(context.Response, HttpStatusCode.ServiceUnavailable, new { error = "Server is not in Local LLM mode" }, serverCt);
-                return;
-            }
-
-            if (context.Request.ContentLength64 > MaxRequestBytes)
-            {
-                await WriteJsonAsync(context.Response, HttpStatusCode.RequestEntityTooLarge, new { error = "Audio request is too large" }, serverCt);
-                return;
-            }
-
-            if (!await _requestLock.WaitAsync(0, serverCt))
-            {
-                await WriteJsonAsync(context.Response, HttpStatusCode.Conflict, new { error = "Server is busy" }, serverCt);
-                return;
-            }
-
             try
             {
-                SetStatus("Client request active");
-                var request = await JsonSerializer.DeserializeAsync<RemoteTranscriptionRequest>(
-                    context.Request.InputStream,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true },
-                    cancellationToken: serverCt);
-                if (request?.Pcm == null || request.Pcm.Length == 0 || request.Channels < 1)
-                {
-                    await WriteJsonAsync(context.Response, HttpStatusCode.BadRequest, new { error = "PCM audio and a positive channel count are required" }, serverCt);
+                var request = await ReadRequestAsync(stream, serverCt);
+                if (request == null)
                     return;
-                }
-                if (request.Pcm.LongLength > MaxRequestBytes)
+
+                var path = GetPath(request.Target);
+                var healthPath = EndpointPath("/health");
+                var transcriptionPath = EndpointPath("/api/transcriptions");
+
+                if (request.Method == "GET" && path == healthPath)
                 {
-                    await WriteJsonAsync(context.Response, HttpStatusCode.RequestEntityTooLarge, new { error = "Audio request is too large" }, serverCt);
+                    var available = _isAvailable();
+                    await WriteJsonAsync(
+                        stream,
+                        available ? HttpStatusCode.OK : HttpStatusCode.ServiceUnavailable,
+                        new { status = available ? "ready" : "local-mode-required" },
+                        serverCt);
                     return;
                 }
 
-                var text = await _transcribe(request.Pcm, request.Channels, serverCt);
-                await WriteJsonAsync(context.Response, HttpStatusCode.OK, new RemoteTranscriptionResponse(text), serverCt);
+                if (request.Method != "POST" || path != transcriptionPath)
+                {
+                    await WriteJsonAsync(stream, HttpStatusCode.NotFound, new { error = "Not found" }, serverCt);
+                    return;
+                }
+
+                if (!_isAvailable())
+                {
+                    await WriteJsonAsync(
+                        stream,
+                        HttpStatusCode.ServiceUnavailable,
+                        new { error = "Server is not in Local LLM mode" },
+                        serverCt);
+                    return;
+                }
+
+                if (!await _requestLock.WaitAsync(0, serverCt))
+                {
+                    await WriteJsonAsync(stream, HttpStatusCode.Conflict, new { error = "Server is busy" }, serverCt);
+                    return;
+                }
+
+                try
+                {
+                    SetStatus("Client request active");
+                    var remoteRequest = JsonSerializer.Deserialize<RemoteTranscriptionRequest>(
+                        request.Body,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (remoteRequest?.Pcm == null || remoteRequest.Pcm.Length == 0 || remoteRequest.Channels < 1)
+                    {
+                        await WriteJsonAsync(
+                            stream,
+                            HttpStatusCode.BadRequest,
+                            new { error = "PCM audio and a positive channel count are required" },
+                            serverCt);
+                        return;
+                    }
+                    if (remoteRequest.Pcm.LongLength > MaxRequestBytes)
+                    {
+                        await WriteJsonAsync(
+                            stream,
+                            HttpStatusCode.RequestEntityTooLarge,
+                            new { error = "Audio request is too large" },
+                            serverCt);
+                        return;
+                    }
+
+                    var text = await _transcribe(remoteRequest.Pcm, remoteRequest.Channels, serverCt);
+                    await WriteJsonAsync(stream, HttpStatusCode.OK, new RemoteTranscriptionResponse(text), serverCt);
+                }
+                finally
+                {
+                    _requestLock.Release();
+                    if (IsListening)
+                        SetStatus($"Serving {_listenEndpoint}");
+                }
             }
-            finally
+            catch (RequestFormatException ex)
             {
-                _requestLock.Release();
-                if (IsListening)
-                    SetStatus($"Serving {_listenEndpoint}");
+                await TryWriteErrorAsync(stream, ex.Status, ex.Message, serverCt);
             }
-        }
-        catch (JsonException)
-        {
-            await TryWriteErrorAsync(context.Response, HttpStatusCode.BadRequest, "Invalid request", serverCt);
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            Logger.Error($"Remote execution request: {ex.Message}");
-            await TryWriteErrorAsync(context.Response, HttpStatusCode.ServiceUnavailable, "Local transcription unavailable", serverCt);
-        }
-        finally
-        {
-            try { context.Response.Close(); } catch { }
+            catch (JsonException)
+            {
+                await TryWriteErrorAsync(stream, HttpStatusCode.BadRequest, "Invalid request", serverCt);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                Logger.Error($"Remote execution request: {ex.Message}");
+                await TryWriteErrorAsync(stream, HttpStatusCode.ServiceUnavailable, "Local transcription unavailable", serverCt);
+            }
         }
     }
 
-    static async Task TryWriteErrorAsync(HttpListenerResponse response, HttpStatusCode status, string message, CancellationToken ct)
+    async Task<HttpRequestData?> ReadRequestAsync(NetworkStream stream, CancellationToken ct)
+    {
+        var headerBytes = new MemoryStream();
+        var oneByte = new byte[1];
+        while (true)
+        {
+            var read = await stream.ReadAsync(oneByte.AsMemory(), ct);
+            if (read == 0)
+                return null;
+
+            headerBytes.WriteByte(oneByte[0]);
+            if (headerBytes.Length > MaxHeaderBytes)
+                throw new RequestFormatException(HttpStatusCode.RequestEntityTooLarge, "Request headers are too large");
+
+            if (headerBytes.Length >= 4)
+            {
+                var buffer = headerBytes.ToArray();
+                var length = (int)headerBytes.Length;
+                if (buffer[length - 4] == '\r' && buffer[length - 3] == '\n' &&
+                    buffer[length - 2] == '\r' && buffer[length - 1] == '\n')
+                    break;
+            }
+        }
+
+        var headerText = Encoding.ASCII.GetString(headerBytes.ToArray());
+        var lines = headerText.Split("\r\n", StringSplitOptions.None);
+        var requestLine = lines.Length > 0 ? lines[0].Split(' ', 3, StringSplitOptions.RemoveEmptyEntries) : Array.Empty<string>();
+        if (requestLine.Length != 3)
+            throw new RequestFormatException(HttpStatusCode.BadRequest, "Invalid HTTP request line");
+
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 1; index < lines.Length; index++)
+        {
+            var line = lines[index];
+            if (line.Length == 0)
+                break;
+            var separator = line.IndexOf(':');
+            if (separator <= 0)
+                throw new RequestFormatException(HttpStatusCode.BadRequest, "Invalid HTTP header");
+            headers[line[..separator].Trim()] = line[(separator + 1)..].Trim();
+        }
+
+        long contentLength = 0;
+        var isChunked = headers.TryGetValue("Transfer-Encoding", out var transferEncoding) &&
+            transferEncoding.Contains("chunked", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(requestLine[0], "POST", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!isChunked && (!headers.TryGetValue("Content-Length", out var contentLengthText) ||
+                !long.TryParse(contentLengthText, out contentLength) || contentLength < 0))
+                throw new RequestFormatException(HttpStatusCode.BadRequest, "Content-Length is required");
+            if (!isChunked && contentLength > MaxRequestBytes)
+                throw new RequestFormatException(HttpStatusCode.RequestEntityTooLarge, "Audio request is too large");
+        }
+
+        var body = isChunked
+            ? await ReadChunkedBodyAsync(stream, ct)
+            : contentLength == 0 ? Array.Empty<byte>() : await ReadBodyAsync(stream, contentLength, ct);
+        return new HttpRequestData(requestLine[0], requestLine[1], body);
+    }
+
+    static async Task<byte[]> ReadChunkedBodyAsync(NetworkStream stream, CancellationToken ct)
+    {
+        using var body = new MemoryStream();
+        while (true)
+        {
+            var sizeLine = await ReadLineAsync(stream, ct);
+            var extensionIndex = sizeLine.IndexOf(';');
+            var sizeText = extensionIndex >= 0 ? sizeLine[..extensionIndex] : sizeLine;
+            if (!long.TryParse(sizeText.Trim(), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var chunkSize) || chunkSize < 0)
+                throw new RequestFormatException(HttpStatusCode.BadRequest, "Invalid chunked request");
+
+            if (chunkSize == 0)
+            {
+                while (!string.IsNullOrEmpty(await ReadLineAsync(stream, ct))) { }
+                return body.ToArray();
+            }
+
+            if (body.Length + chunkSize > MaxRequestBytes)
+                throw new RequestFormatException(HttpStatusCode.RequestEntityTooLarge, "Audio request is too large");
+
+            var chunk = await ReadBodyAsync(stream, chunkSize, ct);
+            body.Write(chunk, 0, chunk.Length);
+            var lineEnding = await ReadBodyAsync(stream, 2, ct);
+            if (lineEnding[0] != '\r' || lineEnding[1] != '\n')
+                throw new RequestFormatException(HttpStatusCode.BadRequest, "Invalid chunked request");
+        }
+    }
+
+    static async Task<string> ReadLineAsync(NetworkStream stream, CancellationToken ct)
+    {
+        using var line = new MemoryStream();
+        var oneByte = new byte[1];
+        while (true)
+        {
+            var read = await stream.ReadAsync(oneByte.AsMemory(), ct);
+            if (read == 0)
+                throw new RequestFormatException(HttpStatusCode.BadRequest, "Incomplete request");
+            line.WriteByte(oneByte[0]);
+            if (line.Length > MaxHeaderBytes)
+                throw new RequestFormatException(HttpStatusCode.RequestEntityTooLarge, "Request line is too large");
+            if (line.Length >= 2)
+            {
+                var bytes = line.ToArray();
+                var length = bytes.Length;
+                if (bytes[length - 2] == '\r' && bytes[length - 1] == '\n')
+                    return Encoding.ASCII.GetString(bytes, 0, length - 2);
+            }
+        }
+    }
+
+    static async Task<byte[]> ReadBodyAsync(NetworkStream stream, long contentLength, CancellationToken ct)
+    {
+        if (contentLength > int.MaxValue)
+            throw new RequestFormatException(HttpStatusCode.RequestEntityTooLarge, "Request is too large");
+
+        var body = new byte[(int)contentLength];
+        var offset = 0;
+        while (offset < body.Length)
+        {
+            var read = await stream.ReadAsync(body.AsMemory(offset, body.Length - offset), ct);
+            if (read == 0)
+                throw new RequestFormatException(HttpStatusCode.BadRequest, "Incomplete request body");
+            offset += read;
+        }
+        return body;
+    }
+
+    string EndpointPath(string suffix) => string.IsNullOrEmpty(_basePath) ? suffix : _basePath + suffix;
+
+    static string GetPath(string target)
+    {
+        if (Uri.TryCreate(target, UriKind.Absolute, out var absolute))
+            return absolute.AbsolutePath.TrimEnd('/');
+
+        var queryIndex = target.IndexOf('?');
+        var path = queryIndex >= 0 ? target[..queryIndex] : target;
+        return path.TrimEnd('/');
+    }
+
+    static async Task TryWriteErrorAsync(NetworkStream stream, HttpStatusCode status, string message, CancellationToken ct)
     {
         try
         {
-            if (response.OutputStream.CanWrite)
-                await WriteJsonAsync(response, status, new { error = message }, ct);
+            await WriteJsonAsync(stream, status, new { error = message }, ct);
         }
         catch { }
     }
 
-    static async Task WriteJsonAsync(HttpListenerResponse response, HttpStatusCode status, object value, CancellationToken ct)
+    static async Task WriteJsonAsync(NetworkStream stream, HttpStatusCode status, object value, CancellationToken ct)
     {
-        response.StatusCode = (int)status;
-        response.ContentType = "application/json";
-        await JsonSerializer.SerializeAsync(response.OutputStream, value, value.GetType(), cancellationToken: ct);
+        var body = JsonSerializer.SerializeToUtf8Bytes(value, value.GetType());
+        var header = $"HTTP/1.1 {(int)status} {ReasonPhrase(status)}\r\n" +
+                     "Content-Type: application/json; charset=utf-8\r\n" +
+                     $"Content-Length: {body.Length}\r\n" +
+                     "Connection: close\r\n\r\n";
+        var headerBytes = Encoding.ASCII.GetBytes(header);
+        await stream.WriteAsync(headerBytes.AsMemory(), ct);
+        await stream.WriteAsync(body.AsMemory(), ct);
     }
+
+    static string ReasonPhrase(HttpStatusCode status) => status switch
+    {
+        HttpStatusCode.OK => "OK",
+        HttpStatusCode.BadRequest => "Bad Request",
+        HttpStatusCode.NotFound => "Not Found",
+        HttpStatusCode.Conflict => "Conflict",
+        HttpStatusCode.RequestEntityTooLarge => "Payload Too Large",
+        HttpStatusCode.ServiceUnavailable => "Service Unavailable",
+        _ => status.ToString()
+    };
 
     void SetStatus(string status)
     {
@@ -200,7 +392,6 @@ public sealed class RemoteExecutionServer : IDisposable
         if (_listener != null)
         {
             try { _listener.Stop(); } catch { }
-            _listener.Close();
         }
         _listener = null;
         _cts?.Dispose();
@@ -212,6 +403,19 @@ public sealed class RemoteExecutionServer : IDisposable
     public void Dispose()
     {
         Stop();
+    }
+
+    sealed record HttpRequestData(string Method, string Target, byte[] Body);
+
+    sealed class RequestFormatException : Exception
+    {
+        public HttpStatusCode Status { get; }
+
+        public RequestFormatException(HttpStatusCode status, string message)
+            : base(message)
+        {
+            Status = status;
+        }
     }
 }
 

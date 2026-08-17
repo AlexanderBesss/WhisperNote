@@ -36,6 +36,8 @@ Remote providers have two independent modes in Settings:
 
 On the server instance, enable **Accept remote execution**, choose an HTTP listen endpoint, and keep that
 instance in **Local LLM** mode. The default listener is `http://0.0.0.0:8090`, which binds all interfaces;
-configure the client with the server's reachable LAN hostname or address rather than `0.0.0.0`. A LAN
-binding may require a Windows URL ACL and firewall rule, and should only be exposed on a trusted network. The protocol intentionally does
-not add authentication or TLS; cloud orchestration, streaming, and request queuing are not supported.
+configure the client with the server's reachable LAN hostname or address rather than `0.0.0.0`. The app
+opens the TCP listener directly, so no Windows URL ACL setup is required. Windows Firewall may still need
+an inbound rule for the selected port, and the listener should only be exposed on a trusted network. The
+protocol intentionally does not add authentication or TLS; cloud orchestration, streaming, and request
+queuing are not supported.
