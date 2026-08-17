@@ -95,6 +95,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     }
 
     bool _useRemote;
+    bool _applyingSettings;
     public bool UseRemote
     {
         get => _useRemote;
@@ -104,7 +105,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
             {
                 _state.SetActiveProviderForMode(value);
                 var provider = _state.ActiveProvider;
-                if (provider != null)
+                if (!_applyingSettings && provider != null)
                     FireAndForget(ServerManager.SwitchProvider(provider), "SwitchProvider");
                 RecordingManager.InfoText = value ? "Using remote LLM" : "Using local LLM";
                 CheckModelExists();
@@ -295,18 +296,35 @@ public class MainWindowViewModel : ViewModel, IDisposable
             remoteListenEndpoint);
         var behaviorChanged = _state.AutoOffloadVram != autoOffloadVram ||
             _state.ThinkingEnabled != thinkingEnabled;
+        var remoteSettings = new RemoteExecutionSettings(autoOffloadVram, thinkingEnabled);
 
-        AutoOffloadVram = autoOffloadVram;
-        ThinkingEnabled = thinkingEnabled;
-        StartupEnabled = startupEnabled;
-        HotkeyEnabled = hotkeyEnabled;
-        HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
-        UseRemote = useRemote;
-
-        if ((endpointChanged || remoteSettingsChanged) && _useRemote && !providerModeChanged && _state.ActiveProvider != null)
+        _applyingSettings = true;
+        try
         {
-            FireAndForget(ServerManager.SwitchProvider(_state.ActiveProvider), "UpdateCloudProvider");
+            AutoOffloadVram = autoOffloadVram;
+            ThinkingEnabled = thinkingEnabled;
+            StartupEnabled = startupEnabled;
+            HotkeyEnabled = hotkeyEnabled;
+            HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
+            UseRemote = useRemote;
         }
+        finally
+        {
+            _applyingSettings = false;
+        }
+
+        var shouldSyncRemoteSettings = RemoteSettingsSyncPolicy.ShouldSyncOnSave(
+            useRemote,
+            remoteProviderMode,
+            behaviorChanged);
+        var provider = _state.ActiveProvider;
+        var shouldSwitchProvider = provider != null &&
+            (providerModeChanged || (useRemote && (endpointChanged || remoteSettingsChanged)));
+
+        if (shouldSwitchProvider)
+            FireAndForget(SwitchProviderAfterSaveAsync(provider!, shouldSyncRemoteSettings ? remoteSettings : null), "UpdateCloudProvider");
+        else if (shouldSyncRemoteSettings)
+            FireAndForget(SyncRemoteSettingsAfterSaveAsync(remoteSettings), "SyncRemoteSettings");
 
         if (remoteSettingsChanged)
             FireAndForget(ConfigureRemoteServerAsync(), "ConfigureRemoteServer");
@@ -321,10 +339,25 @@ public class MainWindowViewModel : ViewModel, IDisposable
         OnPropertyChanged(nameof(RemoteSettingsControlEnabled));
         OnPropertyChanged(nameof(RemoteListenEndpoint));
 
-        if (behaviorChanged && _useRemote && !providerModeChanged &&
-            !endpointChanged && !remoteSettingsChanged &&
-            _state.ActiveProvider?.IsRemoteExecution == true)
-            FireAndForget(ServerManager.SyncRemoteSettingsAsync(), "SyncRemoteSettings");
+    }
+
+    async Task SwitchProviderAfterSaveAsync(
+        ProviderConfig provider,
+        RemoteExecutionSettings? remoteSettings)
+    {
+        await ServerManager.SwitchProvider(provider);
+        if (remoteSettings != null)
+            await SyncRemoteSettingsAfterSaveAsync(remoteSettings);
+    }
+
+    async Task SyncRemoteSettingsAfterSaveAsync(RemoteExecutionSettings settings)
+    {
+        if (_state.ActiveProvider?.IsRemoteExecution != true)
+            return;
+
+        var applied = await ServerManager.SyncRemoteSettingsAsync(settings);
+        if (!applied)
+            RecordingManager.InfoText = "Remote settings sync failed; local values were saved";
     }
 
     async Task InitializeAsync()

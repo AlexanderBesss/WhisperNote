@@ -77,6 +77,19 @@ public class AppState
         get => _settings.ThinkingEnabled;
         set { _settings.ThinkingEnabled = value; _settings.Save(); }
     }
+
+    public bool SetModelBehaviorSettings(bool autoOffloadVram, bool thinkingEnabled)
+    {
+        if (_settings.AutoOffloadVram == autoOffloadVram &&
+            _settings.ThinkingEnabled == thinkingEnabled)
+            return false;
+
+        _settings.AutoOffloadVram = autoOffloadVram;
+        _settings.ThinkingEnabled = thinkingEnabled;
+        _settings.Save();
+        return true;
+    }
+
     public bool StartupEnabled
     {
         get => _settings.StartupEnabled;

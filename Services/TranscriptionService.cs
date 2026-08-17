@@ -124,14 +124,20 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
             if (response.StatusCode == System.Net.HttpStatusCode.Forbidden ||
                 response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                Logger.Warn("Remote server does not allow remote settings control.");
+                Logger.Warn($"Remote settings sync rejected by server: {Truncate(raw)}");
                 return false;
             }
 
             EnsureSuccess(response, raw);
             var result = JsonSerializer.Deserialize<RemoteSettingsResponse>(raw,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            return result?.Applied == true;
+            if (result?.Applied == true &&
+                result.AutoOffloadVram == autoOffloadVram &&
+                result.ThinkingEnabled == thinkingEnabled)
+                return true;
+
+            Logger.Warn("Remote settings sync failed: server did not confirm the requested values.");
+            return false;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

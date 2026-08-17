@@ -20,6 +20,7 @@ public readonly struct ServerStatus
     public static ServerStatus Cloud(string providerName) => new($"Cloud · {providerName}", ServerStatusKind.Green);
     public static ServerStatus RemoteConnected => new("Remote connected", ServerStatusKind.Green);
     public static ServerStatus RemoteUnavailable => new("Remote unavailable", ServerStatusKind.Red);
+    public static ServerStatus RemoteSettingsSyncFailed => new("Remote settings sync failed", ServerStatusKind.Red);
 }
 
 public enum ServerStatusKind

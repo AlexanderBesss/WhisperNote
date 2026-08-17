@@ -160,8 +160,6 @@ public class ServerStateManager : ViewModel, IDisposable
             {
                 var ready = await _transcription.IsServerReady();
                 Status = ready ? ServerStatus.RemoteConnected : ServerStatus.RemoteUnavailable;
-                if (ready)
-                    await SyncRemoteSettingsAsync();
             }
             else
                 Status = ServerStatus.Cloud(provider.Name);
@@ -278,8 +276,6 @@ public class ServerStateManager : ViewModel, IDisposable
             {
                 var ready = await _transcription.IsServerReady();
                 Status = ready ? ServerStatus.RemoteConnected : ServerStatus.RemoteUnavailable;
-                if (ready)
-                    await SyncRemoteSettingsAsync();
             }
         }
         finally
@@ -313,20 +309,36 @@ public class ServerStateManager : ViewModel, IDisposable
     }
 
     public Task<bool> SyncRemoteSettingsAsync(CancellationToken ct = default) =>
-        WithOperationLockAsync(() => _transcription.UpdateRemoteSettingsAsync(
-            _state.AutoOffloadVram,
-            _state.ThinkingEnabled,
+        SyncRemoteSettingsAsync(
+            new RemoteExecutionSettings(_state.AutoOffloadVram, _state.ThinkingEnabled),
+            ct);
+
+    public async Task<bool> SyncRemoteSettingsAsync(
+        RemoteExecutionSettings settings,
+        CancellationToken ct = default)
+    {
+        if (_state.ActiveProvider?.IsRemoteExecution != true)
+            return false;
+
+        var applied = await WithOperationLockAsync(() => _transcription.UpdateRemoteSettingsAsync(
+            settings.AutoOffloadVram,
+            settings.ThinkingEnabled,
             ct), ct);
+        Status = applied ? ServerStatus.RemoteConnected : ServerStatus.RemoteSettingsSyncFailed;
+        return applied;
+    }
 
     public async Task<RemoteExecutionSettings> ApplyRemoteSettingsAsync(
         RemoteExecutionSettings settings,
         CancellationToken ct)
     {
+        if (_state.ActiveProvider?.IsLocal != true)
+            throw new InvalidOperationException("This server instance must be in Local LLM mode to apply remote settings.");
+
         await WithOperationLockAsync(async () =>
         {
             var thinkingChanged = _state.ThinkingEnabled != settings.ThinkingEnabled;
-            _state.AutoOffloadVram = settings.AutoOffloadVram;
-            _state.ThinkingEnabled = settings.ThinkingEnabled;
+            _state.SetModelBehaviorSettings(settings.AutoOffloadVram, settings.ThinkingEnabled);
             _server.SetThinkingEnabled(settings.ThinkingEnabled);
 
             if (thinkingChanged && _server.IsRunning)

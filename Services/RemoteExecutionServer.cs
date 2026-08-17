@@ -279,6 +279,19 @@ public sealed class RemoteExecutionServer : IDisposable
                 new RemoteSettingsResponse(true, applied.AutoOffloadVram, applied.ThinkingEnabled),
                 serverCt);
         }
+        catch (OperationCanceledException) when (serverCt.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Remote settings update failed: {ex.Message}");
+            await WriteJsonAsync(
+                stream,
+                HttpStatusCode.ServiceUnavailable,
+                new { error = "Remote settings update failed" },
+                serverCt);
+        }
         finally
         {
             _requestLock.Release();

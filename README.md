@@ -43,6 +43,6 @@ protocol intentionally does not add authentication or TLS; cloud orchestration, 
 queuing are not supported.
 
 To let a client control server-side model behavior, enable **Allow remote settings control** on the server.
-The client then synchronizes **Auto-offload VRAM** and **Thinking mode** when it connects and whenever those
-settings are saved. This is disabled by default because the protocol has no authentication or TLS; any
+The client then synchronizes **Auto-offload VRAM** and **Thinking mode** when those settings are saved. This is
+disabled by default because the protocol has no authentication or TLS; any
 trusted-network client that can reach the listener may otherwise change those two settings.

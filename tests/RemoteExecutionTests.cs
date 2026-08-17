@@ -150,6 +150,152 @@ public class RemoteExecutionTests
         Assert.Equal(new RemoteExecutionSettings(false, true), received);
     }
 
+    [Theory]
+    [InlineData(true, RemoteProviderMode.RemoteExecution, true, true)]
+    [InlineData(true, RemoteProviderMode.RemoteExecution, false, false)]
+    [InlineData(false, RemoteProviderMode.RemoteExecution, true, false)]
+    [InlineData(true, RemoteProviderMode.DirectApi, true, false)]
+    public void SavePolicyOnlySyncsChangedSettingsInRemoteExecution(
+        bool useRemote,
+        RemoteProviderMode providerMode,
+        bool behaviorChanged,
+        bool shouldSync)
+    {
+        Assert.Equal(
+            shouldSync,
+            RemoteSettingsSyncPolicy.ShouldSyncOnSave(useRemote, providerMode, behaviorChanged));
+    }
+
+    [Fact]
+    public async Task RemoteSettingsAreRejectedWhenControlIsDisabled()
+    {
+        var port = FreeTcpPort();
+        var listenEndpoint = $"http://0.0.0.0:{port}/whisper";
+        var clientEndpoint = $"http://127.0.0.1:{port}/whisper";
+        var applyCount = 0;
+        using var server = new RemoteExecutionServer(
+            (_, _, _) => Task.FromResult<string?>("unused"),
+            () => true,
+            () => false,
+            (_, _) =>
+            {
+                applyCount++;
+                return Task.FromResult(new RemoteExecutionSettings(false, false));
+            });
+        await server.StartAsync(listenEndpoint);
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = clientEndpoint
+        });
+
+        Assert.False(await service.UpdateRemoteSettingsAsync(autoOffloadVram: false, thinkingEnabled: true));
+        Assert.Equal(0, applyCount);
+    }
+
+    [Fact]
+    public async Task RemoteSettingsAreRejectedWhenServerIsNotInLocalMode()
+    {
+        var port = FreeTcpPort();
+        var listenEndpoint = $"http://0.0.0.0:{port}/whisper";
+        var clientEndpoint = $"http://127.0.0.1:{port}/whisper";
+        var applyCount = 0;
+        using var server = new RemoteExecutionServer(
+            (_, _, _) => Task.FromResult<string?>("unused"),
+            () => false,
+            () => true,
+            (_, _) =>
+            {
+                applyCount++;
+                return Task.FromResult(new RemoteExecutionSettings(false, false));
+            });
+        await server.StartAsync(listenEndpoint);
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = clientEndpoint
+        });
+
+        Assert.False(await service.UpdateRemoteSettingsAsync(autoOffloadVram: false, thinkingEnabled: true));
+        Assert.Equal(0, applyCount);
+    }
+
+    [Fact]
+    public async Task RemoteSettingsApplicationFailureDoesNotCrashTheClient()
+    {
+        var port = FreeTcpPort();
+        var listenEndpoint = $"http://0.0.0.0:{port}/whisper";
+        var clientEndpoint = $"http://127.0.0.1:{port}/whisper";
+        using var server = new RemoteExecutionServer(
+            (_, _, _) => Task.FromResult<string?>("unused"),
+            () => true,
+            () => true,
+            (_, _) => throw new InvalidOperationException("cannot persist settings"));
+        await server.StartAsync(listenEndpoint);
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = clientEndpoint
+        });
+
+        var result = await service.UpdateRemoteSettingsAsync(autoOffloadVram: false, thinkingEnabled: true);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task UnavailableRemoteSettingsServerDoesNotCrashTheClient()
+    {
+        using var handler = new DelegateHandler(_ => throw new HttpRequestException("connection refused"));
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = "https://offline.example"
+        }, handler);
+
+        Assert.False(await service.UpdateRemoteSettingsAsync(autoOffloadVram: false, thinkingEnabled: true));
+    }
+
+    [Fact]
+    public async Task RemoteSettingsAreNotSentForNonRemoteExecutionProviders()
+    {
+        var requestCount = 0;
+        using var handler = new DelegateHandler(_ =>
+        {
+            requestCount++;
+            return Response(HttpStatusCode.OK, "{}");
+        });
+        using var directApiService = new TranscriptionService(new ProviderConfig
+        {
+            Type = "remote",
+            ApiEndpoint = "https://api.example"
+        }, handler);
+        using var localService = new TranscriptionService(new ProviderConfig
+        {
+            Type = "local",
+            ApiEndpoint = "http://localhost:8082"
+        }, handler);
+
+        Assert.False(await directApiService.UpdateRemoteSettingsAsync(autoOffloadVram: false, thinkingEnabled: true));
+        Assert.False(await localService.UpdateRemoteSettingsAsync(autoOffloadVram: false, thinkingEnabled: true));
+        Assert.Equal(0, requestCount);
+    }
+
+    [Fact]
+    public async Task RemoteSettingsRejectMismatchedAppliedValues()
+    {
+        var handler = new DelegateHandler(_ => Response(
+            HttpStatusCode.OK,
+            "{\"Applied\":true,\"AutoOffloadVram\":true,\"ThinkingEnabled\":false}"));
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = "https://server.example"
+        }, handler);
+
+        Assert.False(await service.UpdateRemoteSettingsAsync(autoOffloadVram: false, thinkingEnabled: true));
+    }
+
     static AppSettings Settings() => new()
     {
         ActiveProviderIndex = 1,
