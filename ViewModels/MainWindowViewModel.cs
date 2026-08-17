@@ -17,6 +17,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     readonly AppState _state;
     public ServerStateManager ServerManager { get; }
     public RecordingStateManager RecordingManager { get; }
+    public RemoteExecutionServer RemoteServer { get; }
     GlobalKeyboardHook? _keyboardHook;
     bool _hotkeyPressed;
     bool _pendingHotkeyStop;
@@ -117,7 +118,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
     public string ActiveModuleName => _state.ActiveProvider?.Model ?? "No local module";
     public string CloudLlmUrl => _state.CloudLlmUrl;
     public IReadOnlyList<string> CloudLlmUrls => _state.CloudLlmUrls;
-    public string ProviderMode => _useRemote ? "Cloud LLM" : "Local LLM";
+    public RemoteProviderMode RemoteProviderMode => _state.RemoteProviderMode;
+    public string RemoteServerEndpoint => _state.RemoteServerEndpoint;
+    public bool RemoteServerEnabled => _state.RemoteServerEnabled;
+    public string RemoteListenEndpoint => _state.RemoteListenEndpoint;
+    public string ProviderMode => !_useRemote ? "Local LLM" :
+        _state.RemoteProviderMode == RemoteProviderMode.RemoteExecution ? "Remote execution" : "Direct API";
+    public string ServerRoleStatus => RemoteServer.Status;
 
     public Brush HardwareModeForeground => _useRemote ? new SolidColorBrush(Color.FromRgb(128, 128, 128)) : new SolidColorBrush(Color.FromRgb(124, 252, 0));
 
@@ -204,6 +211,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         _state = state;
         ServerManager = new ServerStateManager(state);
+        RemoteServer = new RemoteExecutionServer(
+            ProcessRemoteRequestAsync,
+            () => _state.ActiveProvider?.IsLocal == true);
+        RemoteServer.StatusChanged += RemoteServer_StatusChanged;
         RecordingManager = new RecordingStateManager();
         _highlightTimer.Tick += (_, _) =>
         {
@@ -264,10 +275,16 @@ public class MainWindowViewModel : ViewModel, IDisposable
         bool useRemote,
         bool hotkeyEnabled,
         int hotkeyVirtualKeyCode,
-        IReadOnlyList<string> cloudLlmUrls)
+        IReadOnlyList<string> cloudLlmUrls,
+        RemoteProviderMode remoteProviderMode,
+        string remoteServerEndpoint,
+        bool remoteServerEnabled,
+        string remoteListenEndpoint)
     {
         var endpointChanged = _state.SetCloudLlmUrls(cloudLlmUrls);
         var providerModeChanged = _useRemote != useRemote;
+        var remoteSettingsChanged = _state.SetRemoteExecutionSettings(
+            remoteProviderMode, remoteServerEndpoint, remoteServerEnabled, remoteListenEndpoint);
 
         AutoOffloadVram = autoOffloadVram;
         ThinkingEnabled = thinkingEnabled;
@@ -276,15 +293,22 @@ public class MainWindowViewModel : ViewModel, IDisposable
         HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
         UseRemote = useRemote;
 
-        if (endpointChanged && _useRemote && !providerModeChanged && _state.ActiveProvider != null)
+        if ((endpointChanged || remoteSettingsChanged) && _useRemote && !providerModeChanged && _state.ActiveProvider != null)
         {
             FireAndForget(ServerManager.SwitchProvider(_state.ActiveProvider), "UpdateCloudProvider");
         }
+
+        if (remoteSettingsChanged)
+            FireAndForget(ConfigureRemoteServerAsync(), "ConfigureRemoteServer");
 
         OnPropertyChanged(nameof(CloudLlmUrl));
         OnPropertyChanged(nameof(CloudLlmUrls));
         OnPropertyChanged(nameof(ActiveModuleName));
         OnPropertyChanged(nameof(ProviderMode));
+        OnPropertyChanged(nameof(RemoteProviderMode));
+        OnPropertyChanged(nameof(RemoteServerEndpoint));
+        OnPropertyChanged(nameof(RemoteServerEnabled));
+        OnPropertyChanged(nameof(RemoteListenEndpoint));
     }
 
     async Task InitializeAsync()
@@ -293,6 +317,39 @@ public class MainWindowViewModel : ViewModel, IDisposable
         AudioRecorder.LogAvailableDevices();
         Logger.Info("App started");
         await ServerManager.InitializeAsync();
+        await ConfigureRemoteServerAsync();
+    }
+
+    async Task ConfigureRemoteServerAsync()
+    {
+        if (!_state.RemoteServerEnabled)
+        {
+            RemoteServer.Stop();
+            return;
+        }
+        await RemoteServer.StartAsync(_state.RemoteListenEndpoint);
+    }
+
+    async Task<string?> ProcessRemoteRequestAsync(byte[] pcm, int channels, CancellationToken ct)
+    {
+        if (_state.ActiveProvider?.IsLocal != true)
+            throw new InvalidOperationException("This server instance must be in Local LLM mode to process remote requests.");
+
+        if (!await ServerManager.IsServerReady())
+            await ServerManager.StartAsync((_, _, _) => { });
+        var text = await ServerManager.TranscribeAsync(pcm, channels, ct);
+        if (_state.AutoOffloadVram)
+            await ServerManager.OffloadServerAsync();
+        return text;
+    }
+
+    void RemoteServer_StatusChanged(object? sender, EventArgs e)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess())
+            OnPropertyChanged(nameof(ServerRoleStatus));
+        else
+            dispatcher.BeginInvoke(() => OnPropertyChanged(nameof(ServerRoleStatus)));
     }
 
     void CheckModelExists()
@@ -640,6 +697,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _highlightTimer.Stop();
         _recordOperationLock.Dispose();
         _keyboardHook?.Dispose();
+        RemoteServer.StatusChanged -= RemoteServer_StatusChanged;
+        RemoteServer.Dispose();
         ServerManager.Dispose();
         RecordingManager.Dispose();
     }

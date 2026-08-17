@@ -2,6 +2,8 @@ using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Runtime.ExceptionServices;
+using System.Net.Http.Json;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using WhisperNote.Config;
@@ -53,7 +55,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
     public async Task<bool> IsServerReady()
     {
-        if (!_provider.IsLocal)
+        if (!_provider.IsLocal && !_provider.IsRemoteExecution)
             return true;
 
         try
@@ -70,6 +72,9 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
     public async Task<string?> Transcribe(byte[] pcm, int channels = 1, CancellationToken ct = default)
     {
+        if (_provider.IsRemoteExecution)
+            return await TranscribeRemotely(pcm, channels, ct);
+
         if (channels > 1)
             pcm = AudioProcessor.DownmixToMono(pcm, channels);
 
@@ -83,6 +88,20 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         var raw = await SendWithRetry(wavBytes, modelName, ct);
 
         return TranscriptionParser.Parse(raw);
+    }
+
+    async Task<string?> TranscribeRemotely(byte[] pcm, int channels, CancellationToken ct)
+    {
+        using var response = await _http.PostAsJsonAsync(
+            BuildEndpointUri(_provider.ApiEndpoint, "/api/transcriptions"),
+            new RemoteTranscriptionRequest(pcm, channels),
+            ct);
+        var raw = await response.Content.ReadAsStringAsync(ct);
+        Logger.Info($"Remote execution response [{response.StatusCode}]: {Truncate(raw)}");
+        EnsureSuccess(response, raw);
+        var result = JsonSerializer.Deserialize<RemoteTranscriptionResponse>(raw,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return result?.Text;
     }
 
     MultipartFormDataContent BuildFormContent(byte[] wavBytes, string modelName)

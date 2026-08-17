@@ -12,6 +12,8 @@ public class AppSettings
 {
     const int DefaultHotkeyVkCode = 0xA3;
     public const string DefaultCloudLlmUrl = "http://192.168.0.96:8082";
+    public const string DefaultRemoteExecutionUrl = "http://localhost:8090";
+    public const string DefaultRemoteListenEndpoint = "http://0.0.0.0:8090";
 
     public int ActiveProviderIndex { get; set; }
     public List<ProviderConfig> Providers { get; set; } = new();
@@ -20,6 +22,10 @@ public class AppSettings
     public bool StartupEnabled { get; set; }
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
     public bool HotkeyEnabled { get; set; } = true;
+    public RemoteProviderMode RemoteProviderMode { get; set; } = RemoteProviderMode.DirectApi;
+    public string RemoteServerEndpoint { get; set; } = DefaultRemoteExecutionUrl;
+    public bool RemoteServerEnabled { get; set; }
+    public string RemoteListenEndpoint { get; set; } = DefaultRemoteListenEndpoint;
 
     static string ConfigPath() => AppPaths.SettingsPath;
 
@@ -92,6 +98,27 @@ public class AppSettings
     bool NormalizeProviders()
     {
         var changed = false;
+        if (!Enum.IsDefined(RemoteProviderMode))
+        {
+            RemoteProviderMode = RemoteProviderMode.DirectApi;
+            changed = true;
+        }
+
+        if (!TryNormalizeHttpEndpoint(RemoteServerEndpoint, out var remoteServerEndpoint))
+            remoteServerEndpoint = DefaultRemoteExecutionUrl;
+        if (RemoteServerEndpoint != remoteServerEndpoint)
+        {
+            RemoteServerEndpoint = remoteServerEndpoint;
+            changed = true;
+        }
+
+        if (!TryNormalizeHttpListenEndpoint(RemoteListenEndpoint, out var remoteListenEndpoint))
+            remoteListenEndpoint = DefaultRemoteListenEndpoint;
+        if (RemoteListenEndpoint != remoteListenEndpoint)
+        {
+            RemoteListenEndpoint = remoteListenEndpoint;
+            changed = true;
+        }
         var hasLocal = Providers.Exists(p => p.IsLocal);
         var hasRemote = Providers.Exists(p => !p.IsLocal);
 
@@ -164,6 +191,18 @@ public class AppSettings
         return true;
     }
 
+    public static bool TryNormalizeHttpListenEndpoint(string? endpoint, out string normalizedEndpoint)
+    {
+        if (!TryNormalizeHttpEndpoint(endpoint, out normalizedEndpoint) ||
+            !Uri.TryCreate(normalizedEndpoint, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttp)
+        {
+            normalizedEndpoint = "";
+            return false;
+        }
+        return true;
+    }
+
     static ProviderConfig CreateDefaultLocalProvider() => new()
     {
         Name = "Gemma 4 E2B UD (local)",
@@ -183,4 +222,11 @@ public class AppSettings
         ApiEndpoints = new List<string> { DefaultCloudLlmUrl },
         Model = "gemma-4-E2B-it-Q4_0.gguf"
     };
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RemoteProviderMode
+{
+    DirectApi,
+    RemoteExecution
 }

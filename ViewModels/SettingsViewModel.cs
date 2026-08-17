@@ -16,6 +16,10 @@ public sealed class SettingsViewModel : ViewModel
     bool _useRemote;
     bool _hotkeyEnabled;
     int _hotkeyVirtualKeyCode;
+    RemoteProviderMode _remoteProviderMode;
+    string _remoteServerEndpoint;
+    bool _remoteServerEnabled;
+    string _remoteListenEndpoint;
 
     public bool AutoOffloadVram
     {
@@ -41,6 +45,39 @@ public sealed class SettingsViewModel : ViewModel
         set => SetProperty(ref _useRemote, value);
     }
 
+    public IReadOnlyList<RemoteProviderMode> RemoteProviderModes { get; } =
+        new[] { RemoteProviderMode.DirectApi, RemoteProviderMode.RemoteExecution };
+    public RemoteProviderMode RemoteProviderMode
+    {
+        get => _remoteProviderMode;
+        set
+        {
+            if (SetProperty(ref _remoteProviderMode, value))
+            {
+                OnPropertyChanged(nameof(IsDirectApiMode));
+                OnPropertyChanged(nameof(IsRemoteExecutionMode));
+                OnPropertyChanged(nameof(AreSettingsValid));
+            }
+        }
+    }
+    public bool IsDirectApiMode => RemoteProviderMode == RemoteProviderMode.DirectApi;
+    public bool IsRemoteExecutionMode => RemoteProviderMode == RemoteProviderMode.RemoteExecution;
+    public string RemoteServerEndpoint
+    {
+        get => _remoteServerEndpoint;
+        set { if (SetProperty(ref _remoteServerEndpoint, value ?? "")) OnPropertyChanged(nameof(AreSettingsValid)); }
+    }
+    public bool RemoteServerEnabled
+    {
+        get => _remoteServerEnabled;
+        set { if (SetProperty(ref _remoteServerEnabled, value)) OnPropertyChanged(nameof(AreSettingsValid)); }
+    }
+    public string RemoteListenEndpoint
+    {
+        get => _remoteListenEndpoint;
+        set { if (SetProperty(ref _remoteListenEndpoint, value ?? "")) OnPropertyChanged(nameof(AreSettingsValid)); }
+    }
+
     public bool HotkeyEnabled
     {
         get => _hotkeyEnabled;
@@ -56,6 +93,9 @@ public sealed class SettingsViewModel : ViewModel
     public ObservableCollection<CloudEndpointEntry> CloudEndpoints { get; } = new();
     public bool AreCloudEndpointsValid => CloudEndpoints.Count > 0 &&
         CloudEndpoints.All(endpoint => endpoint.IsValid);
+    public bool AreSettingsValid => (!IsDirectApiMode || AreCloudEndpointsValid) &&
+        (!IsRemoteExecutionMode || AppSettings.TryNormalizeHttpEndpoint(RemoteServerEndpoint, out _)) &&
+        (!RemoteServerEnabled || AppSettings.TryNormalizeHttpListenEndpoint(RemoteListenEndpoint, out _));
     public ICommand AddCloudEndpointCommand { get; }
     public ICommand RemoveCloudEndpointCommand { get; }
 
@@ -70,6 +110,10 @@ public sealed class SettingsViewModel : ViewModel
         _useRemote = mainViewModel.UseRemote;
         _hotkeyEnabled = mainViewModel.HotkeyEnabled;
         _hotkeyVirtualKeyCode = mainViewModel.HotkeyVirtualKeyCode;
+        _remoteProviderMode = mainViewModel.RemoteProviderMode;
+        _remoteServerEndpoint = mainViewModel.RemoteServerEndpoint;
+        _remoteServerEnabled = mainViewModel.RemoteServerEnabled;
+        _remoteListenEndpoint = mainViewModel.RemoteListenEndpoint;
         var endpoints = mainViewModel.CloudLlmUrls.Count > 0
             ? mainViewModel.CloudLlmUrls
             : new[] { mainViewModel.CloudLlmUrl };
@@ -87,7 +131,7 @@ public sealed class SettingsViewModel : ViewModel
 
     public bool TryApply()
     {
-        if (!AreCloudEndpointsValid)
+        if (!AreSettingsValid)
             return false;
 
         var normalizedEndpoints = CloudEndpoints
@@ -106,7 +150,11 @@ public sealed class SettingsViewModel : ViewModel
             UseRemote,
             HotkeyEnabled,
             HotkeyVirtualKeyCode,
-            normalizedEndpoints);
+            normalizedEndpoints,
+            RemoteProviderMode,
+            RemoteServerEndpoint,
+            RemoteServerEnabled,
+            RemoteListenEndpoint);
         return true;
     }
 
@@ -116,6 +164,7 @@ public sealed class SettingsViewModel : ViewModel
         endpoint.PropertyChanged += Endpoint_PropertyChanged;
         CloudEndpoints.Add(endpoint);
         OnPropertyChanged(nameof(AreCloudEndpointsValid));
+        OnPropertyChanged(nameof(AreSettingsValid));
     }
 
     void RemoveEndpoint(CloudEndpointEntry? endpoint)
@@ -128,12 +177,16 @@ public sealed class SettingsViewModel : ViewModel
         for (var index = 0; index < CloudEndpoints.Count; index++)
             CloudEndpoints[index].SetIndex(index);
         OnPropertyChanged(nameof(AreCloudEndpointsValid));
+        OnPropertyChanged(nameof(AreSettingsValid));
     }
 
     void Endpoint_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(CloudEndpointEntry.Url))
+        {
             OnPropertyChanged(nameof(AreCloudEndpointsValid));
+            OnPropertyChanged(nameof(AreSettingsValid));
+        }
     }
 
     static IReadOnlyList<HotkeyOption> CreateHotkeyOptions(int currentKeyCode)

@@ -9,13 +9,50 @@ public class AppState
 {
     readonly AppSettings _settings;
 
-    public ProviderConfig? ActiveProvider => _settings.ActiveProvider;
+    public ProviderConfig? ActiveProvider
+    {
+        get
+        {
+            var provider = _settings.ActiveProvider;
+            if (provider == null || provider.IsLocal || RemoteProviderMode == RemoteProviderMode.DirectApi)
+                return provider;
+
+            return new ProviderConfig
+            {
+                Name = "WhisperNote remote server",
+                Type = ProviderConfig.RemoteExecutionType,
+                ApiEndpoint = RemoteServerEndpoint,
+                ApiEndpoints = new List<string> { RemoteServerEndpoint },
+                Model = provider.Model
+            };
+        }
+    }
     public ProviderConfig? LocalProvider => _settings.Providers.Find(provider => provider.IsLocal);
     public ProviderConfig? CloudProvider => _settings.Providers.Find(provider => !provider.IsLocal);
 
     public string CloudLlmUrl => CloudProvider?.ApiEndpoint ?? "";
     public IReadOnlyList<string> CloudLlmUrls =>
         CloudProvider?.GetApiEndpoints() ?? System.Array.Empty<string>();
+    public RemoteProviderMode RemoteProviderMode
+    {
+        get => _settings.RemoteProviderMode;
+        set { _settings.RemoteProviderMode = value; _settings.Save(); }
+    }
+    public string RemoteServerEndpoint
+    {
+        get => _settings.RemoteServerEndpoint;
+        set { _settings.RemoteServerEndpoint = value; _settings.Save(); }
+    }
+    public bool RemoteServerEnabled
+    {
+        get => _settings.RemoteServerEnabled;
+        set { _settings.RemoteServerEnabled = value; _settings.Save(); }
+    }
+    public string RemoteListenEndpoint
+    {
+        get => _settings.RemoteListenEndpoint;
+        set { _settings.RemoteListenEndpoint = value; _settings.Save(); }
+    }
 
     public int ActiveProviderIndex
     {
@@ -104,6 +141,31 @@ public class AppState
 
         provider.ApiEndpoints = normalizedEndpoints;
         provider.ApiEndpoint = normalizedEndpoints[0];
+        _settings.Save();
+        return true;
+    }
+
+    public bool SetRemoteExecutionSettings(
+        RemoteProviderMode mode,
+        string serverEndpoint,
+        bool serverEnabled,
+        string listenEndpoint)
+    {
+        if (!AppSettings.TryNormalizeHttpEndpoint(serverEndpoint, out var normalizedServer) ||
+            !AppSettings.TryNormalizeHttpListenEndpoint(listenEndpoint, out var normalizedListen))
+            return false;
+
+        var changed = _settings.RemoteProviderMode != mode ||
+            _settings.RemoteServerEndpoint != normalizedServer ||
+            _settings.RemoteServerEnabled != serverEnabled ||
+            _settings.RemoteListenEndpoint != normalizedListen;
+        if (!changed)
+            return false;
+
+        _settings.RemoteProviderMode = mode;
+        _settings.RemoteServerEndpoint = normalizedServer;
+        _settings.RemoteServerEnabled = serverEnabled;
+        _settings.RemoteListenEndpoint = normalizedListen;
         _settings.Save();
         return true;
     }

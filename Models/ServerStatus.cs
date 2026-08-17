@@ -18,6 +18,8 @@ public readonly struct ServerStatus
     public static ServerStatus Launching => new("Launching...", ServerStatusKind.Orange);
     public static ServerStatus Failed(string message) => new(message, ServerStatusKind.Red);
     public static ServerStatus Cloud(string providerName) => new($"Cloud · {providerName}", ServerStatusKind.Green);
+    public static ServerStatus RemoteConnected => new("Remote connected", ServerStatusKind.Green);
+    public static ServerStatus RemoteUnavailable => new("Remote unavailable", ServerStatusKind.Red);
 }
 
 public enum ServerStatusKind

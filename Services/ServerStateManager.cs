@@ -156,7 +156,12 @@ public class ServerStateManager : ViewModel, IDisposable
         }
         if (!provider.IsLocal)
         {
-            Status = ServerStatus.Cloud(provider.Name);
+            if (provider.IsRemoteExecution)
+                Status = await _transcription.IsServerReady()
+                    ? ServerStatus.RemoteConnected
+                    : ServerStatus.RemoteUnavailable;
+            else
+                Status = ServerStatus.Cloud(provider.Name);
             return;
         }
 
@@ -178,7 +183,14 @@ public class ServerStateManager : ViewModel, IDisposable
         }
         if (!provider.IsLocal)
         {
-            updateInfo($"Cloud provider ({provider.Name}) has no local server");
+            if (provider.IsRemoteExecution)
+            {
+                var ready = await IsServerReady();
+                Status = ready ? ServerStatus.RemoteConnected : ServerStatus.RemoteUnavailable;
+                updateInfo(ready ? "Remote server connected" : "Remote server unavailable");
+            }
+            else
+                updateInfo($"Cloud provider ({provider.Name}) has no local server");
             return;
         }
 
@@ -259,6 +271,10 @@ public class ServerStateManager : ViewModel, IDisposable
             }));
 
             UpdateProviderStatus(provider);
+            if (provider.IsRemoteExecution)
+                Status = await _transcription.IsServerReady()
+                    ? ServerStatus.RemoteConnected
+                    : ServerStatus.RemoteUnavailable;
         }
         finally
         {
@@ -268,14 +284,27 @@ public class ServerStateManager : ViewModel, IDisposable
 
     void UpdateProviderStatus(ProviderConfig provider)
     {
-        Status = provider.IsLocal
-            ? ServerStatus.Offline
-            : ServerStatus.Cloud(provider.Name);
+        Status = provider.IsLocal ? ServerStatus.Offline :
+            provider.IsRemoteExecution ? ServerStatus.RemoteUnavailable : ServerStatus.Cloud(provider.Name);
         Logger.Info($"Provider changed to {provider.Name} ({provider.Model})");
     }
 
-    public Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct) =>
-        WithOperationLockAsync(() => _transcription.Transcribe(pcm, channels, ct: ct), ct);
+    public async Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct)
+    {
+        try
+        {
+            var text = await WithOperationLockAsync(() => _transcription.Transcribe(pcm, channels, ct: ct), ct);
+            if (_state.ActiveProvider?.IsRemoteExecution == true)
+                Status = ServerStatus.RemoteConnected;
+            return text;
+        }
+        catch
+        {
+            if (_state.ActiveProvider?.IsRemoteExecution == true)
+                Status = ServerStatus.RemoteUnavailable;
+            throw;
+        }
+    }
 
     public Task<bool> IsServerReady() =>
         WithOperationLockAsync(() => _transcription.IsServerReady());

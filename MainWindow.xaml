@@ -27,26 +27,27 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" ClipToBounds="True">
-                    <TextBlock Text="WhisperNote" FontSize="16" FontWeight="SemiBold"
-                               Foreground="#E0E0E0" VerticalAlignment="Center"/>
-                    <TextBlock Width="8" Height="8" Margin="8,0,0,0"
-                               VerticalAlignment="Center"
-                               Text="&#x2022;" FontSize="10"
-                               Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"/>
-                    <TextBlock Text="{Binding ServerManager.Status.Message}" FontSize="11"
-                               Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"
-                               VerticalAlignment="Center" Margin="6,0,0,0"
-                               MaxWidth="92" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding ProviderMode}"
-                               FontSize="9" FontWeight="SemiBold"
-                               Foreground="#888"
-                               VerticalAlignment="Center" Margin="8,0,0,0"/>
-                    <TextBlock Text="{Binding HardwareMode}"
-                               FontSize="9" FontWeight="SemiBold"
-                               Foreground="{Binding HardwareModeForeground}"
-                               VerticalAlignment="Center" Margin="6,0,0,0"
-                               Visibility="{Binding HardwareMode, Converter={StaticResource StringToVisibilityConverter}}"/>
+                <StackPanel Grid.Column="0" ClipToBounds="True">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="WhisperNote" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="#E0E0E0" VerticalAlignment="Center"/>
+                        <TextBlock Width="8" Height="8" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   Text="&#x2022;" FontSize="10"
+                                   Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"/>
+                        <TextBlock Text="{Binding ServerManager.Status.Message}" FontSize="11"
+                                   Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"
+                                   VerticalAlignment="Center" Margin="6,0,0,0"
+                                   MaxWidth="150" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                        <TextBlock Text="{Binding ProviderMode}" FontSize="9" FontWeight="SemiBold" Foreground="#999"/>
+                        <TextBlock Text=" · " FontSize="9" Foreground="#555"/>
+                        <TextBlock Text="{Binding ServerRoleStatus}" FontSize="9" Foreground="#777"
+                                   MaxWidth="190" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding HardwareMode}" FontSize="9" FontWeight="SemiBold"
+                                   Foreground="{Binding HardwareModeForeground}" Margin="6,0,0,0"
+                                   Visibility="{Binding HardwareMode, Converter={StaticResource StringToVisibilityConverter}}"/>
+                    </StackPanel>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
