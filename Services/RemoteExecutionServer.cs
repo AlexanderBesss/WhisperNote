@@ -15,11 +15,17 @@ public sealed class RemoteExecutionServer : IDisposable
 {
     const long MaxRequestBytes = 64 * 1024 * 1024;
     const int MaxHeaderBytes = 64 * 1024;
+    static readonly TimeSpan DefaultWarmupLeaseDuration = TimeSpan.FromMinutes(5);
     readonly Func<byte[], int, CancellationToken, Task<string?>> _transcribe;
+    readonly Func<CancellationToken, Task>? _warmup;
+    readonly Func<CancellationToken, Task>? _releaseWarmup;
+    readonly TimeSpan _warmupLeaseDuration;
     readonly Func<bool> _isAvailable;
     readonly Func<bool> _allowRemoteSettings;
     readonly Func<RemoteExecutionSettings, CancellationToken, Task<RemoteExecutionSettings>>? _updateRemoteSettings;
     readonly SemaphoreSlim _requestLock = new(1, 1);
+    readonly object _warmupLeaseLock = new();
+    CancellationTokenSource? _warmupLeaseCts;
     TcpListener? _listener;
     CancellationTokenSource? _cts;
     Task? _acceptTask;
@@ -34,9 +40,15 @@ public sealed class RemoteExecutionServer : IDisposable
         Func<byte[], int, CancellationToken, Task<string?>> transcribe,
         Func<bool>? isAvailable = null,
         Func<bool>? allowRemoteSettings = null,
-        Func<RemoteExecutionSettings, CancellationToken, Task<RemoteExecutionSettings>>? updateRemoteSettings = null)
+        Func<RemoteExecutionSettings, CancellationToken, Task<RemoteExecutionSettings>>? updateRemoteSettings = null,
+        Func<CancellationToken, Task>? warmup = null,
+        Func<CancellationToken, Task>? releaseWarmup = null,
+        TimeSpan? warmupLeaseDuration = null)
     {
         _transcribe = transcribe;
+        _warmup = warmup;
+        _releaseWarmup = releaseWarmup;
+        _warmupLeaseDuration = warmupLeaseDuration ?? DefaultWarmupLeaseDuration;
         _isAvailable = isAvailable ?? (() => true);
         _allowRemoteSettings = allowRemoteSettings ?? (() => false);
         _updateRemoteSettings = updateRemoteSettings;
@@ -128,6 +140,7 @@ public sealed class RemoteExecutionServer : IDisposable
 
                 var path = GetPath(request.Target);
                 var healthPath = EndpointPath("/health");
+                var warmupPath = EndpointPath("/api/warmup");
                 var settingsPath = EndpointPath("/api/settings");
                 var transcriptionPath = EndpointPath("/api/transcriptions");
 
@@ -142,6 +155,12 @@ public sealed class RemoteExecutionServer : IDisposable
                     return;
                 }
 
+                if (request.Method == "POST" && path == warmupPath)
+                {
+                    await HandleWarmupAsync(stream, serverCt);
+                    return;
+                }
+
                 if (request.Method == "POST" && path == settingsPath)
                 {
                     await HandleRemoteSettingsAsync(stream, request.Body, serverCt);
@@ -153,6 +172,10 @@ public sealed class RemoteExecutionServer : IDisposable
                     await WriteJsonAsync(stream, HttpStatusCode.NotFound, new { error = "Not found" }, serverCt);
                     return;
                 }
+
+                // A real audio request owns the warmed model now. Its normal
+                // completion path is responsible for auto-offload.
+                CancelWarmupLease();
 
                 if (!_isAvailable())
                 {
@@ -219,6 +242,113 @@ public sealed class RemoteExecutionServer : IDisposable
                 Logger.Error($"Remote execution request: {ex.Message}");
                 await TryWriteErrorAsync(stream, HttpStatusCode.ServiceUnavailable, "Local transcription unavailable", serverCt);
             }
+        }
+    }
+
+    async Task HandleWarmupAsync(NetworkStream stream, CancellationToken serverCt)
+    {
+        if (!_isAvailable())
+        {
+            await WriteJsonAsync(
+                stream,
+                HttpStatusCode.ServiceUnavailable,
+                new { error = "Server is not in Local LLM mode" },
+                serverCt);
+            return;
+        }
+
+        if (_warmup == null)
+        {
+            await WriteJsonAsync(
+                stream,
+                HttpStatusCode.NotImplemented,
+                new { error = "Model warm-up is unavailable" },
+                serverCt);
+            return;
+        }
+
+        // Do not take _requestLock here. The audio request must be accepted while
+        // startup is in progress; ServerStateManager coordinates the shared start.
+        StartWarmupLease(serverCt);
+        await WriteJsonAsync(
+            stream,
+            HttpStatusCode.Accepted,
+            new { status = "starting" },
+            serverCt);
+    }
+
+    void StartWarmupLease(CancellationToken serverCt)
+    {
+        var leaseCts = CancellationTokenSource.CreateLinkedTokenSource(serverCt);
+        CancellationTokenSource? previousLease;
+        lock (_warmupLeaseLock)
+        {
+            previousLease = _warmupLeaseCts;
+            _warmupLeaseCts = leaseCts;
+        }
+        TryCancel(previousLease);
+        _ = RunWarmupAsync(serverCt, leaseCts);
+    }
+
+    async Task RunWarmupAsync(CancellationToken serverCt, CancellationTokenSource leaseCts)
+    {
+        try
+        {
+            await _warmup!(serverCt);
+
+            if (_releaseWarmup != null)
+            {
+                await Task.Delay(_warmupLeaseDuration, leaseCts.Token);
+                await _releaseWarmup(leaseCts.Token);
+            }
+        }
+        catch (OperationCanceledException) when (
+            serverCt.IsCancellationRequested || leaseCts.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            Logger.Error($"Remote model warm-up failed: {ex.Message}");
+        }
+        finally
+        {
+            lock (_warmupLeaseLock)
+            {
+                if (ReferenceEquals(_warmupLeaseCts, leaseCts))
+                    _warmupLeaseCts = null;
+            }
+            leaseCts.Dispose();
+        }
+    }
+
+    bool CancelWarmupLease()
+    {
+        CancellationTokenSource? leaseCts;
+        lock (_warmupLeaseLock)
+        {
+            leaseCts = _warmupLeaseCts;
+            _warmupLeaseCts = null;
+        }
+        TryCancel(leaseCts);
+        return leaseCts != null;
+    }
+
+    static void TryCancel(CancellationTokenSource? cts)
+    {
+        if (cts == null)
+            return;
+
+        try { cts.Cancel(); }
+        catch (ObjectDisposedException) { }
+    }
+
+    async Task ReleaseWarmupAsync()
+    {
+        try
+        {
+            await _releaseWarmup!(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Remote model warm-up cleanup failed: {ex.Message}");
         }
     }
 
@@ -463,6 +593,7 @@ public sealed class RemoteExecutionServer : IDisposable
     static string ReasonPhrase(HttpStatusCode status) => status switch
     {
         HttpStatusCode.OK => "OK",
+        HttpStatusCode.Accepted => "Accepted",
         HttpStatusCode.BadRequest => "Bad Request",
         HttpStatusCode.NotFound => "Not Found",
         HttpStatusCode.Forbidden => "Forbidden",
@@ -481,6 +612,7 @@ public sealed class RemoteExecutionServer : IDisposable
 
     public void Stop()
     {
+        var shouldReleaseWarmup = CancelWarmupLease() && _releaseWarmup != null;
         _cts?.Cancel();
         if (_listener != null)
         {
@@ -491,6 +623,8 @@ public sealed class RemoteExecutionServer : IDisposable
         _cts = null;
         _acceptTask = null;
         SetStatus("Server role off");
+        if (shouldReleaseWarmup)
+            _ = ReleaseWarmupAsync();
     }
 
     public void Dispose()

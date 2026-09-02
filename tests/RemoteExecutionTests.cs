@@ -99,6 +99,214 @@ public class RemoteExecutionTests
     }
 
     [Fact]
+    public async Task RemoteExecutionClientUsesDedicatedWarmupEndpoint()
+    {
+        var handler = new DelegateHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("/api/warmup", request.RequestUri!.AbsolutePath);
+            Assert.Equal(0, request.Content!.Headers.ContentLength);
+            return Response(HttpStatusCode.Accepted, "{\"status\":\"starting\"}");
+        });
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = "http://server.example:8090"
+        }, handler);
+
+        Assert.True(await service.WarmupRemoteAsync());
+    }
+
+    [Fact]
+    public async Task RemoteWarmupIsBestEffortForOlderServers()
+    {
+        using var handler = new DelegateHandler(_ => Response(
+            HttpStatusCode.NotFound,
+            "{\"error\":\"Not found\"}"));
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = "http://server.example:8090"
+        }, handler);
+
+        Assert.False(await service.WarmupRemoteAsync());
+    }
+
+    [Fact]
+    public async Task WarmupIsNotSentForNonRemoteExecutionProviders()
+    {
+        var requestCount = 0;
+        using var handler = new DelegateHandler(_ =>
+        {
+            requestCount++;
+            return Response(HttpStatusCode.Accepted, "{}");
+        });
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = "remote",
+            ApiEndpoint = "https://api.example"
+        }, handler);
+
+        Assert.False(await service.WarmupRemoteAsync());
+        Assert.Equal(0, requestCount);
+    }
+
+    [Fact]
+    public async Task ServerAcceptsTranscriptionWhileWarmupIsStillRunning()
+    {
+        var port = FreeTcpPort();
+        var listenEndpoint = $"http://0.0.0.0:{port}/whisper";
+        var clientEndpoint = $"http://127.0.0.1:{port}/whisper";
+        var warmupStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishWarmup = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var server = new RemoteExecutionServer(
+            (_, _, _) => Task.FromResult<string?>("Processed while warming"),
+            warmup: async _ =>
+            {
+                warmupStarted.TrySetResult(true);
+                await finishWarmup.Task;
+            });
+        await server.StartAsync(listenEndpoint);
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = clientEndpoint
+        });
+
+        try
+        {
+            Assert.True(await service.WarmupRemoteAsync());
+            await warmupStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal("Processed while warming", await service.Transcribe(new byte[] { 1, 2 }));
+        }
+        finally
+        {
+            finishWarmup.TrySetResult(true);
+        }
+    }
+
+    [Fact]
+    public async Task ServerReleasesAbandonedWarmupAfterLeaseExpires()
+    {
+        var port = FreeTcpPort();
+        var listenEndpoint = $"http://0.0.0.0:{port}";
+        var clientEndpoint = $"http://127.0.0.1:{port}";
+        var released = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var server = new RemoteExecutionServer(
+            (_, _, _) => Task.FromResult<string?>("unused"),
+            warmup: _ => Task.CompletedTask,
+            releaseWarmup: _ =>
+            {
+                released.TrySetResult(true);
+                return Task.CompletedTask;
+            },
+            warmupLeaseDuration: TimeSpan.FromMilliseconds(50));
+        await server.StartAsync(listenEndpoint);
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = clientEndpoint
+        });
+
+        Assert.True(await service.WarmupRemoteAsync());
+        Assert.True(await released.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
+    public async Task TranscriptionClaimsWarmupLeaseBeforeItCanOffload()
+    {
+        var port = FreeTcpPort();
+        var listenEndpoint = $"http://0.0.0.0:{port}";
+        var clientEndpoint = $"http://127.0.0.1:{port}";
+        var releaseCount = 0;
+        var finishWarmup = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var server = new RemoteExecutionServer(
+            (_, _, _) => Task.FromResult<string?>("Transcribed"),
+            warmup: _ => finishWarmup.Task,
+            releaseWarmup: _ =>
+            {
+                Interlocked.Increment(ref releaseCount);
+                return Task.CompletedTask;
+            },
+            warmupLeaseDuration: TimeSpan.FromMilliseconds(100));
+        await server.StartAsync(listenEndpoint);
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = clientEndpoint
+        });
+
+        Assert.True(await service.WarmupRemoteAsync());
+        Assert.Equal("Transcribed", await service.Transcribe(new byte[] { 1, 2 }));
+        finishWarmup.TrySetResult(true);
+        await Task.Delay(250);
+
+        Assert.Equal(0, Volatile.Read(ref releaseCount));
+    }
+
+    [Fact]
+    public async Task StoppingServerCancelsAndReleasesActiveWarmup()
+    {
+        var port = FreeTcpPort();
+        var listenEndpoint = $"http://0.0.0.0:{port}";
+        var clientEndpoint = $"http://127.0.0.1:{port}";
+        var warmupStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var warmupCanceled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var released = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var server = new RemoteExecutionServer(
+            (_, _, _) => Task.FromResult<string?>("unused"),
+            warmup: async ct =>
+            {
+                warmupStarted.TrySetResult(true);
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                }
+                finally
+                {
+                    if (ct.IsCancellationRequested)
+                        warmupCanceled.TrySetResult(true);
+                }
+            },
+            releaseWarmup: _ =>
+            {
+                released.TrySetResult(true);
+                return Task.CompletedTask;
+            });
+        await server.StartAsync(listenEndpoint);
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = clientEndpoint
+        });
+
+        Assert.True(await service.WarmupRemoteAsync());
+        await warmupStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        server.Stop();
+
+        Assert.True(await warmupCanceled.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.True(await released.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
+    public async Task HealthCheckPropagatesCallerCancellation()
+    {
+        using var handler = new AsyncDelegateHandler(async (_, ct) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return Response(HttpStatusCode.OK, "{}");
+        });
+        using var service = new TranscriptionService(new ProviderConfig
+        {
+            Type = ProviderConfig.RemoteExecutionType,
+            ApiEndpoint = "http://server.example:8090"
+        }, handler);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.IsServerReady(cts.Token));
+    }
+
+    [Fact]
     public async Task ServerAcceptsClientRequestAndReturnsProcessorResult()
     {
         var port = FreeTcpPort();
@@ -332,5 +540,16 @@ public class RemoteExecutionTests
         public DelegateHandler(Func<HttpRequestMessage, HttpResponseMessage> handle) => _handle = handle;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(_handle(request));
+    }
+
+    sealed class AsyncDelegateHandler : HttpMessageHandler
+    {
+        readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handle;
+        public AsyncDelegateHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handle) =>
+            _handle = handle;
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            _handle(request, cancellationToken);
     }
 }

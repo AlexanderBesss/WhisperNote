@@ -107,7 +107,7 @@ public class LlmServer : IDisposable
     public bool IsLocal => CurrentProvider?.IsLocal == true;
     public bool IsRunning => _process != null && !_process.HasExited;
 
-    public async Task StartAsync()
+    public async Task StartAsync(CancellationToken ct = default)
     {
         if (!IsLocal) return;
         if (IsRunning) return;
@@ -120,8 +120,10 @@ public class LlmServer : IDisposable
 
         Stop();
 
-        if (!await WaitForPortFreeAsync())
+        if (!await WaitForPortFreeAsync(ct))
             throw new InvalidOperationException($"Port {AppConfig.ServerPort} is still in use after {PortWaitTimeoutMs}ms");
+
+        ct.ThrowIfCancellationRequested();
 
         var startInfo = new ProcessStartInfo
         {
@@ -206,13 +208,13 @@ public class LlmServer : IDisposable
         }
     }
 
-    async Task<bool> WaitForPortFreeAsync()
+    async Task<bool> WaitForPortFreeAsync(CancellationToken ct)
     {
         var elapsed = 0;
         while (IsPortInUse(AppConfig.ServerPort) && elapsed < PortWaitTimeoutMs)
         {
             Logger.Info($"Port {AppConfig.ServerPort} in use, waiting... ({elapsed}ms)");
-            await Task.Delay(PortWaitIntervalMs);
+            await Task.Delay(PortWaitIntervalMs, ct);
             elapsed += PortWaitIntervalMs;
         }
         return !IsPortInUse(AppConfig.ServerPort);

@@ -217,7 +217,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
             ProcessRemoteRequestAsync,
             () => _state.ActiveProvider?.IsLocal == true,
             () => _state.RemoteSettingsControlEnabled,
-            ApplyRemoteSettingsAsync);
+            ApplyRemoteSettingsAsync,
+            WarmupForRemoteRequestAsync,
+            ReleaseRemoteWarmupAsync);
         RemoteServer.StatusChanged += RemoteServer_StatusChanged;
         RecordingManager = new RecordingStateManager();
         _highlightTimer.Tick += (_, _) =>
@@ -384,12 +386,28 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (_state.ActiveProvider?.IsLocal != true)
             throw new InvalidOperationException("This server instance must be in Local LLM mode to process remote requests.");
 
-        if (!await ServerManager.IsServerReady())
-            await ServerManager.StartAsync((_, _, _) => { });
+        if (!await ServerManager.IsServerReady(ct))
+            await ServerManager.StartAsync((_, _, _) => { }, ct);
         var text = await ServerManager.TranscribeAsync(pcm, channels, ct);
         if (_state.AutoOffloadVram)
             await ServerManager.OffloadServerAsync();
         return text;
+    }
+
+    Task WarmupForRemoteRequestAsync(CancellationToken ct)
+    {
+        if (_state.ActiveProvider?.IsLocal != true)
+            throw new InvalidOperationException("This server instance must be in Local LLM mode to warm up the model.");
+
+        return ServerManager.StartAsync((_, _, _) => { }, ct);
+    }
+
+    Task ReleaseRemoteWarmupAsync(CancellationToken ct)
+    {
+        if (_state.ActiveProvider?.IsLocal != true || !_state.AutoOffloadVram)
+            return Task.CompletedTask;
+
+        return ServerManager.OffloadServerAsync(ct);
     }
 
     async Task<RemoteExecutionSettings> ApplyRemoteSettingsAsync(
@@ -550,6 +568,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (provider != null && provider.IsLocal && !ServerManager.IsServerRunning)
         {
             FireAndForget(ServerManager.StartAsync((msg, _, _) => RecordingManager.InfoText = msg), "StartServer");
+        }
+        else if (provider?.IsRemoteExecution == true)
+        {
+            RecordingManager.InfoText = "Preparing remote LLM...";
+            FireAndForget(ServerManager.WarmupRemoteAsync(), "WarmupRemoteServer");
         }
         else if (provider != null && !provider.IsLocal)
         {

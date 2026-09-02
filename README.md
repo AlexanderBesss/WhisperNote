@@ -7,7 +7,7 @@ Voice-to-text desktop app for Windows. Hold a key, speak, release — transcribe
 - **Hold-to-record** — Right Ctrl (default) to start/stop recording
 - **Auto-start server** — llama.cpp server starts on demand, stops after each request
 - **Multi-provider** — local GGUF models or cloud APIs (OpenAI, Azure)
-- **Remote execution** — send recordings to another WhisperNote instance that runs its local model
+- **Remote execution** — warm and send recordings to another WhisperNote instance that runs its local model
 - **Grammar correction** — LLM cleans up speech into proper English
 - **VRAM offload** — stop server after each request to free GPU memory
 - **Run on startup** — optional Windows auto-start
@@ -41,6 +41,11 @@ opens the TCP listener directly, so no Windows URL ACL setup is required. Window
 an inbound rule for the selected port, and the listener should only be exposed on a trusted network. The
 protocol intentionally does not add authentication or TLS; cloud orchestration, streaming, and request
 queuing are not supported.
+
+When recording begins in RemoteExecution mode, the client sends a best-effort warm-up request so the
+server can load its model while the user is speaking. Audio is still sent only when recording ends. With
+auto-offload enabled, the warmed model remains loaded until that transcription finishes and is then
+offloaded as before. If no transcription follows, the server releases the warm-up after five minutes.
 
 To let a client control server-side model behavior, enable **Allow remote settings control** on the server.
 The client then synchronizes **Auto-offload VRAM** and **Thinking mode** when those settings are saved. This is

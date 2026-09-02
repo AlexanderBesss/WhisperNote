@@ -26,6 +26,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
     const int RetryDelayMs = 3000;
     const int TruncateMaxLen = 300;
     const int HealthCheckTimeoutSeconds = 2;
+    const int WarmupTimeoutSeconds = 2;
     const int HttpTimeoutMinutes = 5;
 
     readonly HttpClient _http;
@@ -53,16 +54,23 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         }
     }
 
-    public async Task<bool> IsServerReady()
+    public async Task<bool> IsServerReady(CancellationToken ct = default)
     {
         if (!_provider.IsLocal && !_provider.IsRemoteExecution)
             return true;
 
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(HealthCheckTimeoutSeconds));
-            using var response = await _http.GetAsync(BuildEndpointUri(_provider.ApiEndpoint, "/health"), cts.Token);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(HealthCheckTimeoutSeconds));
+            using var response = await _http.GetAsync(
+                BuildEndpointUri(_provider.ApiEndpoint, "/health"),
+                timeoutCts.Token);
             return response.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
@@ -102,6 +110,44 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         var result = JsonSerializer.Deserialize<RemoteTranscriptionResponse>(raw,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         return result?.Text;
+    }
+
+    public async Task<bool> WarmupRemoteAsync(CancellationToken ct = default)
+    {
+        if (!_provider.IsRemoteExecution)
+            return false;
+
+        try
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(WarmupTimeoutSeconds));
+            using var content = new ByteArrayContent(Array.Empty<byte>());
+            using var response = await _http.PostAsync(
+                BuildEndpointUri(_provider.ApiEndpoint, "/api/warmup"),
+                content,
+                timeoutCts.Token);
+            if (response.IsSuccessStatusCode)
+                return true;
+
+            Logger.Warn($"Remote warm-up rejected [{response.StatusCode}]");
+            return false;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.Warn("Remote warm-up timed out");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // Warm-up is only a latency optimization. The audio request retains
+            // the existing start-on-demand fallback if this call cannot be sent.
+            Logger.Warn($"Remote warm-up failed: {ex.Message}");
+            return false;
+        }
     }
 
     public async Task<bool> UpdateRemoteSettingsAsync(

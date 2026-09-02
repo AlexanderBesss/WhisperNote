@@ -18,6 +18,8 @@ public class ServerStateManager : ViewModel, IDisposable
     readonly AppState _state;
     readonly SemaphoreSlim _operationLock = new(1, 1);
     readonly object _startLock = new();
+    readonly object _remoteWarmupLock = new();
+    CancellationTokenSource? _remoteWarmupCts;
 
     ServerStatus _status = ServerStatus.Offline;
     public ServerStatus Status
@@ -75,10 +77,11 @@ public class ServerStateManager : ViewModel, IDisposable
 
     public bool IsStarting => _isStarting;
 
-    public Task StartAsync(Action<string, long, long> progress)
+    public Task StartAsync(Action<string, long, long> progress, CancellationToken ct = default)
     {
         lock (_startLock)
         {
+            ct.ThrowIfCancellationRequested();
             if (_server.IsRunning)
             {
                 Status = ServerStatus.Online;
@@ -86,37 +89,52 @@ public class ServerStateManager : ViewModel, IDisposable
             }
 
             if (_isStarting)
-                return _startTask ?? Task.CompletedTask;
+            {
+                var activeStart = _startTask ?? Task.CompletedTask;
+                return ct.CanBeCanceled ? activeStart.WaitAsync(ct) : activeStart;
+            }
 
             _isStarting = true;
-            _startTask = StartCoreAsync(progress);
+            _startTask = StartCoreAsync(progress, ct);
             return _startTask;
         }
     }
 
-    async Task StartCoreAsync(Action<string, long, long> progress)
+    async Task StartCoreAsync(Action<string, long, long> progress, CancellationToken ct)
     {
-        await _operationLock.WaitAsync();
+        var lockTaken = false;
         try
         {
-            if (await _transcription.IsServerReady())
+            await _operationLock.WaitAsync(ct);
+            lockTaken = true;
+
+            if (await _transcription.IsServerReady(ct))
             {
                 Status = ServerStatus.Online;
                 return;
             }
 
             _server.SetThinkingEnabled(_state.ThinkingEnabled);
-            await _server.EnsureModelsAsync(progress);
-            await _server.StartAsync();
+            await _server.EnsureModelsAsync(progress, ct);
+            await _server.StartAsync(ct);
             Status = ServerStatus.Launching;
 
-            if (await WaitForReadyAsync(StartMaxAttempts, StartPollIntervalMs))
+            if (await WaitForReadyAsync(StartMaxAttempts, StartPollIntervalMs, ct))
             {
                 Status = ServerStatus.Online;
                 return;
             }
 
             throw new TimeoutException("Server failed to start within 60 seconds");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            if (lockTaken)
+            {
+                _server.Stop();
+                Status = ServerStatus.Offline;
+            }
+            throw;
         }
         catch (Exception ex)
         {
@@ -131,16 +149,17 @@ public class ServerStateManager : ViewModel, IDisposable
                 _isStarting = false;
                 _startTask = null;
             }
-            _operationLock.Release();
+            if (lockTaken)
+                _operationLock.Release();
         }
     }
 
-    async Task<bool> WaitForReadyAsync(int maxAttempts, int pollIntervalMs)
+    async Task<bool> WaitForReadyAsync(int maxAttempts, int pollIntervalMs, CancellationToken ct)
     {
         for (int i = 0; i < maxAttempts; i++)
         {
-            await Task.Delay(pollIntervalMs);
-            if (await _transcription.IsServerReady())
+            await Task.Delay(pollIntervalMs, ct);
+            if (await _transcription.IsServerReady(ct))
                 return true;
         }
         return false;
@@ -257,6 +276,7 @@ public class ServerStateManager : ViewModel, IDisposable
     {
         if (_switchingProvider) return;
         _switchingProvider = true;
+        CancelRemoteWarmup();
         try
         {
             await WithOperationLockAsync(() => Task.Run(() =>
@@ -293,6 +313,7 @@ public class ServerStateManager : ViewModel, IDisposable
 
     public async Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct)
     {
+        CancelRemoteWarmup();
         try
         {
             var text = await WithOperationLockAsync(() => _transcription.Transcribe(pcm, channels, ct: ct), ct);
@@ -306,6 +327,58 @@ public class ServerStateManager : ViewModel, IDisposable
                 Status = ServerStatus.RemoteUnavailable;
             throw;
         }
+    }
+
+    public async Task<bool> WarmupRemoteAsync(CancellationToken ct = default)
+    {
+        if (_state.ActiveProvider?.IsRemoteExecution != true)
+            return false;
+
+        var warmupCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        CancellationTokenSource? previousWarmup;
+        lock (_remoteWarmupLock)
+        {
+            previousWarmup = _remoteWarmupCts;
+            _remoteWarmupCts = warmupCts;
+        }
+        TryCancel(previousWarmup);
+
+        try
+        {
+            // HttpClient supports concurrent requests. Keeping this outside the
+            // operation lock prevents a slow best-effort warm-up from delaying audio.
+            var transcription = _transcription;
+            return await transcription.WarmupRemoteAsync(warmupCts.Token);
+        }
+        finally
+        {
+            lock (_remoteWarmupLock)
+            {
+                if (ReferenceEquals(_remoteWarmupCts, warmupCts))
+                    _remoteWarmupCts = null;
+            }
+            warmupCts.Dispose();
+        }
+    }
+
+    void CancelRemoteWarmup()
+    {
+        CancellationTokenSource? warmupCts;
+        lock (_remoteWarmupLock)
+        {
+            warmupCts = _remoteWarmupCts;
+            _remoteWarmupCts = null;
+        }
+        TryCancel(warmupCts);
+    }
+
+    static void TryCancel(CancellationTokenSource? cts)
+    {
+        if (cts == null)
+            return;
+
+        try { cts.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     public Task<bool> SyncRemoteSettingsAsync(CancellationToken ct = default) =>
@@ -350,8 +423,8 @@ public class ServerStateManager : ViewModel, IDisposable
         return settings;
     }
 
-    public Task<bool> IsServerReady() =>
-        WithOperationLockAsync(() => _transcription.IsServerReady());
+    public Task<bool> IsServerReady(CancellationToken ct = default) =>
+        WithOperationLockAsync(() => _transcription.IsServerReady(ct), ct);
 
     public async Task StopServerAsync()
     {
@@ -362,15 +435,16 @@ public class ServerStateManager : ViewModel, IDisposable
         });
     }
 
-    public Task OffloadServerAsync() =>
+    public Task OffloadServerAsync(CancellationToken ct = default) =>
         WithOperationLockAsync(async () =>
         {
             await Task.Run(() => _server.Stop());
             Status = ServerStatus.Offline;
-        });
+        }, ct);
 
     public void Dispose()
     {
+        CancelRemoteWarmup();
         if (!_operationLock.Wait(TimeSpan.FromSeconds(10)))
         {
             Logger.Error("Timed out waiting to dispose server manager");
