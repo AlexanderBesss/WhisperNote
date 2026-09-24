@@ -8,7 +8,13 @@ namespace WhisperNote.Services;
 
 static class TranscriptionParser
 {
-    public static string? Parse(string? raw)
+    const string AsrTextTag = "<asr_text>";
+
+    // dedicatedAsr: the model is a purpose-built ASR model (Qwen3-ASR) whose
+    // output format is "language X<asr_text>...</asr_text>". A response without
+    // the <asr_text> section (e.g. just "language None") means the model failed
+    // to transcribe, so it must not be pasted as if it were text.
+    public static string? Parse(string? raw, bool dedicatedAsr = false)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
@@ -36,6 +42,12 @@ static class TranscriptionParser
                     text = msgContent.GetString()?.Trim();
             }
 
+            if (dedicatedAsr && (text == null || !text.Contains(AsrTextTag, StringComparison.Ordinal)))
+            {
+                Logger.Warn($"ASR model returned no <asr_text> section: {text}");
+                return null;
+            }
+
             text = CleanAsrOutput(text);
 
             if (string.IsNullOrWhiteSpace(text))
@@ -55,9 +67,9 @@ static class TranscriptionParser
     static string? CleanAsrOutput(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return text;
-        var start = text.IndexOf("<asr_text>", StringComparison.Ordinal);
+        var start = text.IndexOf(AsrTextTag, StringComparison.Ordinal);
         if (start >= 0)
-            text = text.Substring(start + "<asr_text>".Length);
+            text = text.Substring(start + AsrTextTag.Length);
         text = text.Replace("</asr_text>", "");
         return text.Trim();
     }

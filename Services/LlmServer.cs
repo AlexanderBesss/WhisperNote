@@ -274,6 +274,12 @@ public class LlmServer : IDisposable
         }
     }
 
+    // Dedicated ASR models (Qwen3-ASR) are decoded greedily; chat-style
+    // sampling parameters (min-p, repeat penalty, temperature) degrade their output.
+    string SamplingArgs() => LocalModels.IsDedicatedAsr(CurrentProvider?.Model)
+        ? "--temp 0 "
+        : $"--temp {AppConfig.Temperature} --top-p {AppConfig.TopP} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} ";
+
     internal string ServerArgs()
     {
         if (_useCpuOnly)
@@ -292,7 +298,7 @@ public class LlmServer : IDisposable
             $"--flash-attn on " +
             $"--batch-size {AppConfig.BatchSize} --ubatch-size {AppConfig.UBatchSize} " +
             "--jinja " +
-            $"--temp {AppConfig.Temperature} --top-p {AppConfig.TopP} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} " +
+            SamplingArgs() +
             $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
             $"--metrics --slots --perf";
     }
@@ -310,7 +316,7 @@ public class LlmServer : IDisposable
             "--flash-attn off " +
             $"--batch-size {AppConfig.BatchSize} --ubatch-size {AppConfig.UBatchSize} " +
             "--jinja " +
-            $"--temp {AppConfig.Temperature} --top-p {AppConfig.TopP} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} " +
+            SamplingArgs() +
             $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
             "--metrics --slots --perf";
     }

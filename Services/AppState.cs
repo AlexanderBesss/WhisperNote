@@ -67,6 +67,12 @@ public class AppState
 
     public IReadOnlyList<ProviderConfig> Providers => _settings.Providers;
     public ObservableCollection<ProviderConfig> ProvidersObservable { get; }
+    public string? LocalModelId
+    {
+        get => _settings.LocalModelId;
+        set { _settings.LocalModelId = value; _settings.Save(); }
+    }
+
     public bool AutoOffloadVram
     {
         get => _settings.AutoOffloadVram;
@@ -139,6 +145,30 @@ public class AppState
             return false;
 
         ActiveProviderIndex = index;
+        _settings.Save();
+        return true;
+    }
+
+    public bool SetLocalModel(string? modelId)
+    {
+        var option = LocalModels.FindById(modelId);
+        var local = LocalProvider;
+        if (option == null || local == null)
+            return false;
+
+        var changed = _settings.LocalModelId != option.Id ||
+            local.Name != option.ProviderName ||
+            local.Model != option.Model ||
+            local.HfRepo != option.HfRepo ||
+            local.Mmproj != option.Mmproj;
+        if (!changed)
+            return false;
+
+        _settings.LocalModelId = option.Id;
+        local.Name = option.ProviderName;
+        local.Model = option.Model;
+        local.HfRepo = option.HfRepo;
+        local.Mmproj = option.Mmproj;
         _settings.Save();
         return true;
     }

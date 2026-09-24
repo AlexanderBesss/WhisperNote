@@ -95,7 +95,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
         var raw = await SendWithRetry(wavBytes, modelName, ct);
 
-        return TranscriptionParser.Parse(raw);
+        return TranscriptionParser.Parse(raw, LocalModels.IsDedicatedAsr(modelName));
     }
 
     async Task<string?> TranscribeRemotely(byte[] pcm, int channels, CancellationToken ct)
@@ -196,7 +196,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         }
     }
 
-    MultipartFormDataContent BuildFormContent(byte[] wavBytes, string modelName)
+    internal MultipartFormDataContent BuildFormContent(byte[] wavBytes, string modelName)
     {
         var boundary = $"----FormBoundary{Guid.NewGuid():N}";
         var content = new MultipartFormDataContent(boundary);
@@ -204,7 +204,15 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
         content.Add(fileContent, "file", "audio.wav");
         content.Add(new StringContent(modelName), "model");
-        content.Add(new StringContent(SystemPrompt), "prompt");
+
+        // llama.cpp's /v1/audio/transcriptions replaces its built-in
+        // "Transcribe audio to text" instruction with any non-empty prompt.
+        // Dedicated ASR models (Qwen3-ASR) only produce a proper
+        // "language X<asr_text>..." output for the instruction they were
+        // trained on, so omit the prompt for them and let the server default win.
+        if (!LocalModels.IsDedicatedAsr(modelName))
+            content.Add(new StringContent(SystemPrompt), "prompt");
+
         content.Add(new StringContent(TranscriptionTemperature), "temperature");
         content.Add(new StringContent(AppConfig.MaxTokens.ToString()), "max_tokens");
         return content;

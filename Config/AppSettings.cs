@@ -17,6 +17,8 @@ public class AppSettings
 
     public int ActiveProviderIndex { get; set; }
     public List<ProviderConfig> Providers { get; set; } = new();
+    // Null on legacy configs: resolved from the local provider's model file in NormalizeProviders.
+    public string? LocalModelId { get; set; }
     public bool AutoOffloadVram { get; set; }
     public bool ThinkingEnabled { get; set; }
     public bool UseCpuOnly { get; set; }
@@ -87,6 +89,7 @@ public class AppSettings
         return new AppSettings
         {
             ActiveProviderIndex = 0,
+            LocalModelId = LocalModels.DefaultId,
             AutoOffloadVram = true,
             ThinkingEnabled = true,
             UseCpuOnly = false,
@@ -137,6 +140,28 @@ public class AppSettings
         {
             Providers.Add(CreateDefaultRemoteProvider());
             changed = true;
+        }
+
+        var local = Providers.Find(p => p.IsLocal);
+        if (local != null)
+        {
+            // Keep the local provider in sync with the selected model. Unknown
+            // selections and custom models that match no catalog entry are left alone.
+            var option = LocalModels.Resolve(LocalModelId, local.Model);
+            if (option != null &&
+                (LocalModelId != option.Id ||
+                 local.Name != option.ProviderName ||
+                 local.Model != option.Model ||
+                 local.HfRepo != option.HfRepo ||
+                 local.Mmproj != option.Mmproj))
+            {
+                LocalModelId = option.Id;
+                local.Name = option.ProviderName;
+                local.Model = option.Model;
+                local.HfRepo = option.HfRepo;
+                local.Mmproj = option.Mmproj;
+                changed = true;
+            }
         }
 
         foreach (var provider in Providers)
@@ -208,17 +233,21 @@ public class AppSettings
         return true;
     }
 
-    static ProviderConfig CreateDefaultLocalProvider() => new()
+    static ProviderConfig CreateDefaultLocalProvider()
     {
-        Name = "Gemma 4 E2B UD (local)",
-        Type = "local",
-        ApiEndpoint = "http://localhost:8082",
-        Model = "gemma-4-E2B-it-Q4_0.gguf",
-        Mmproj = "mmproj-BF16.gguf",
-        // ServerExe intentionally left empty: the server binary is picked by
-        // hardware detection (iGPU > NVIDIA > NPU). Set it explicitly to override.
-        HfRepo = "unsloth/gemma-4-E2B-it-GGUF"
-    };
+        var option = LocalModels.FindById(LocalModels.DefaultId)!;
+        return new ProviderConfig
+        {
+            Name = option.ProviderName,
+            Type = "local",
+            ApiEndpoint = "http://localhost:8082",
+            Model = option.Model,
+            Mmproj = option.Mmproj,
+            // ServerExe intentionally left empty: the server binary is picked by
+            // hardware detection (iGPU > NVIDIA > NPU). Set it explicitly to override.
+            HfRepo = option.HfRepo
+        };
+    }
 
     static ProviderConfig CreateDefaultRemoteProvider() => new()
     {

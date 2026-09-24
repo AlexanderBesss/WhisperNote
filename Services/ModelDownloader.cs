@@ -66,7 +66,8 @@ public static class ModelDownloader
                 }
             }
 
-            for (int i = 0; i < 5; i++)
+            IOException? copyFailure = null;
+            for (var i = 0; i < 6; i++)
             {
                 try
                 {
@@ -76,13 +77,21 @@ public static class ModelDownloader
                     try { File.Delete(tmpPath); } catch { }
                     return;
                 }
-                catch (IOException) when (i < 4)
+                catch (IOException ex)
                 {
-                    await Task.Delay(500);
+                    // The destination can be locked by a stale server process or
+                    // antivirus scanning. Retry, then fail loudly instead of
+                    // reporting a download that was never put in place.
+                    copyFailure = ex;
+                    if (i < 5)
+                        await Task.Delay(1000);
                 }
             }
-            Logger.Info($"Downloaded {Path.GetFileName(destPath)} ({FormatBytes(downloaded)})");
-            progress($"Downloaded {filename}", downloaded, total);
+
+            throw new IOException(
+                $"Could not move the downloaded file into place ({Path.GetFileName(destPath)}): " +
+                $"{copyFailure?.Message ?? "the file is locked by another process"}",
+                copyFailure);
         }
         catch
         {

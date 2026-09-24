@@ -15,6 +15,7 @@ public sealed class SettingsViewModel : ViewModel
     bool _useCpuOnly;
     bool _startupEnabled;
     bool _autoPaste;
+    string? _localModelId;
     bool _useRemote;
     bool _hotkeyEnabled;
     int _hotkeyVirtualKeyCode;
@@ -52,6 +53,13 @@ public sealed class SettingsViewModel : ViewModel
     {
         get => _autoPaste;
         set => SetProperty(ref _autoPaste, value);
+    }
+
+    public IReadOnlyList<LocalModelOption> LocalModelOptions { get; } = LocalModels.All;
+    public string? LocalModelId
+    {
+        get => _localModelId;
+        set => SetProperty(ref _localModelId, value);
     }
 
     public bool UseRemote
@@ -129,6 +137,7 @@ public sealed class SettingsViewModel : ViewModel
         _useCpuOnly = mainViewModel.UseCpuOnly;
         _startupEnabled = mainViewModel.StartupEnabled;
         _autoPaste = mainViewModel.AutoPaste;
+        _localModelId = mainViewModel.LocalModelId ?? LocalModels.DefaultId;
         _useRemote = mainViewModel.UseRemote;
         _hotkeyEnabled = mainViewModel.HotkeyEnabled;
         _hotkeyVirtualKeyCode = mainViewModel.HotkeyVirtualKeyCode;
@@ -172,6 +181,7 @@ public sealed class SettingsViewModel : ViewModel
             UseCpuOnly,
             StartupEnabled,
             AutoPaste,
+            LocalModelId,
             UseRemote,
             HotkeyEnabled,
             HotkeyVirtualKeyCode,

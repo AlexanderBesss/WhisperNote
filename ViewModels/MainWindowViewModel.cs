@@ -144,6 +144,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    public string? LocalModelId => _state.LocalModelId;
     public string ActiveModuleName => _state.ActiveProvider?.Model ?? "No local module";
     public string CloudLlmUrl => _state.CloudLlmUrl;
     public IReadOnlyList<string> CloudLlmUrls => _state.CloudLlmUrls;
@@ -316,6 +317,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         bool useCpuOnly,
         bool startupEnabled,
         bool autoPaste,
+        string? localModelId,
         bool useRemote,
         bool hotkeyEnabled,
         int hotkeyVirtualKeyCode,
@@ -337,6 +339,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         var behaviorChanged = _state.AutoOffloadVram != autoOffloadVram ||
             _state.ThinkingEnabled != thinkingEnabled;
         var cpuModeChanged = _state.UseCpuOnly != useCpuOnly;
+        var localModelChanged = _state.SetLocalModel(localModelId);
         var remoteSettings = new RemoteExecutionSettings(autoOffloadVram, thinkingEnabled);
 
         _applyingSettings = true;
@@ -358,6 +361,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         if (cpuModeChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForCpuMode");
+
+        // The running server still holds the previous model; stop it so the next
+        // transcription restarts with the selected one (downloading it if needed).
+        if (localModelChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
+            FireAndForget(ServerManager.StopServerAsync(), "StopServerForModelChange");
 
         var shouldSyncRemoteSettings = RemoteSettingsSyncPolicy.ShouldSyncOnSave(
             useRemote,
