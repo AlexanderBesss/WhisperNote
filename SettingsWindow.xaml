@@ -239,6 +239,21 @@
                                               VerticalAlignment="Center"/>
                             </Grid>
 
+                            <Grid Margin="0,0,0,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Autopaste" FontSize="13" Foreground="#E0E0E0"/>
+                                    <TextBlock Text="Paste the transcription into the focused input field after copying."
+                                               FontSize="10" Foreground="#777" Margin="0,3,0,0"/>
+                                </StackPanel>
+                                <ToggleButton Grid.Column="1" Style="{StaticResource SettingsToggleButton}"
+                                              IsChecked="{Binding AutoPaste, Mode=TwoWay}"
+                                              VerticalAlignment="Center"/>
+                            </Grid>
+
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>

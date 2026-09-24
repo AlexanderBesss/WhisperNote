@@ -20,6 +20,7 @@ public class AppSettings
     public bool AutoOffloadVram { get; set; }
     public bool ThinkingEnabled { get; set; }
     public bool StartupEnabled { get; set; }
+    public bool AutoPaste { get; set; }
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
     public bool HotkeyEnabled { get; set; } = true;
     public RemoteProviderMode RemoteProviderMode { get; set; } = RemoteProviderMode.DirectApi;
@@ -88,6 +89,7 @@ public class AppSettings
             AutoOffloadVram = true,
             ThinkingEnabled = true,
             StartupEnabled = false,
+            AutoPaste = false,
             Providers = new List<ProviderConfig>
             {
                 CreateDefaultLocalProvider(),

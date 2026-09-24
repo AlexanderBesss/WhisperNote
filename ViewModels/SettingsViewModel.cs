@@ -13,6 +13,7 @@ public sealed class SettingsViewModel : ViewModel
     bool _autoOffloadVram;
     bool _thinkingEnabled;
     bool _startupEnabled;
+    bool _autoPaste;
     bool _useRemote;
     bool _hotkeyEnabled;
     int _hotkeyVirtualKeyCode;
@@ -38,6 +39,12 @@ public sealed class SettingsViewModel : ViewModel
     {
         get => _startupEnabled;
         set => SetProperty(ref _startupEnabled, value);
+    }
+
+    public bool AutoPaste
+    {
+        get => _autoPaste;
+        set => SetProperty(ref _autoPaste, value);
     }
 
     public bool UseRemote
@@ -113,6 +120,7 @@ public sealed class SettingsViewModel : ViewModel
         _autoOffloadVram = mainViewModel.AutoOffloadVram;
         _thinkingEnabled = mainViewModel.ThinkingEnabled;
         _startupEnabled = mainViewModel.StartupEnabled;
+        _autoPaste = mainViewModel.AutoPaste;
         _useRemote = mainViewModel.UseRemote;
         _hotkeyEnabled = mainViewModel.HotkeyEnabled;
         _hotkeyVirtualKeyCode = mainViewModel.HotkeyVirtualKeyCode;
@@ -154,6 +162,7 @@ public sealed class SettingsViewModel : ViewModel
             AutoOffloadVram,
             ThinkingEnabled,
             StartupEnabled,
+            AutoPaste,
             UseRemote,
             HotkeyEnabled,
             HotkeyVirtualKeyCode,

@@ -95,6 +95,11 @@ public class AppState
         get => _settings.StartupEnabled;
         set { _settings.StartupEnabled = value; _settings.Save(); }
     }
+    public bool AutoPaste
+    {
+        get => _settings.AutoPaste;
+        set { _settings.AutoPaste = value; _settings.Save(); }
+    }
     public int HotkeyVirtualKeyCode
     {
         get => _settings.HotkeyVirtualKeyCode;

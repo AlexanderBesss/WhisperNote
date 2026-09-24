@@ -31,6 +31,24 @@ public class RemoteExecutionTests
     }
 
     [Fact]
+    public void AutopasteIsDisabledByDefaultAndForLegacySettings()
+    {
+        var defaults = new AppSettings();
+        Assert.False(defaults.AutoPaste);
+
+        var legacy = JsonSerializer.Deserialize<AppSettings>("""
+            {
+              "ActiveProviderIndex": 0,
+              "Providers": [
+                { "Name": "Local", "Type": "local", "ApiEndpoint": "http://localhost:8082" }
+              ]
+            }
+            """)!;
+
+        Assert.False(legacy.AutoPaste);
+    }
+
+    [Fact]
     public void RemoteExecutionClientAndListenerHaveSeparateDefaults()
     {
         var settings = new AppSettings();

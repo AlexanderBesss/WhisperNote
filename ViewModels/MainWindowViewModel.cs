@@ -94,6 +94,17 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    bool _autoPaste;
+    public bool AutoPaste
+    {
+        get => _autoPaste;
+        set
+        {
+            if (SetProperty(ref _autoPaste, value))
+                _state.AutoPaste = value;
+        }
+    }
+
     bool _useRemote;
     bool _applyingSettings;
     public bool UseRemote
@@ -243,6 +254,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _autoOffloadVram = state.AutoOffloadVram;
         _thinkingEnabled = state.ThinkingEnabled;
         _startupEnabled = state.StartupEnabled;
+        _autoPaste = state.AutoPaste;
         if (!_startupEnabled && StartupRegistry.IsEnabled())
         {
             _startupEnabled = true;
@@ -278,6 +290,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         bool autoOffloadVram,
         bool thinkingEnabled,
         bool startupEnabled,
+        bool autoPaste,
         bool useRemote,
         bool hotkeyEnabled,
         int hotkeyVirtualKeyCode,
@@ -306,6 +319,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
             AutoOffloadVram = autoOffloadVram;
             ThinkingEnabled = thinkingEnabled;
             StartupEnabled = startupEnabled;
+            AutoPaste = autoPaste;
             HotkeyEnabled = hotkeyEnabled;
             HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
             UseRemote = useRemote;
@@ -717,9 +731,14 @@ public class MainWindowViewModel : ViewModel, IDisposable
             {
                 LastTranscription = text;
                 var copied = TrySetClipboardText(text);
+                var pasted = false;
+                if (copied && _autoPaste)
+                    pasted = AutoPaster.SendCtrlV();
                 RecordingManager.SetSuccess(text);
                 if (!copied)
                     RecordingManager.InfoText = "Transcribed, but clipboard was unavailable";
+                else if (pasted)
+                    RecordingManager.InfoText = "Copied and pasted";
                 NotificationSound.Play();
                 await OffloadServerAfterSuccessAsync();
             }
