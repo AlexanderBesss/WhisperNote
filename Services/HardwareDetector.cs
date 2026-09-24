@@ -8,6 +8,7 @@ public enum HardwareBackend
 {
     Unknown,
     NvidiaCuda,
+    IntelIgpu,
     IntelNpu
 }
 
@@ -17,11 +18,16 @@ public static class HardwareDetector
     {
         try
         {
-            if (HasIntelNpu())
-                return HardwareBackend.IntelNpu;
+            // Priority: Intel iGPU (Vulkan) first, then discrete NVIDIA (CUDA),
+            // with the Intel NPU (OpenVINO) kept as the last-resort backup.
+            if (HasIntelIgpu())
+                return HardwareBackend.IntelIgpu;
 
             if (HasNvidiaGpu())
                 return HardwareBackend.NvidiaCuda;
+
+            if (HasIntelNpu())
+                return HardwareBackend.IntelNpu;
         }
         catch (Exception ex)
         {
@@ -29,6 +35,28 @@ public static class HardwareDetector
         }
 
         return HardwareBackend.NvidiaCuda;
+    }
+
+    static bool HasIntelIgpu()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT * FROM Win32_VideoController WHERE Name LIKE '%Intel%'");
+
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                var name = obj["Name"] as string ?? "";
+                Logger.Info($"Intel iGPU detected: {name}");
+                return true;
+            }
+        }
+        catch (COMException)
+        {
+            // WMI not available
+        }
+
+        return false;
     }
 
     static bool HasIntelNpu()

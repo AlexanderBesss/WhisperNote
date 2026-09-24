@@ -41,6 +41,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\llm-servers\llama\windows\vulkan\**" Exclude="..\llm-servers\llama\windows\vulkan\*.ps1;..\llm-servers\llama\windows\vulkan\*.log" Link="vulkan\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="..\llm-servers\llama\windows\NPU\llama-ov\**" Link="NPU\llama-ov\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 

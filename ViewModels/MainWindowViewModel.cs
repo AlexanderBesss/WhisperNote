@@ -169,6 +169,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         HardwareMode = _useCpuOnly ? "CPU" : App.DetectedBackend switch
         {
+            HardwareBackend.IntelIgpu => "iGPU",
             HardwareBackend.IntelNpu => "NPU",
             HardwareBackend.NvidiaCuda => "GPU",
             _ => ""

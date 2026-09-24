@@ -22,5 +22,6 @@ public static class AppConfig
     public const int MicDeviceNumber = -1;
 
     public const string CudaServerExeRelative = @"llama\llama-server.exe";
+    public const string VulkanServerExeRelative = @"vulkan\llama-server.exe";
     public const string NpuServerExeRelative = @"NPU\llama-ov\llama-server.exe";
 }

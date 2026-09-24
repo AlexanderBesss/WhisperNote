@@ -37,19 +37,14 @@ public class LlmServer : IDisposable
 
         if (provider.IsLocal)
         {
+            _backend = App.DetectedBackend;
+
             if (!string.IsNullOrEmpty(provider.ServerExe))
-            {
                 _serverExe = Path.Combine(dir, provider.ServerExe);
-                _backend = App.DetectedBackend;
-            }
             else
-            {
-                _backend = App.DetectedBackend;
-                // Use CUDA build (OpenVINO build has model loading issues)
-                _serverExe = Path.Combine(dir, AppConfig.CudaServerExeRelative);
-                if (_backend == HardwareBackend.IntelNpu)
-                    Logger.Warn("NPU detected but using CUDA build (OpenVINO build unstable)");
-            }
+                _serverExe = Path.Combine(dir, ServerExeForBackend());
+
+            Logger.Info($"Local server: {_serverExe} (backend: {_backend})");
             _modelPath = AppPaths.ResolveModelPath(provider.Model);
             _mmprojPath = !string.IsNullOrEmpty(provider.Mmproj)
                 ? AppPaths.ResolveModelPath(provider.Mmproj)
@@ -62,6 +57,13 @@ public class LlmServer : IDisposable
             _mmprojPath = null;
         }
     }
+
+    static string ServerExeForBackend() => App.DetectedBackend switch
+    {
+        HardwareBackend.IntelIgpu => AppConfig.VulkanServerExeRelative,
+        HardwareBackend.IntelNpu => AppConfig.NpuServerExeRelative,
+        _ => AppConfig.CudaServerExeRelative
+    };
 
     public async Task EnsureModelsAsync(Action<string, long, long> progress, CancellationToken ct = default)
     {

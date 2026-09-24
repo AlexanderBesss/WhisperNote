@@ -215,7 +215,8 @@ public class AppSettings
         ApiEndpoint = "http://localhost:8082",
         Model = "gemma-4-E2B-it-Q4_0.gguf",
         Mmproj = "mmproj-BF16.gguf",
-        ServerExe = @"llama\llama-server.exe",
+        // ServerExe intentionally left empty: the server binary is picked by
+        // hardware detection (iGPU > NVIDIA > NPU). Set it explicitly to override.
         HfRepo = "unsloth/gemma-4-E2B-it-GGUF"
     };
 
