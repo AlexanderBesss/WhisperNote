@@ -77,6 +77,11 @@ public class AppState
         get => _settings.ThinkingEnabled;
         set { _settings.ThinkingEnabled = value; _settings.Save(); }
     }
+    public bool UseCpuOnly
+    {
+        get => _settings.UseCpuOnly;
+        set { _settings.UseCpuOnly = value; _settings.Save(); }
+    }
 
     public bool SetModelBehaviorSettings(bool autoOffloadVram, bool thinkingEnabled)
     {

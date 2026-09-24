@@ -12,6 +12,7 @@ public sealed class SettingsViewModel : ViewModel
     readonly MainWindowViewModel _mainViewModel;
     bool _autoOffloadVram;
     bool _thinkingEnabled;
+    bool _useCpuOnly;
     bool _startupEnabled;
     bool _autoPaste;
     bool _useRemote;
@@ -33,6 +34,12 @@ public sealed class SettingsViewModel : ViewModel
     {
         get => _thinkingEnabled;
         set => SetProperty(ref _thinkingEnabled, value);
+    }
+
+    public bool UseCpuOnly
+    {
+        get => _useCpuOnly;
+        set => SetProperty(ref _useCpuOnly, value);
     }
 
     public bool StartupEnabled
@@ -119,6 +126,7 @@ public sealed class SettingsViewModel : ViewModel
         _mainViewModel = mainViewModel;
         _autoOffloadVram = mainViewModel.AutoOffloadVram;
         _thinkingEnabled = mainViewModel.ThinkingEnabled;
+        _useCpuOnly = mainViewModel.UseCpuOnly;
         _startupEnabled = mainViewModel.StartupEnabled;
         _autoPaste = mainViewModel.AutoPaste;
         _useRemote = mainViewModel.UseRemote;
@@ -161,6 +169,7 @@ public sealed class SettingsViewModel : ViewModel
         _mainViewModel.ApplySettings(
             AutoOffloadVram,
             ThinkingEnabled,
+            UseCpuOnly,
             StartupEnabled,
             AutoPaste,
             UseRemote,

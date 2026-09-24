@@ -19,6 +19,7 @@ public class AppSettings
     public List<ProviderConfig> Providers { get; set; } = new();
     public bool AutoOffloadVram { get; set; }
     public bool ThinkingEnabled { get; set; }
+    public bool UseCpuOnly { get; set; }
     public bool StartupEnabled { get; set; }
     public bool AutoPaste { get; set; }
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
@@ -88,6 +89,7 @@ public class AppSettings
             ActiveProviderIndex = 0,
             AutoOffloadVram = true,
             ThinkingEnabled = true,
+            UseCpuOnly = false,
             StartupEnabled = false,
             AutoPaste = false,
             Providers = new List<ProviderConfig>

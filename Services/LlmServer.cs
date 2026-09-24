@@ -19,6 +19,7 @@ public class LlmServer : IDisposable
     string? _mmprojPath;
     Process? _process;
     bool _thinkingEnabled;
+    bool _useCpuOnly;
     HardwareBackend _backend = HardwareBackend.Unknown;
     CancellationTokenSource? _downloadCts;
 
@@ -26,6 +27,8 @@ public class LlmServer : IDisposable
     public HardwareBackend Backend => _backend;
 
     public void SetThinkingEnabled(bool enabled) => _thinkingEnabled = enabled;
+
+    public void SetUseCpuOnly(bool enabled) => _useCpuOnly = enabled;
 
     public void Configure(ProviderConfig provider)
     {
@@ -136,7 +139,7 @@ public class LlmServer : IDisposable
             RedirectStandardOutput = true
         };
 
-        if (_backend == HardwareBackend.IntelNpu)
+        if (_backend == HardwareBackend.IntelNpu && !_useCpuOnly)
         {
             startInfo.EnvironmentVariables["GGML_OPENVINO_DEVICE"] = "NPU";
             startInfo.EnvironmentVariables["GGML_OPENVINO_PREFILL_CHUNK_SIZE"] = "512";
@@ -269,8 +272,11 @@ public class LlmServer : IDisposable
         }
     }
 
-    string ServerArgs()
+    internal string ServerArgs()
     {
+        if (_useCpuOnly)
+            return CpuServerArgs();
+
         if (_backend == HardwareBackend.IntelNpu)
             return NpuServerArgs();
 
@@ -287,6 +293,24 @@ public class LlmServer : IDisposable
             $"--temp {AppConfig.Temperature} --top-p {AppConfig.TopP} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} " +
             $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
             $"--metrics --slots --perf";
+    }
+
+    string CpuServerArgs()
+    {
+        var mmprojArg = _mmprojPath != null ? $"--mmproj \"{_mmprojPath}\" " : "";
+        return
+            $"-m \"{_modelPath}\" " +
+            mmprojArg +
+            $"--port {AppConfig.ServerPort} --host 127.0.0.1 " +
+            "--gpu-layers 0 " +
+            $"--ctx-size {AppConfig.ContextSize} " +
+            // Quantized KV cache requires flash attention, which is unreliable on CPU; use the f16 default instead.
+            "--flash-attn off " +
+            $"--batch-size {AppConfig.BatchSize} --ubatch-size {AppConfig.UBatchSize} " +
+            "--jinja " +
+            $"--temp {AppConfig.Temperature} --top-p {AppConfig.TopP} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} " +
+            $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
+            "--metrics --slots --perf";
     }
 
     string NpuServerArgs()

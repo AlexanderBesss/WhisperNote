@@ -41,6 +41,7 @@ public class ServerStateManager : ViewModel, IDisposable
         _server = new LlmServer();
         _server.Configure(provider);
         _server.SetThinkingEnabled(_state.ThinkingEnabled);
+        _server.SetUseCpuOnly(_state.UseCpuOnly);
         _transcription = new TranscriptionService(provider);
         App.RegisterServerForCleanup(_server);
     }
@@ -115,6 +116,7 @@ public class ServerStateManager : ViewModel, IDisposable
             }
 
             _server.SetThinkingEnabled(_state.ThinkingEnabled);
+            _server.SetUseCpuOnly(_state.UseCpuOnly);
             await _server.EnsureModelsAsync(progress, ct);
             await _server.StartAsync(ct);
             Status = ServerStatus.Launching;
@@ -287,6 +289,7 @@ public class ServerStateManager : ViewModel, IDisposable
                 _server = new LlmServer();
                 _server.Configure(provider);
                 _server.SetThinkingEnabled(_state.ThinkingEnabled);
+                _server.SetUseCpuOnly(_state.UseCpuOnly);
                 _transcription = new TranscriptionService(provider);
                 App.RegisterServerForCleanup(_server);
             }));

@@ -79,6 +79,23 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    bool _useCpuOnly;
+    public bool UseCpuOnly
+    {
+        get => _useCpuOnly;
+        set
+        {
+            if (SetProperty(ref _useCpuOnly, value))
+            {
+                _state.UseCpuOnly = value;
+                UpdateHardwareMode();
+                RecordingManager.InfoText = value
+                    ? "CPU mode enabled (server will restart)"
+                    : "CPU mode disabled (server will restart)";
+            }
+        }
+    }
+
     bool _startupEnabled;
     public bool StartupEnabled
     {
@@ -146,6 +163,16 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         get => _hardwareMode;
         set => SetProperty(ref _hardwareMode, value);
+    }
+
+    void UpdateHardwareMode()
+    {
+        HardwareMode = _useCpuOnly ? "CPU" : App.DetectedBackend switch
+        {
+            HardwareBackend.IntelNpu => "NPU",
+            HardwareBackend.NvidiaCuda => "GPU",
+            _ => ""
+        };
     }
 
     bool _modelMissing;
@@ -253,6 +280,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         _autoOffloadVram = state.AutoOffloadVram;
         _thinkingEnabled = state.ThinkingEnabled;
+        _useCpuOnly = state.UseCpuOnly;
         _startupEnabled = state.StartupEnabled;
         _autoPaste = state.AutoPaste;
         if (!_startupEnabled && StartupRegistry.IsEnabled())
@@ -264,12 +292,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _hotkeyEnabled = state.HotkeyEnabled;
         _hotkeyVirtualKeyCode = state.HotkeyVirtualKeyCode;
         _hotkeyName = VkCodeToString(state.HotkeyVirtualKeyCode);
-        _hardwareMode = App.DetectedBackend switch
-        {
-            HardwareBackend.IntelNpu => "NPU",
-            HardwareBackend.NvidiaCuda => "GPU",
-            _ => ""
-        };
+        UpdateHardwareMode();
 
         CheckModelExists();
 
@@ -289,6 +312,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     public void ApplySettings(
         bool autoOffloadVram,
         bool thinkingEnabled,
+        bool useCpuOnly,
         bool startupEnabled,
         bool autoPaste,
         bool useRemote,
@@ -311,6 +335,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
             remoteListenEndpoint);
         var behaviorChanged = _state.AutoOffloadVram != autoOffloadVram ||
             _state.ThinkingEnabled != thinkingEnabled;
+        var cpuModeChanged = _state.UseCpuOnly != useCpuOnly;
         var remoteSettings = new RemoteExecutionSettings(autoOffloadVram, thinkingEnabled);
 
         _applyingSettings = true;
@@ -318,6 +343,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             AutoOffloadVram = autoOffloadVram;
             ThinkingEnabled = thinkingEnabled;
+            UseCpuOnly = useCpuOnly;
             StartupEnabled = startupEnabled;
             AutoPaste = autoPaste;
             HotkeyEnabled = hotkeyEnabled;
@@ -328,6 +354,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             _applyingSettings = false;
         }
+
+        if (cpuModeChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
+            FireAndForget(ServerManager.StopServerAsync(), "StopServerForCpuMode");
 
         var shouldSyncRemoteSettings = RemoteSettingsSyncPolicy.ShouldSyncOnSave(
             useRemote,
