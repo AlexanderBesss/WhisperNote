@@ -21,8 +21,10 @@
                                               HorizontalContentAlignment="Left"
                                               VerticalContentAlignment="Center">
                                     <ToggleButton.Template>
+                                        <!-- Padding (not Margin) keeps the whole button, including the
+                                             arrow strip, hit-testable so clicks on the arrow open the dropdown. -->
                                         <ControlTemplate TargetType="ToggleButton">
-                                            <Border Background="Transparent" Margin="8,0,26,0">
+                                            <Border Background="Transparent" Padding="8,0,26,0">
                                                 <ContentPresenter Content="{TemplateBinding Content}"
                                                                   ContentTemplate="{TemplateBinding ContentTemplate}"/>
                                             </Border>
