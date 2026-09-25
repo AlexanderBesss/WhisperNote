@@ -45,13 +45,6 @@ public static class LocalModels
             "mmproj-BF16.gguf",
             dedicatedAsr: false),
         new LocalModelOption(
-            "qwen3-asr-0.6b",
-            "Qwen3-ASR 0.6B",
-            "Qwen3-ASR-0.6B-Q8_0.gguf",
-            "unslothai/Qwen3-ASR-0.6B-GGUF",
-            "mmproj-Qwen3-ASR-0.6B-Q8_0.gguf",
-            dedicatedAsr: true),
-        new LocalModelOption(
             "qwen3-asr-1.7b",
             "Qwen3-ASR 1.7B",
             "Qwen3-ASR-1.7B-Q8_0.gguf",

@@ -35,11 +35,6 @@
     <None Include="..\models\lmstudio-community\gemma-4-E2B-it-GGUF\mmproj-gemma-4-E2B-it-BF16.gguf" Link="models\mmproj-BF16.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
- <ItemGroup Condition="Exists('..\models\unslothai\Qwen3-ASR-0.6B-GGUF\Qwen3-ASR-0.6B-Q8_0.gguf')">
-    <None Include="..\models\unslothai\Qwen3-ASR-0.6B-GGUF\Qwen3-ASR-0.6B-Q8_0.gguf" Link="models\Qwen3-ASR-0.6B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
-    <None Include="..\models\unslothai\Qwen3-ASR-0.6B-GGUF\mmproj-Qwen3-ASR-0.6B-Q8_0.gguf" Link="models\mmproj-Qwen3-ASR-0.6B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
-  </ItemGroup>
-
  <ItemGroup Condition="Exists('..\models\unslothai\Qwen3-ASR-1.7B-GGUF\Qwen3-ASR-1.7B-Q8_0.gguf')">
     <None Include="..\models\unslothai\Qwen3-ASR-1.7B-GGUF\Qwen3-ASR-1.7B-Q8_0.gguf" Link="models\Qwen3-ASR-1.7B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <None Include="..\models\unslothai\Qwen3-ASR-1.7B-GGUF\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf" Link="models\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />

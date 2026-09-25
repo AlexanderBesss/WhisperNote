@@ -7,20 +7,14 @@ namespace WhisperNote.Tests;
 public class LocalModelTests
 {
     [Fact]
-    public void CatalogContainsGemmaAndBothQwen3AsrModels()
+    public void CatalogContainsGemmaAndQwen3Asr17B()
     {
-        Assert.Equal(3, LocalModels.All.Count);
+        Assert.Equal(2, LocalModels.All.Count);
 
         var gemma = LocalModels.FindById(LocalModels.DefaultId);
         Assert.NotNull(gemma);
         Assert.Equal("gemma-4-E2B-it-Q4_0.gguf", gemma!.Model);
         Assert.Equal("unsloth/gemma-4-E2B-it-GGUF", gemma.HfRepo);
-
-        var qwen06 = LocalModels.FindById("qwen3-asr-0.6b");
-        Assert.NotNull(qwen06);
-        Assert.Equal("Qwen3-ASR-0.6B-Q8_0.gguf", qwen06!.Model);
-        Assert.Equal("unslothai/Qwen3-ASR-0.6B-GGUF", qwen06.HfRepo);
-        Assert.Equal("mmproj-Qwen3-ASR-0.6B-Q8_0.gguf", qwen06.Mmproj);
 
         var qwen17 = LocalModels.FindById("qwen3-asr-1.7b");
         Assert.NotNull(qwen17);
@@ -29,14 +23,12 @@ public class LocalModelTests
         Assert.Equal("mmproj-Qwen3-ASR-1.7B-Q8_0.gguf", qwen17.Mmproj);
 
         Assert.False(gemma.DedicatedAsr);
-        Assert.True(qwen06.DedicatedAsr);
         Assert.True(qwen17.DedicatedAsr);
     }
 
     [Fact]
     public void IsDedicatedAsrMatchesOnlyQwen3AsrModels()
     {
-        Assert.True(LocalModels.IsDedicatedAsr("Qwen3-ASR-0.6B-Q8_0.gguf"));
         Assert.True(LocalModels.IsDedicatedAsr("Qwen3-ASR-1.7B-Q8_0.gguf"));
         Assert.False(LocalModels.IsDedicatedAsr("gemma-4-E2B-it-Q4_0.gguf"));
         Assert.False(LocalModels.IsDedicatedAsr("custom-model.gguf"));
@@ -46,7 +38,7 @@ public class LocalModelTests
     [Fact]
     public void DedicatedAsrServerArgsUseGreedySampling()
     {
-        var server = CreateConfiguredServer("Qwen3-ASR-0.6B-Q8_0.gguf");
+        var server = CreateConfiguredServer("Qwen3-ASR-1.7B-Q8_0.gguf");
 
         var args = server.ServerArgs();
 
@@ -69,9 +61,9 @@ public class LocalModelTests
     [Fact]
     public async Task FormContentOmitsPromptForDedicatedAsrModels()
     {
-        var service = new TranscriptionService(CreateLocalProvider("Qwen3-ASR-0.6B-Q8_0.gguf"));
+        var service = new TranscriptionService(CreateLocalProvider("Qwen3-ASR-1.7B-Q8_0.gguf"));
 
-        using var content = service.BuildFormContent(Array.Empty<byte>(), "Qwen3-ASR-0.6B-Q8_0.gguf");
+        using var content = service.BuildFormContent(Array.Empty<byte>(), "Qwen3-ASR-1.7B-Q8_0.gguf");
         var body = await content.ReadAsStringAsync();
 
         Assert.Contains("name=model", body);
@@ -101,8 +93,8 @@ public class LocalModelTests
     [Fact]
     public void ResolveFallsBackToCurrentModelForLegacySelection()
     {
-        var option = LocalModels.Resolve(null, "Qwen3-ASR-0.6B-Q8_0.gguf");
-        Assert.Equal("qwen3-asr-0.6b", option!.Id);
+        var option = LocalModels.Resolve(null, "Qwen3-ASR-1.7B-Q8_0.gguf");
+        Assert.Equal("qwen3-asr-1.7b", option!.Id);
     }
 
     [Fact]
@@ -122,17 +114,17 @@ public class LocalModelTests
     public void SetLocalModelUpdatesProviderAndSelection()
     {
         var state = CreateState();
-        Assert.True(state.SetLocalModel("qwen3-asr-0.6b"));
+        Assert.True(state.SetLocalModel("qwen3-asr-1.7b"));
 
         var local = state.LocalProvider!;
-        Assert.Equal("Qwen3-ASR 0.6B (local)", local.Name);
-        Assert.Equal("Qwen3-ASR-0.6B-Q8_0.gguf", local.Model);
-        Assert.Equal("unslothai/Qwen3-ASR-0.6B-GGUF", local.HfRepo);
-        Assert.Equal("mmproj-Qwen3-ASR-0.6B-Q8_0.gguf", local.Mmproj);
-        Assert.Equal("qwen3-asr-0.6b", state.LocalModelId);
+        Assert.Equal("Qwen3-ASR 1.7B (local)", local.Name);
+        Assert.Equal("Qwen3-ASR-1.7B-Q8_0.gguf", local.Model);
+        Assert.Equal("unslothai/Qwen3-ASR-1.7B-GGUF", local.HfRepo);
+        Assert.Equal("mmproj-Qwen3-ASR-1.7B-Q8_0.gguf", local.Mmproj);
+        Assert.Equal("qwen3-asr-1.7b", state.LocalModelId);
 
         // Applying the same selection again is a no-op.
-        Assert.False(state.SetLocalModel("qwen3-asr-0.6b"));
+        Assert.False(state.SetLocalModel("qwen3-asr-1.7b"));
     }
 
     [Fact]
