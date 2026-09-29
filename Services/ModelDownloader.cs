@@ -66,6 +66,8 @@ public static class ModelDownloader
                 }
             }
 
+            file.Dispose();
+
             IOException? copyFailure = null;
             for (var i = 0; i < 6; i++)
             {
