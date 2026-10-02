@@ -16,8 +16,27 @@ Voice-to-text desktop app for Windows. Hold a key, speak, release — transcribe
 
 For a manual build, right-click `build.cmd` and choose **Run**. It launches
 `build.ps1` with the required PowerShell execution-policy bypass and keeps the
-window open so errors remain visible. Pass `-Kill` when the running app must be
-force-closed before publishing.
+window open so errors remain visible.
+
+`build.ps1` checks the runtime payload before publishing. If the llama.cpp CUDA
+binaries are missing from `llm-servers/llama/windows/llama`, it runs
+`update-llama.ps1` to download the latest preview, so a fresh clone builds
+without a manual download step. Missing optional backends (Vulkan, NPU) and
+missing model files are reported, not fatal.
+
+Publishing is non-destructive: the app is published into `obj/publish-staging`
+and merged into `publish/`, so rebuilding keeps `publish/models/*.gguf`,
+`whispernote.json` and `logs.log`. Only files the build itself produces are
+replaced, and files a previous build produced that the current build no longer
+produces are removed.
+
+| Switch | Effect |
+| --- | --- |
+| `-Kill` | Force-close the running app (and its `llama-server`) before publishing. |
+| `-NoUpdate` | Never download; fail if a required backend is missing. |
+| `-UpdateBackends` | Also fetch the Vulkan (iGPU) and NPU backends when missing. |
+| `-ForceUpdate` | Run the update scripts even when binaries are already present. |
+| `-RefreshModels` | Overwrite `publish/models` from the source `models/` folder. |
 
 ## Requirements
 

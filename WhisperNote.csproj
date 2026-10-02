@@ -30,27 +30,33 @@
     <None Include="tests\**\*.cs" />
   </ItemGroup>
 
+ <!--
+    Runtime payload (models + llama.cpp backends) is deliberately NOT published
+    by the SDK. build.ps1 syncs it into publish/ with its own rules, so a rebuild
+    can never delete the multi-gigabyte model files. CopyToPublishDirectory=Never
+    keeps the SDK's incremental publish-clean away from these folders.
+  -->
  <ItemGroup Condition="Exists('..\models\unsloth\gemma-4-E2B-it-GGUF\gemma-4-E2B-it-UD-Q4_K_XL.gguf')">
-    <None Include="..\models\unsloth\gemma-4-E2B-it-GGUF\gemma-4-E2B-it-UD-Q4_K_XL.gguf" Link="models\gemma-4-E2B-it-UD-Q4_K_XL.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
-    <None Include="..\models\lmstudio-community\gemma-4-E2B-it-GGUF\mmproj-gemma-4-E2B-it-BF16.gguf" Link="models\mmproj-BF16.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="..\models\unsloth\gemma-4-E2B-it-GGUF\gemma-4-E2B-it-UD-Q4_K_XL.gguf" Link="models\gemma-4-E2B-it-UD-Q4_K_XL.gguf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
+    <None Include="..\models\lmstudio-community\gemma-4-E2B-it-GGUF\mmproj-gemma-4-E2B-it-BF16.gguf" Link="models\mmproj-BF16.gguf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
  <ItemGroup Condition="Exists('..\models\unslothai\Qwen3-ASR-1.7B-GGUF\Qwen3-ASR-1.7B-Q8_0.gguf')">
-    <None Include="..\models\unslothai\Qwen3-ASR-1.7B-GGUF\Qwen3-ASR-1.7B-Q8_0.gguf" Link="models\Qwen3-ASR-1.7B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
-    <None Include="..\models\unslothai\Qwen3-ASR-1.7B-GGUF\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf" Link="models\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="..\models\unslothai\Qwen3-ASR-1.7B-GGUF\Qwen3-ASR-1.7B-Q8_0.gguf" Link="models\Qwen3-ASR-1.7B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
+    <None Include="..\models\unslothai\Qwen3-ASR-1.7B-GGUF\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf" Link="models\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
 
   <ItemGroup>
-    <None Include="..\llm-servers\llama\windows\llama\**" Link="llama\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="..\llm-servers\llama\windows\llama\**" Link="llama\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\llm-servers\llama\windows\vulkan\**" Exclude="..\llm-servers\llama\windows\vulkan\*.ps1;..\llm-servers\llama\windows\vulkan\*.log" Link="vulkan\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="..\llm-servers\llama\windows\vulkan\**" Exclude="..\llm-servers\llama\windows\vulkan\*.ps1;..\llm-servers\llama\windows\vulkan\*.log" Link="vulkan\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\llm-servers\llama\windows\NPU\llama-ov\**" Link="NPU\llama-ov\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="..\llm-servers\llama\windows\NPU\llama-ov\**" Link="NPU\llama-ov\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
 
