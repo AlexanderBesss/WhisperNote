@@ -15,6 +15,7 @@ public sealed class SettingsViewModel : ViewModel
     bool _useCpuOnly;
     bool _startupEnabled;
     bool _autoPaste;
+    bool _minimizeToTray;
     string? _localModelId;
     bool _useRemote;
     bool _hotkeyEnabled;
@@ -53,6 +54,12 @@ public sealed class SettingsViewModel : ViewModel
     {
         get => _autoPaste;
         set => SetProperty(ref _autoPaste, value);
+    }
+
+    public bool MinimizeToTray
+    {
+        get => _minimizeToTray;
+        set => SetProperty(ref _minimizeToTray, value);
     }
 
     public IReadOnlyList<LocalModelOption> LocalModelOptions { get; } = LocalModels.All;
@@ -137,6 +144,7 @@ public sealed class SettingsViewModel : ViewModel
         _useCpuOnly = mainViewModel.UseCpuOnly;
         _startupEnabled = mainViewModel.StartupEnabled;
         _autoPaste = mainViewModel.AutoPaste;
+        _minimizeToTray = mainViewModel.MinimizeToTray;
         _localModelId = mainViewModel.LocalModelId ?? LocalModels.DefaultId;
         _useRemote = mainViewModel.UseRemote;
         _hotkeyEnabled = mainViewModel.HotkeyEnabled;
@@ -181,6 +189,7 @@ public sealed class SettingsViewModel : ViewModel
             UseCpuOnly,
             StartupEnabled,
             AutoPaste,
+            MinimizeToTray,
             LocalModelId,
             UseRemote,
             HotkeyEnabled,

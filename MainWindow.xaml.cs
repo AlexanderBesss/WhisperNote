@@ -1,7 +1,10 @@
+using System;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using WhisperNote.Services;
 using WhisperNote.ViewModels;
 
 namespace WhisperNote;
@@ -9,6 +12,8 @@ namespace WhisperNote;
 public partial class MainWindow : Window
 {
     readonly MainWindowViewModel _viewModel;
+    TrayIconService? _tray;
+    bool _exitRequested;
 
     public MainWindow()
     {
@@ -16,10 +21,15 @@ public partial class MainWindow : Window
         DataContext = _viewModel;
 
         InitializeComponent();
+        TrayIconService.ApplyWindowIcon(this);
 
         Activated += (_, _) => _viewModel.SetFocused(true);
         Deactivated += (_, _) => _viewModel.SetFocused(false);
-        Closed += (_, _) => _viewModel.Dispose();
+        Loaded += (_, _) => CreateTrayIcon();
+        Closing += MainWindow_Closing;
+        Closed += MainWindow_Closed;
+
+        _viewModel.MinimizeRequested += (_, _) => MinimizeToTray();
     }
 
     void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -30,6 +40,80 @@ public partial class MainWindow : Window
         };
         settingsWindow.ShowDialog();
     }
+
+    void MinimizeButton_Click(object sender, RoutedEventArgs e) => MinimizeToTray();
+
+    public void MinimizeToTray() => Hide();
+
+    void RestoreFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    void CreateTrayIcon()
+    {
+        if (_tray != null)
+            return;
+
+        _tray = new TrayIconService(TrayTooltip());
+        _tray.RestoreRequested += (_, _) => RestoreFromTray();
+        _tray.ExitRequested += (_, _) => ExitApplication();
+
+        _viewModel.ServerManager.PropertyChanged += TrayStatus_PropertyChanged;
+        _viewModel.RecordingManager.PropertyChanged += TrayStatus_PropertyChanged;
+        UpdateTrayState();
+        Logger.Info("Tray icon created");
+    }
+
+    void ExitApplication()
+    {
+        _exitRequested = true;
+        _tray?.Dispose();
+        _tray = null;
+        Close();
+    }
+
+    void MainWindow_Closing(object? sender, CancelEventArgs e)
+    {
+        if (_exitRequested || !_viewModel.MinimizeToTray)
+            return;
+
+        e.Cancel = true;
+        MinimizeToTray();
+    }
+
+    void MainWindow_Closed(object? sender, EventArgs e)
+    {
+        _tray?.Dispose();
+        _tray = null;
+        _viewModel.Dispose();
+    }
+
+    void TrayStatus_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ServerStateManager.Status)
+            or nameof(RecordingStateManager.IsRecording)
+            or nameof(RecordingStateManager.IsProcessing))
+            UpdateTrayState();
+    }
+
+    // Red ring when nobody is speaking, green while listening or processing.
+    void UpdateTrayState()
+    {
+        if (_tray == null)
+            return;
+
+        _tray.SetActive(_viewModel.RecordingManager.IsRecording ||
+                        _viewModel.RecordingManager.IsProcessing);
+        _tray.Tooltip = TrayTooltip();
+    }
+
+    string TrayTooltip() =>
+        _viewModel.RecordingManager.IsRecording
+            ? "WhisperNote · Recording"
+            : $"WhisperNote · {_viewModel.ServerManager.Status.Message}";
 
     void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

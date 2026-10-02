@@ -122,6 +122,17 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    bool _minimizeToTray;
+    public bool MinimizeToTray
+    {
+        get => _minimizeToTray;
+        set
+        {
+            if (SetProperty(ref _minimizeToTray, value))
+                _state.MinimizeToTray = value;
+        }
+    }
+
     bool _useRemote;
     bool _applyingSettings;
     public bool UseRemote
@@ -249,6 +260,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
     public ICommand CloseCommand { get; }
     public ICommand DownloadModelCommand { get; }
 
+    /// <summary>Raised when the window should hide to the tray instead of exiting.</summary>
+    public event EventHandler? MinimizeRequested;
+
     public MainWindowViewModel(AppState state)
     {
         _state = state;
@@ -285,6 +299,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _useCpuOnly = state.UseCpuOnly;
         _startupEnabled = state.StartupEnabled;
         _autoPaste = state.AutoPaste;
+        _minimizeToTray = state.MinimizeToTray;
         if (!_startupEnabled && StartupRegistry.IsEnabled())
         {
             _startupEnabled = true;
@@ -302,7 +317,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
             ServerManager.ToggleServerAsync(s => RecordingManager.InfoText = s ?? ""),
             "ToggleServer"));
         RecordCommand = new RelayCommand(_ => _ = HandleRecord());
-        CloseCommand = new RelayCommand(_ => Application.Current.Shutdown());
+        CloseCommand = new RelayCommand(_ =>
+        {
+            if (_minimizeToTray)
+                MinimizeRequested?.Invoke(this, EventArgs.Empty);
+            else
+                Application.Current.Shutdown();
+        });
         DownloadModelCommand = new RelayCommand(_ => FireAndForget(DownloadModelAsync(), "DownloadModel"));
 
         if (_hotkeyEnabled)
@@ -317,6 +338,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         bool useCpuOnly,
         bool startupEnabled,
         bool autoPaste,
+        bool minimizeToTray,
         string? localModelId,
         bool useRemote,
         bool hotkeyEnabled,
@@ -350,6 +372,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
             UseCpuOnly = useCpuOnly;
             StartupEnabled = startupEnabled;
             AutoPaste = autoPaste;
+            MinimizeToTray = minimizeToTray;
             HotkeyEnabled = hotkeyEnabled;
             HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
             UseRemote = useRemote;

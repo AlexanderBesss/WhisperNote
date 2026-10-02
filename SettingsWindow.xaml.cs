@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using WhisperNote.Services;
 using WhisperNote.ViewModels;
 
 namespace WhisperNote;
@@ -13,6 +14,7 @@ public partial class SettingsWindow : Window
     public SettingsWindow(MainWindowViewModel mainViewModel)
     {
         InitializeComponent();
+        TrayIconService.ApplyWindowIcon(this);
         _viewModel = new SettingsViewModel(mainViewModel);
         DataContext = _viewModel;
         PreviewKeyDown += SettingsWindow_PreviewKeyDown;

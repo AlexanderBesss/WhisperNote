@@ -24,6 +24,8 @@ public class AppSettings
     public bool UseCpuOnly { get; set; }
     public bool StartupEnabled { get; set; }
     public bool AutoPaste { get; set; }
+    // Initializer supplies the default for configs written before the key existed.
+    public bool MinimizeToTray { get; set; } = true;
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
     public bool HotkeyEnabled { get; set; } = true;
     public RemoteProviderMode RemoteProviderMode { get; set; } = RemoteProviderMode.DirectApi;
@@ -95,6 +97,7 @@ public class AppSettings
             UseCpuOnly = false,
             StartupEnabled = false,
             AutoPaste = false,
+            MinimizeToTray = true,
             Providers = new List<ProviderConfig>
             {
                 CreateDefaultLocalProvider(),

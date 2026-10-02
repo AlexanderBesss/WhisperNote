@@ -11,6 +11,7 @@ Voice-to-text desktop app for Windows. Hold a key, speak, release — transcribe
 - **Grammar correction** — LLM cleans up speech into proper English
 - **VRAM offload** — stop server after each request to free GPU memory
 - **Run on startup** — optional Windows auto-start
+- **System tray** — minimize to the notification area and keep the hotkey active
 
 ## Build
 
@@ -47,6 +48,13 @@ produces are removed.
 ## Configuration
 
 Edit `whispernote.json` in the application folder to add providers, change the hotkey, or toggle auto-start.
+
+The main window's chevron button hides WhisperNote in the notification area, where the recording hotkey keeps
+working. Double-click the tray icon, or choose **Open WhisperNote** in its menu, to bring the window back;
+**Exit** in that menu quits the app. The tray icon's ring is red while nothing is being said and green while
+the mic is listening or a request is being processed, matching the status dot in the window. **Minimize to
+tray** in Settings controls what the close button does: when it is on, closing hides the window to the tray,
+and when it is off, closing exits the app.
 
 Remote providers have two independent modes in Settings:
 

@@ -4,11 +4,14 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <!-- NotifyIcon for the tray comes from WinForms; both share the Windows Desktop runtime. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <AssemblyName>WhisperNote</AssemblyName>
     <RootNamespace>WhisperNote</RootNamespace>
+    <ApplicationIcon>TrayIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
@@ -23,6 +26,16 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="WhisperNote.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embedded in the assembly so PublishSingleFile keeps the tray icons with the app. -->
+    <EmbeddedResource Include="TrayIcon.ico">
+      <LogicalName>WhisperNote.TrayIcon.ico</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TrayIconIdle.ico">
+      <LogicalName>WhisperNote.TrayIconIdle.ico</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

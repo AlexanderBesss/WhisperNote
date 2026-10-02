@@ -111,6 +111,11 @@ public class AppState
         get => _settings.AutoPaste;
         set { _settings.AutoPaste = value; _settings.Save(); }
     }
+    public bool MinimizeToTray
+    {
+        get => _settings.MinimizeToTray;
+        set { _settings.MinimizeToTray = value; _settings.Save(); }
+    }
     public int HotkeyVirtualKeyCode
     {
         get => _settings.HotkeyVirtualKeyCode;

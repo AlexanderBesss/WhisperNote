@@ -61,6 +61,14 @@
                     </Button>
                     <Button Style="{StaticResource IconButton}"
                             Width="28" Height="28" Padding="0"
+                            VerticalAlignment="Center" Margin="6,0,0,0"
+                            Click="MinimizeButton_Click"
+                            AutomationProperties.Name="Minimize to tray"
+                            ToolTip="Minimize to tray">
+                        <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#B8B8B8"/>
+                    </Button>
+                    <Button Style="{StaticResource IconButton}"
+                            Width="28" Height="28" Padding="0"
                             VerticalAlignment="Center"
                             Click="SettingsButton_Click"
                             AutomationProperties.Name="Settings"
