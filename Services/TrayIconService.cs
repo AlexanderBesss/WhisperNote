@@ -1,6 +1,9 @@
 using System;
 using System.Drawing;
 using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using WinForms = System.Windows.Forms;
@@ -23,6 +26,7 @@ public sealed class TrayIconService : IDisposable
     readonly WinForms.NotifyIcon _notifyIcon;
     readonly Icon _activeIcon;
     readonly Icon _idleIcon;
+    ContextMenu? _menu;
 
     public event EventHandler? RestoreRequested;
     public event EventHandler? ExitRequested;
@@ -32,25 +36,50 @@ public sealed class TrayIconService : IDisposable
         _activeIcon = LoadIcon(ActiveIconResourceName);
         _idleIcon = LoadIcon(IdleIconResourceName);
 
-        var menu = new WinForms.ContextMenuStrip();
-
-        var openItem = new WinForms.ToolStripMenuItem("Open WhisperNote");
-        openItem.Click += (_, _) => RestoreRequested?.Invoke(this, EventArgs.Empty);
-        var exitItem = new WinForms.ToolStripMenuItem("Exit");
-        exitItem.Click += (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty);
-
-        menu.Items.Add(openItem);
-        menu.Items.Add(new WinForms.ToolStripSeparator());
-        menu.Items.Add(exitItem);
-
         _notifyIcon = new WinForms.NotifyIcon
         {
             Icon = _idleIcon,
             Text = Trim(tooltip),
-            ContextMenuStrip = menu,
             Visible = true
         };
         _notifyIcon.DoubleClick += (_, _) => RestoreRequested?.Invoke(this, EventArgs.Empty);
+        _notifyIcon.MouseUp += (_, e) =>
+        {
+            if (e.Button == WinForms.MouseButtons.Right)
+                ShowMenu();
+        };
+    }
+
+    void ShowMenu()
+    {
+        _menu ??= BuildMenu();
+        _menu.IsOpen = true;
+    }
+
+    /// <summary>
+    /// WPF context menu so the tray menu matches the app's dark rounded design
+    /// instead of the default WinForms look.
+    /// </summary>
+    ContextMenu BuildMenu()
+    {
+        var resources = Application.Current.Resources;
+
+        var menu = new ContextMenu
+        {
+            Style = resources["TrayContextMenu"] as Style,
+            Placement = PlacementMode.MousePoint
+        };
+
+        var itemStyle = resources["TrayMenuItem"] as Style;
+        var openItem = new MenuItem { Header = "Open WhisperNote", Style = itemStyle };
+        openItem.Click += (_, _) => RestoreRequested?.Invoke(this, EventArgs.Empty);
+        var exitItem = new MenuItem { Header = "Exit", Style = itemStyle };
+        exitItem.Click += (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty);
+
+        menu.Items.Add(openItem);
+        menu.Items.Add(new Separator { Style = resources["TrayMenuSeparator"] as Style });
+        menu.Items.Add(exitItem);
+        return menu;
     }
 
     public string Tooltip
@@ -117,6 +146,8 @@ public sealed class TrayIconService : IDisposable
 
     public void Dispose()
     {
+        if (_menu != null)
+            _menu.IsOpen = false;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _activeIcon.Dispose();
