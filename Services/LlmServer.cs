@@ -310,6 +310,10 @@ public class LlmServer : IDisposable
             $"-m \"{_modelPath}\" " +
             mmprojArg +
             $"--port {AppConfig.ServerPort} --host 127.0.0.1 " +
+            // --device none keeps the CUDA backend from initializing at all; without it
+            // the CUDA build probes the GPU even with --gpu-layers 0 and aborts on GPUs
+            // the bundled kernels were not compiled for (e.g. "no kernel image").
+            "--device none " +
             "--gpu-layers 0 " +
             $"--ctx-size {AppConfig.ContextSize} " +
             // Quantized KV cache requires flash attention, which is unreliable on CPU; use the f16 default instead.

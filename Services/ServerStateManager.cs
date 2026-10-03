@@ -163,6 +163,9 @@ public class ServerStateManager : ViewModel, IDisposable
             await Task.Delay(pollIntervalMs, ct);
             if (await _transcription.IsServerReady(ct))
                 return true;
+            if (!_server.IsRunning)
+                throw new InvalidOperationException(
+                    "Server process exited during startup. Check logs.log for details.");
         }
         return false;
     }

@@ -33,6 +33,7 @@ public class CpuModeTests
 
         var args = server.ServerArgs();
 
+        Assert.Contains("--device none", args);
         Assert.Contains("--gpu-layers 0", args);
         Assert.DoesNotContain("--flash-attn on", args);
         Assert.DoesNotContain("--mmproj-offload", args);
