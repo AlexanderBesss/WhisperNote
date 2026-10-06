@@ -69,7 +69,7 @@
                     </Button>
                     <Button Style="{StaticResource IconButton}"
                             Width="28" Height="28" Padding="0"
-                            VerticalAlignment="Center" Margin="12,0,0,0"
+                            VerticalAlignment="Center" Margin="6,0,0,0"
                             Click="CloseButton_Click"
                             AutomationProperties.Name="Close"
                             ToolTip="Close (keeps WhisperNote running in the tray)">
