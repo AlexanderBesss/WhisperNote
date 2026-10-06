@@ -133,6 +133,17 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    bool _startInTray;
+    public bool StartInTray
+    {
+        get => _startInTray;
+        set
+        {
+            if (SetProperty(ref _startInTray, value))
+                _state.StartInTray = value;
+        }
+    }
+
     bool _useRemote;
     bool _applyingSettings;
     public bool UseRemote
@@ -310,6 +321,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _startupEnabled = state.StartupEnabled;
         _autoPaste = state.AutoPaste;
         _minimizeToTray = state.MinimizeToTray;
+        _startInTray = state.StartInTray;
         if (!_startupEnabled && StartupRegistry.IsEnabled())
         {
             _startupEnabled = true;
@@ -349,6 +361,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         bool startupEnabled,
         bool autoPaste,
         bool minimizeToTray,
+        bool startInTray,
         string? localModelId,
         bool useRemote,
         bool hotkeyEnabled,
@@ -383,6 +396,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
             StartupEnabled = startupEnabled;
             AutoPaste = autoPaste;
             MinimizeToTray = minimizeToTray;
+            StartInTray = startInTray;
             HotkeyEnabled = hotkeyEnabled;
             HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
             UseRemote = useRemote;
@@ -667,7 +681,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (isHotkey && !_hotkeyPressed)
             return;
 
-        await RecordingManager.StartRecording(isHotkey);
+        await RecordingManager.StartRecording(isHotkey, HotkeyName);
 
         if (isHotkey && (!_hotkeyPressed || _pendingHotkeyStop) && RecordingManager.IsRecording)
         {

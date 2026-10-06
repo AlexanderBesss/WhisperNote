@@ -26,6 +26,7 @@ public class AppSettings
     public bool AutoPaste { get; set; }
     // Initializer supplies the default for configs written before the key existed.
     public bool MinimizeToTray { get; set; } = true;
+    public bool StartInTray { get; set; } = true;
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
     public bool HotkeyEnabled { get; set; } = true;
     public RemoteProviderMode RemoteProviderMode { get; set; } = RemoteProviderMode.DirectApi;

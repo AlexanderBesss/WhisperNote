@@ -73,6 +73,11 @@ and are synced into `publish/` by `build.ps1`; `cuda12/update-cuda12.ps1` and
 
 Edit `whispernote.json` in the application folder to add providers, change the hotkey, or toggle auto-start.
 
+By default WhisperNote **starts hidden in the notification area** (toggle **Start in tray** in Settings).
+While a recording is active — hotkey-held or button-started — a small dark pill appears at the bottom of the
+screen with a pulsing red dot and "Recording…"; it hides automatically when the recording stops. The pill
+never steals focus and clicks pass through it, so the app you are dictating into keeps the caret.
+
 The main window's chevron button hides WhisperNote in the notification area, where the recording hotkey keeps
 working. Double-click the tray icon, or choose **Open WhisperNote** in its menu, to bring the window back;
 **Exit** in that menu quits the app. The tray icon's ring is red while nothing is being said and green while

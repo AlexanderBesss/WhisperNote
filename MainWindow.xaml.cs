@@ -13,6 +13,7 @@ public partial class MainWindow : Window
 {
     readonly MainWindowViewModel _viewModel;
     TrayIconService? _tray;
+    RecordingOverlayWindow? _overlay;
     bool _exitRequested;
 
     public MainWindow()
@@ -25,11 +26,17 @@ public partial class MainWindow : Window
 
         Activated += (_, _) => _viewModel.SetFocused(true);
         Deactivated += (_, _) => _viewModel.SetFocused(false);
-        Loaded += (_, _) => CreateTrayIcon();
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
 
         _viewModel.MinimizeRequested += (_, _) => MinimizeToTray();
+
+        // Created here rather than on Loaded so the tray exists even when the window
+        // starts hidden in the notification area.
+        CreateTrayIcon();
+
+        if (_viewModel.StartInTray)
+            Visibility = Visibility.Hidden;
     }
 
     void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -61,6 +68,11 @@ public partial class MainWindow : Window
         _tray.RestoreRequested += (_, _) => RestoreFromTray();
         _tray.ExitRequested += (_, _) => ExitApplication();
 
+        _overlay = new RecordingOverlayWindow
+        {
+            DataContext = _viewModel.RecordingManager
+        };
+
         _viewModel.ServerManager.PropertyChanged += TrayStatus_PropertyChanged;
         _viewModel.RecordingManager.PropertyChanged += TrayStatus_PropertyChanged;
         UpdateTrayState();
@@ -88,6 +100,8 @@ public partial class MainWindow : Window
     {
         _tray?.Dispose();
         _tray = null;
+        _overlay?.Close();
+        _overlay = null;
         _viewModel.Dispose();
     }
 
@@ -108,6 +122,19 @@ public partial class MainWindow : Window
         _tray.SetActive(_viewModel.RecordingManager.IsRecording ||
                         _viewModel.RecordingManager.IsProcessing);
         _tray.Tooltip = TrayTooltip();
+        UpdateOverlayState();
+    }
+
+    // The recording pill is visible for the whole recording, hotkey- or button-started.
+    void UpdateOverlayState()
+    {
+        if (_overlay == null)
+            return;
+
+        if (_viewModel.RecordingManager.IsRecording)
+            _overlay.ShowRecording();
+        else
+            _overlay.HideRecording();
     }
 
     string TrayTooltip() =>

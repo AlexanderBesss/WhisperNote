@@ -283,6 +283,21 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
+                                    <TextBlock Text="Start in tray" FontSize="13" Foreground="#E0E0E0"/>
+                                    <TextBlock Text="Launch WhisperNote hidden in the notification area; double-click the tray icon to open it."
+                                               FontSize="10" Foreground="#777" Margin="0,3,0,0"/>
+                                </StackPanel>
+                                <ToggleButton Grid.Column="1" Style="{StaticResource SettingsToggleButton}"
+                                              IsChecked="{Binding StartInTray, Mode=TwoWay}"
+                                              VerticalAlignment="Center"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
                                     <TextBlock Text="Minimize to tray" FontSize="13" Foreground="#E0E0E0"/>
                                     <TextBlock Text="Hide WhisperNote in the notification area instead of exiting."
                                                FontSize="10" Foreground="#777" Margin="0,3,0,0"/>

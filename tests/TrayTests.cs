@@ -38,6 +38,36 @@ public class TrayTests
         Assert.False(restored.MinimizeToTray);
     }
 
+    [Fact]
+    public void StartInTrayDefaultsToTrueForLegacySettings()
+    {
+        var defaults = new AppSettings();
+        Assert.True(defaults.StartInTray);
+
+        // Configs written before the option existed omit the key: launch hidden in the tray.
+        var legacy = JsonSerializer.Deserialize<AppSettings>("""
+            {
+              "ActiveProviderIndex": 0,
+              "Providers": [
+                { "Name": "Local", "Type": "local", "ApiEndpoint": "http://localhost:8082" }
+              ]
+            }
+            """)!;
+
+        Assert.True(legacy.StartInTray);
+    }
+
+    [Fact]
+    public void StartInTrayFalseSurvivesRoundTrip()
+    {
+        var settings = new AppSettings { StartInTray = false };
+
+        var restored = JsonSerializer.Deserialize<AppSettings>(
+            JsonSerializer.Serialize(settings))!;
+
+        Assert.False(restored.StartInTray);
+    }
+
     [Theory]
     [InlineData("WhisperNote.TrayIcon.ico")]
     [InlineData("WhisperNote.TrayIconIdle.ico")]

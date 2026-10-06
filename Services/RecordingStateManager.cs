@@ -71,13 +71,13 @@ public class RecordingStateManager : ViewModel
         _recorder = new AudioRecorder();
     }
 
-    public async Task StartRecording(bool isHotkey = false)
+    public async Task StartRecording(bool isHotkey = false, string? hotkeyName = null)
     {
         if (!CanStart)
             throw new InvalidOperationException($"Cannot start recording in state {_state}");
 
         await _recorder.StartAsync();
-        TransitionTo(RecordingState.Recording, isHotkey);
+        TransitionTo(RecordingState.Recording, isHotkey, hotkeyName: hotkeyName);
     }
 
     public async Task<byte[]> StopRecording()
@@ -122,7 +122,7 @@ public class RecordingStateManager : ViewModel
         TransitionTo(RecordingState.Idle);
     }
 
-    void TransitionTo(RecordingState next, bool isHotkey = false, string? text = null, string? errorMsg = null)
+    void TransitionTo(RecordingState next, bool isHotkey = false, string? text = null, string? errorMsg = null, string? hotkeyName = null)
     {
         var valid = (State, next) switch
         {
@@ -157,7 +157,7 @@ public class RecordingStateManager : ViewModel
                 MainButtonBackgroundKind = "Recording";
                 StatusText = "Recording...";
                 StatusTextKind = "Orange";
-                InfoText = isHotkey ? "Release hotkey to stop" : "Press button to stop";
+                InfoText = isHotkey ? $"Release {hotkeyName ?? "hotkey"} to stop" : "Press button to stop";
                 break;
             case RecordingState.Processing:
                 StatusText = "Processing...";
