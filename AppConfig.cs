@@ -5,7 +5,6 @@ public static class AppConfig
     public const int ServerPort = 8082;
     public const int SampleRate = 16000;
     public const int BitsPerSample = 16;
-    public const int Channels = 1;
     public const string GpuLayers = "all";
     public const int ContextSize = 16384;
     public const int NpuContextSize = 8192;

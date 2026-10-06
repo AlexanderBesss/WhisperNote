@@ -1,5 +1,3 @@
-using System;
-
 namespace WhisperNote.Models;
 
 public readonly struct ServerStatus

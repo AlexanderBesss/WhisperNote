@@ -22,7 +22,6 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        Logger.Initialize();
 
         // Two instances would mean two tray icons, two global hotkey hooks and
         // duplicate recordings/pastes fighting over the same llama server, so a

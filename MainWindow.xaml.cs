@@ -29,8 +29,6 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
 
-        _viewModel.MinimizeRequested += (_, _) => MinimizeToTray();
-
         // Created here rather than on Loaded so the tray exists even when the window
         // starts hidden in the notification area.
         CreateTrayIcon();

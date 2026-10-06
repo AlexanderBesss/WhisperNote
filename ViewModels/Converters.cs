@@ -57,27 +57,6 @@ public class StatusKindToBrushConverter : IValueConverter
         => throw new NotImplementedException();
 }
 
-public class ButtonBackgroundKindToBrushConverter : IValueConverter
-{
-    static readonly SolidColorBrush DefaultBrush = new(Color.FromArgb(0, 100, 100, 100));
-    static readonly SolidColorBrush RecordingBrush = new(Color.FromArgb(100, 220, 50, 50));
-
-    public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
-    {
-        if (value is not string kind)
-            return DefaultBrush;
-
-        return kind switch
-        {
-            "Recording" => RecordingBrush,
-            _ => DefaultBrush
-        };
-    }
-
-    public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
-        => throw new NotImplementedException();
-}
-
 public class StringToVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)

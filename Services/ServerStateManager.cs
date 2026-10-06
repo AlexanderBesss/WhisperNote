@@ -264,12 +264,7 @@ public class ServerStateManager : ViewModel, IDisposable
         });
     }
 
-    public Task OffloadServerAsync(CancellationToken ct = default) =>
-        WithOperationLockAsync(async () =>
-        {
-            await Task.Run(() => _server.Stop());
-            Status = ServerStatus.Offline;
-        }, ct);
+    public Task OffloadServerAsync() => StopServerAsync();
 
     public void Dispose()
     {

@@ -101,7 +101,7 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <ScrollViewer x:Name="StatusScrollViewer" Grid.Row="0"
+                            <ScrollViewer Grid.Row="0"
                                           VerticalScrollBarVisibility="Hidden"
                                           HorizontalScrollBarVisibility="Disabled"
                                           Focusable="True" FocusManager.IsFocusScope="True">

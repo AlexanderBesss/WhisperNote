@@ -6,7 +6,6 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using WhisperNote.Config;
 using WhisperNote.Services;
 
 namespace WhisperNote.ViewModels;
@@ -38,13 +37,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         _isFocused = value;
         OnPropertyChanged(nameof(WindowOpacity));
-    }
-
-    string _lastTranscription = "";
-    public string LastTranscription
-    {
-        get => _lastTranscription;
-        set => SetProperty(ref _lastTranscription, value);
     }
 
     bool _autoOffloadVram;
@@ -127,9 +119,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
     }
 
     public string? LocalModelId => _state.LocalModelId;
-    public string ActiveModuleName => _state.ActiveProvider?.Model ?? "No local module";
 
-    public Brush HardwareModeForeground => new SolidColorBrush(Color.FromRgb(124, 252, 0));
+    public Brush HardwareModeForeground { get; } = CreateHardwareModeBrush();
+
+    static SolidColorBrush CreateHardwareModeBrush()
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(124, 252, 0));
+        brush.Freeze();
+        return brush;
+    }
 
     string _hardwareMode = "";
     public string HardwareMode
@@ -158,13 +156,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         get => _modelMissing;
         set => SetProperty(ref _modelMissing, value);
-    }
-
-    bool _downloadingModel;
-    public bool DownloadingModel
-    {
-        get => _downloadingModel;
-        set => SetProperty(ref _downloadingModel, value);
     }
 
     bool _hotkeyEnabled;
@@ -221,12 +212,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     };
 
     public ICommand ServerCommand { get; }
-    public ICommand RecordCommand { get; }
-    public ICommand CloseCommand { get; }
     public ICommand DownloadModelCommand { get; }
-
-    /// <summary>Raised when the window should hide to the tray instead of exiting.</summary>
-    public event EventHandler? MinimizeRequested;
 
     public MainWindowViewModel(AppState state)
     {
@@ -278,14 +264,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         ServerCommand = new RelayCommand(_ => FireAndForget(
             ServerManager.ToggleServerAsync(s => RecordingManager.InfoText = s ?? ""),
             "ToggleServer"));
-        RecordCommand = new RelayCommand(_ => _ = HandleRecord());
-        CloseCommand = new RelayCommand(_ =>
-        {
-            if (_minimizeToTray)
-                MinimizeRequested?.Invoke(this, EventArgs.Empty);
-            else
-                Application.Current.Shutdown();
-        });
         DownloadModelCommand = new RelayCommand(_ => FireAndForget(DownloadModelAsync(), "DownloadModel"));
 
         if (_hotkeyEnabled)
@@ -324,8 +302,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         // transcription restarts with the selected one (downloading it if needed).
         if (localModelChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForModelChange");
-
-        OnPropertyChanged(nameof(ActiveModuleName));
     }
 
     async Task InitializeAsync()
@@ -359,7 +335,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
             return;
         }
 
-        DownloadingModel = true;
         RecordingManager.InfoText = "Downloading model...";
 
         try
@@ -388,10 +363,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             Logger.Error($"[DownloadModel] failed: {ex.Message}");
             RecordingManager.InfoText = $"Download failed: {ex.Message}";
-        }
-        finally
-        {
-            DownloadingModel = false;
         }
     }
 
@@ -428,23 +399,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _keyboardHook?.Dispose();
         _keyboardHook = null;
         RecordingManager.InfoText = "Hotkey disabled";
-    }
-
-    async Task HandleRecord()
-    {
-        await RunRecordingOperation(HandleRecordCore, "HandleRecord");
-    }
-
-    async Task HandleRecordCore()
-    {
-        if (RecordingManager.IsRecording)
-        {
-            await StopAndProcessCore();
-        }
-        else if (RecordingManager.CanStart)
-        {
-            await StartHoldRecordCore(isHotkey: false);
-        }
     }
 
     public async Task StartHoldRecord(bool isHotkey = true)
@@ -596,7 +550,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
             if (!string.IsNullOrWhiteSpace(text))
             {
-                LastTranscription = text;
                 var copied = TrySetClipboardText(text);
                 var pasted = false;
                 if (copied && _autoPaste)

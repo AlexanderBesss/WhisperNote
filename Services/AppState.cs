@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using WhisperNote.Config;
 
 namespace WhisperNote.Services;
@@ -10,13 +9,6 @@ public class AppState
     public ProviderConfig? ActiveProvider => _settings.ActiveProvider;
     public ProviderConfig? LocalProvider => _settings.Providers.Find(provider => provider.IsLocal);
 
-    public int ActiveProviderIndex
-    {
-        get => _settings.ActiveProviderIndex;
-        set => _settings.ActiveProviderIndex = value;
-    }
-
-    public IReadOnlyList<ProviderConfig> Providers => _settings.Providers;
     public string? LocalModelId
     {
         get => _settings.LocalModelId;
@@ -93,6 +85,4 @@ public class AppState
         _settings.Save();
         return true;
     }
-
-    public void Save() => _settings.Save();
 }

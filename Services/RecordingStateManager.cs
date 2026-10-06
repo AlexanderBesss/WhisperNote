@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using WhisperNote.Services;
 using WhisperNote.ViewModels;
 
 namespace WhisperNote.Services;
@@ -16,8 +15,6 @@ public enum RecordingState
 
 public class RecordingStateManager : ViewModel
 {
-    const int AmplitudeSilenceThreshold = 500;
-
     readonly AudioRecorder _recorder;
 
     RecordingState _state = RecordingState.Idle;
@@ -55,13 +52,6 @@ public class RecordingStateManager : ViewModel
     {
         get => _infoText;
         set => SetProperty(ref _infoText, value);
-    }
-
-    string _mainButtonBackgroundKind = "Default";
-    public string MainButtonBackgroundKind
-    {
-        get => _mainButtonBackgroundKind;
-        set => SetProperty(ref _mainButtonBackgroundKind, value);
     }
 
     public int ChannelCount => _recorder.ChannelCount;
@@ -148,13 +138,11 @@ public class RecordingStateManager : ViewModel
         switch (next)
         {
             case RecordingState.Idle:
-                MainButtonBackgroundKind = "Default";
                 StatusText = "Ready";
                 StatusTextKind = "Gray";
                 InfoText = "";
                 break;
             case RecordingState.Recording:
-                MainButtonBackgroundKind = "Recording";
                 StatusText = "Recording...";
                 StatusTextKind = "Orange";
                 InfoText = isHotkey ? $"Release {hotkeyName ?? "hotkey"} to stop" : "Press button to stop";
@@ -165,13 +153,11 @@ public class RecordingStateManager : ViewModel
                 InfoText = "Waiting for server...";
                 break;
             case RecordingState.Success:
-                MainButtonBackgroundKind = "Default";
                 StatusText = text ?? "";
                 StatusTextKind = "Green";
                 InfoText = "Copied to clipboard";
                 break;
             case RecordingState.Error:
-                MainButtonBackgroundKind = "Default";
                 StatusText = "Error";
                 StatusTextKind = "Red";
                 InfoText = errorMsg ?? "";

@@ -13,7 +13,6 @@
                 <ResourceDictionary Source="Styles/ContextMenuStyle.xaml"/>
             </ResourceDictionary.MergedDictionaries>
             <vm:StatusKindToBrushConverter x:Key="StatusKindToBrushConverter"/>
-            <vm:ButtonBackgroundKindToBrushConverter x:Key="ButtonBackgroundKindToBrushConverter"/>
             <vm:ServerStatusKindToBrushConverter x:Key="ServerStatusKindToBrushConverter"/>
             <vm:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
             <vm:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>

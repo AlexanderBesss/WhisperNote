@@ -25,10 +25,6 @@ public static class Logger
         }
     }
 
-    public static void Initialize()
-    {
-    }
-
     static void EnsureLogFile()
     {
         using var _ = File.Open(LogPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite);

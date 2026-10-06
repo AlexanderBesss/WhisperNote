@@ -48,7 +48,7 @@ public class LlmServer : IDisposable
 
     enum StartupOutcome { Ready, Failed, Pending }
 
-    public ProviderConfig? CurrentProvider { get; private set; }
+    ProviderConfig? CurrentProvider { get; set; }
     public HardwareBackend Backend => _backend;
 
     public void SetUseCpuOnly(bool enabled) => _useCpuOnly = enabled;

@@ -1,6 +1,4 @@
 using System;
-using System.Diagnostics;
-using System.IO;
 
 namespace WhisperNote.Services;
 
@@ -24,7 +22,7 @@ static class AudioProcessor
         return mono;
     }
 
-    public static int GetMaxAmplitude(byte[] pcm)
+    static int GetMaxAmplitude(byte[] pcm)
     {
         if (pcm.Length < 2) return 0;
         var max = 0;

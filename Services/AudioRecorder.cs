@@ -15,7 +15,7 @@ public class AudioRecorder : IDisposable
     readonly SemaphoreSlim _stateLock = new(1, 1);
     readonly object _bufferLock = new();
 
-    public bool IsRecording { get; private set; }
+    bool IsRecording { get; set; }
     public int ChannelCount { get; private set; }
 
     public async Task StartAsync()

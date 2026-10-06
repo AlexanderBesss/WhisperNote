@@ -44,12 +44,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         };
 
         if (!string.IsNullOrEmpty(provider.ApiKey))
-        {
-            if (provider.Type == "azure")
-                _http.DefaultRequestHeaders.Add("api-key", provider.ApiKey);
-            else
-                _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", provider.ApiKey);
-        }
+            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", provider.ApiKey);
     }
 
     public async Task<bool> IsServerReady(CancellationToken ct = default)
