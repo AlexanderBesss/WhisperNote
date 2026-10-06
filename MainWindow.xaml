@@ -62,18 +62,18 @@
                     <Button Style="{StaticResource IconButton}"
                             Width="28" Height="28" Padding="0"
                             VerticalAlignment="Center" Margin="6,0,0,0"
-                            Click="MinimizeButton_Click"
-                            AutomationProperties.Name="Minimize to tray"
-                            ToolTip="Minimize to tray">
-                        <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#B8B8B8"/>
-                    </Button>
-                    <Button Style="{StaticResource IconButton}"
-                            Width="28" Height="28" Padding="0"
-                            VerticalAlignment="Center" Margin="12,0,0,0"
                             Click="SettingsButton_Click"
                             AutomationProperties.Name="Settings"
                             ToolTip="Settings">
                         <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#B8B8B8"/>
+                    </Button>
+                    <Button Style="{StaticResource IconButton}"
+                            Width="28" Height="28" Padding="0"
+                            VerticalAlignment="Center" Margin="12,0,0,0"
+                            Click="CloseButton_Click"
+                            AutomationProperties.Name="Close"
+                            ToolTip="Close (keeps WhisperNote running in the tray)">
+                        <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="#B8B8B8"/>
                     </Button>
                 </StackPanel>
             </Grid>

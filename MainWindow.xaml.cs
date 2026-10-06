@@ -48,7 +48,9 @@ public partial class MainWindow : Window
         settingsWindow.ShowDialog();
     }
 
-    void MinimizeButton_Click(object sender, RoutedEventArgs e) => MinimizeToTray();
+    // The title-bar close button only hides the window; the app keeps running
+    // in the tray, same as the old minimize-to-tray button.
+    void CloseButton_Click(object sender, RoutedEventArgs e) => MinimizeToTray();
 
     public void MinimizeToTray() => Hide();
 
