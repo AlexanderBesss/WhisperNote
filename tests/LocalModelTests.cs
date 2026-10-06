@@ -7,23 +7,23 @@ namespace WhisperNote.Tests;
 public class LocalModelTests
 {
     [Fact]
-    public void CatalogContainsGemmaAndQwen3Asr17B()
+    public void CatalogContainsQwen3Asr17BAndGemma()
     {
         Assert.Equal(2, LocalModels.All.Count);
 
-        var gemma = LocalModels.FindById(LocalModels.DefaultId);
-        Assert.NotNull(gemma);
-        Assert.Equal("gemma-4-E2B-it-Q4_0.gguf", gemma!.Model);
-        Assert.Equal("unsloth/gemma-4-E2B-it-GGUF", gemma.HfRepo);
-
-        var qwen17 = LocalModels.FindById("qwen3-asr-1.7b");
+        var qwen17 = LocalModels.FindById(LocalModels.DefaultId);
         Assert.NotNull(qwen17);
         Assert.Equal("Qwen3-ASR-1.7B-Q8_0.gguf", qwen17!.Model);
         Assert.Equal("unslothai/Qwen3-ASR-1.7B-GGUF", qwen17.HfRepo);
         Assert.Equal("mmproj-Qwen3-ASR-1.7B-Q8_0.gguf", qwen17.Mmproj);
+        Assert.True(qwen17.DedicatedAsr);
+
+        var gemma = LocalModels.FindById("gemma-4-e2b");
+        Assert.NotNull(gemma);
+        Assert.Equal("gemma-4-E2B-it-Q4_0.gguf", gemma!.Model);
+        Assert.Equal("unsloth/gemma-4-E2B-it-GGUF", gemma.HfRepo);
 
         Assert.False(gemma.DedicatedAsr);
-        Assert.True(qwen17.DedicatedAsr);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public class LocalModelTests
     public void ResolveFallsBackToCurrentModelWhenSelectionIsUnknown()
     {
         var option = LocalModels.Resolve("not-in-catalog", "gemma-4-E2B-it-Q4_0.gguf");
-        Assert.Equal(LocalModels.DefaultId, option!.Id);
+        Assert.Equal("gemma-4-e2b", option!.Id);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class LocalModelTests
     public void SetLocalModelIsNoOpWhenAlreadySelected()
     {
         var state = CreateState();
-        Assert.False(state.SetLocalModel(LocalModels.DefaultId));
+        Assert.False(state.SetLocalModel("gemma-4-e2b"));
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public class LocalModelTests
     {
         var settings = new AppSettings
         {
-            LocalModelId = LocalModels.DefaultId,
+            LocalModelId = "gemma-4-e2b",
             Providers =
             {
                 new ProviderConfig

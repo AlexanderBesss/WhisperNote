@@ -33,24 +33,24 @@ public sealed class LocalModelOption
 
 public static class LocalModels
 {
-    public const string DefaultId = "gemma-4-e2b";
+    public const string DefaultId = "qwen3-asr-1.7b";
 
     public static readonly IReadOnlyList<LocalModelOption> All = new[]
     {
         new LocalModelOption(
             DefaultId,
-            "Gemma 4 E2B UD",
-            "gemma-4-E2B-it-Q4_0.gguf",
-            "unsloth/gemma-4-E2B-it-GGUF",
-            "mmproj-BF16.gguf",
-            dedicatedAsr: false),
-        new LocalModelOption(
-            "qwen3-asr-1.7b",
             "Qwen3-ASR 1.7B",
             "Qwen3-ASR-1.7B-Q8_0.gguf",
             "unslothai/Qwen3-ASR-1.7B-GGUF",
             "mmproj-Qwen3-ASR-1.7B-Q8_0.gguf",
             dedicatedAsr: true),
+        new LocalModelOption(
+            "gemma-4-e2b",
+            "Gemma 4 E2B UD",
+            "gemma-4-E2B-it-Q4_0.gguf",
+            "unsloth/gemma-4-E2B-it-GGUF",
+            "mmproj-BF16.gguf",
+            dedicatedAsr: false),
     };
 
     public static LocalModelOption? FindById(string? id) =>
