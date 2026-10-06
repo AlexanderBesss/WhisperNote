@@ -113,13 +113,14 @@ public partial class MainWindow : Window
             UpdateTrayState();
     }
 
-    // Red ring when nobody is speaking, green while listening or processing.
+    // Red ring when nobody is speaking, blinking red while recording (like the
+    // overlay dot), green while the request is being processed.
     void UpdateTrayState()
     {
         if (_tray == null)
             return;
 
-        _tray.SetActive(_viewModel.RecordingManager.IsRecording ||
+        _tray.SetState(_viewModel.RecordingManager.IsRecording,
                         _viewModel.RecordingManager.IsProcessing);
         _tray.Tooltip = TrayTooltip();
         UpdateOverlayState();
