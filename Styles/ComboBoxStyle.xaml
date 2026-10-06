@@ -14,7 +14,9 @@
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="ComboBoxItem">
-                                <Border x:Name="ItemBg" Background="Transparent"
+                                <!-- Rounded highlight so the first/last row's hover
+                                     does not poke past the popup's curved corners. -->
+                                <Border x:Name="ItemBg" Background="Transparent" CornerRadius="6"
                                         Padding="{TemplateBinding Padding}">
                                     <ContentPresenter/>
                                 </Border>
@@ -37,7 +39,7 @@
                 <ControlTemplate TargetType="ComboBox">
                     <Grid>
                         <Border x:Name="border" Background="#2A2A2A" BorderBrush="#444" BorderThickness="1"
-                                CornerRadius="3">
+                                CornerRadius="6">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -75,7 +77,7 @@
                             <!-- No MaxHeight/ScrollViewer: the popup sizes exactly to
                                  the items, so no empty strip at the bottom. -->
                             <Border Background="#2A2A2A" BorderBrush="#444" BorderThickness="1"
-                                    CornerRadius="3"
+                                    CornerRadius="8" Padding="4"
                                     MinWidth="{TemplateBinding ActualWidth}">
                                 <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
                             </Border>
