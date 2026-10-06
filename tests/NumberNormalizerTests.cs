@@ -28,6 +28,15 @@ public class NumberNormalizerTests
     [InlineData("forty dollars and fifty cents", "$40.50")]
     [InlineData("five euros", "€5")]
     [InlineData("ten pounds", "£10")]
+    // Spoken money shorthand that drops "hundred"; only resolved in front of
+    // a currency word so ambiguous runs like "five thirty" stay words.
+    [InlineData("three sixty-five dollars", "$365")]
+    [InlineData("three sixty five dollars", "$365")]
+    [InlineData("five thirty dollars", "$530")]
+    [InlineData("nineteen ninety nine dollars", "$1,999")]
+    [InlineData("I'm thirty-four years old, and I have three sixty-five dollars in my pocket.",
+                 "I'm 34 years old, and I have $365 in my pocket.")]
+    [InlineData("Sixty-five.", "65.")]
     public void ConvertsNumberWordsToDigits(string input, string expected)
     {
         Assert.Equal(expected, NumberNormalizer.Normalize(input));
@@ -43,6 +52,7 @@ public class NumberNormalizerTests
     // Ambiguous or malformed number runs must stay words.
     [InlineData("count one two three")]
     [InlineData("five thirty")]
+    [InlineData("three sixty-five in the pocket")]
     [InlineData("and then we left")]
     [InlineData("point of sale")]
     [InlineData("oh really")]

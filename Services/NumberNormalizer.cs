@@ -152,10 +152,23 @@ static class NumberNormalizer
             return null;
 
         string? formatted = FormatNumber(words);
+        if (formatted == null && FollowedByCurrencyWord(text, runIndex, runLength))
+        {
+            // Spoken money amounts often drop "hundred": "three sixty-five
+            // dollars" means $365. The elision is only unambiguous in front of
+            // a currency word, so "five thirty" on its own still stays words.
+            formatted = FormatNumber(words, elidedHundreds: true);
+        }
         if (formatted == null)
             return null;
 
         return TryFormatCurrency(text, runIndex, runLength, formatted, ref consumed) ?? formatted;
+    }
+
+    static bool FollowedByCurrencyWord(string text, int runIndex, int runLength)
+    {
+        var next = NextWord.Match(text.Substring(runIndex + runLength));
+        return next.Success && CurrencySymbols.ContainsKey(next.Groups[1].Value);
     }
 
     static bool IsGuardedSingleWord(string text, int runIndex, int runLength, string word)
@@ -212,12 +225,12 @@ static class NumberNormalizer
         return symbol + value;
     }
 
-    static string? FormatNumber(string[] words)
+    static string? FormatNumber(string[] words, bool elidedHundreds = false)
     {
         var pointIndex = Array.FindIndex(words, w => w.Equals("point", StringComparison.OrdinalIgnoreCase));
         var intWords = pointIndex >= 0 ? words[..pointIndex] : words;
 
-        var intPart = ParseIntegerWords(intWords);
+        var intPart = ParseIntegerWords(intWords, elidedHundreds);
         if (intPart == null)
             return null;
 
@@ -243,8 +256,9 @@ static class NumberNormalizer
     // Standard spoken-number grammar: ones/tens accumulate, "hundred" scales
     // the current chunk, "thousand"+ closes a chunk into the total. Rejects
     // ambiguous sequences ("one two", "five thirty") and a trailing "and" so
-    // those runs stay words.
-    static long? ParseIntegerWords(string[] words)
+    // those runs stay words. With elidedHundreds, a ones word directly before
+    // a tens word scales it like a dropped "hundred" ("three sixty five" -> 365).
+    static long? ParseIntegerWords(string[] words, bool elidedHundreds = false)
     {
         if (words.Length == 0)
             return null;
@@ -263,8 +277,15 @@ static class NumberNormalizer
             }
             else if (Tens.TryGetValue(word, out var ten))
             {
-                if (state == State.Ones || state == State.Tens)
+                if (state == State.Tens)
                     return null;
+                if (state == State.Ones)
+                {
+                    if (!elidedHundreds)
+                        return null;
+                    // "three sixty five" = three hundred sixty five.
+                    current *= 100;
+                }
                 current += ten;
                 state = State.Tens;
             }
