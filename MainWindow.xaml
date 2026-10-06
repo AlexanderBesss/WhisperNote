@@ -11,8 +11,14 @@
         AllowsTransparency="True"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
 
-    <Border Background="#1A1A1A" CornerRadius="12" Padding="20" ClipToBounds="True"
+    <!-- Same visual language as the recording pill: translucent dark fill,
+         thin outline, soft drop shadow. -->
+    <Border Background="#E61A1A1A" CornerRadius="16" Padding="20" ClipToBounds="True"
+            BorderBrush="#3A3A3A" BorderThickness="1"
             Opacity="{Binding WindowOpacity}">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.55"/>
+        </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -30,7 +36,7 @@
                 <StackPanel Grid.Column="0" ClipToBounds="True">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="WhisperNote" FontSize="16" FontWeight="SemiBold"
-                                   Foreground="#E0E0E0" VerticalAlignment="Center"/>
+                                   Foreground="#F0F0F0" VerticalAlignment="Center"/>
                         <TextBlock Width="8" Height="8" Margin="8,0,0,0" VerticalAlignment="Center"
                                    Text="&#x2022;" FontSize="10"
                                    Foreground="{Binding ServerManager.Status.Kind, Converter={StaticResource ServerStatusKindToBrushConverter}}"/>
@@ -40,7 +46,7 @@
                                    MaxWidth="150" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
-                        <TextBlock Text="{Binding ProviderMode}" FontSize="9" FontWeight="SemiBold" Foreground="#999"/>
+                        <TextBlock Text="{Binding ProviderMode}" FontSize="9" FontWeight="SemiBold" Foreground="#9A9A9A"/>
                         <TextBlock Text=" · " FontSize="9" Foreground="#555"/>
                         <TextBlock Text="{Binding ServerRoleStatus}" FontSize="9" Foreground="#777"
                                    MaxWidth="190" TextTrimming="CharacterEllipsis"/>
@@ -80,7 +86,8 @@
 
             <!-- Main recording area -->
             <Grid Grid.Row="1">
-                <Border Background="#222" CornerRadius="16" Padding="20,12,20,12" ClipToBounds="True">
+                <Border Background="#CC222222" CornerRadius="14" Padding="20,12,20,12" ClipToBounds="True"
+                        BorderBrush="#3A3A3A" BorderThickness="1">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -119,10 +126,10 @@
                             </ScrollViewer>
 
                             <TextBlock Grid.Row="1" Text="{Binding RecordingManager.InfoText}"
-                                       FontSize="11" Foreground="#666"
+                                       FontSize="11" Foreground="#9A9A9A"
                                        Margin="0,8,0,0" TextWrapping="Wrap"/>
                             <TextBlock Grid.Row="2" Text="{Binding HotkeyName}"
-                                       FontSize="9" Foreground="#555"
+                                       FontSize="9" Foreground="#6A6A6A"
                                        Margin="0,2,0,0" Opacity="0.7"/>
                         </Grid>
                     </Grid>
