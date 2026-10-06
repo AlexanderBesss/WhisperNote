@@ -68,15 +68,26 @@ public partial class SettingsWindow : Window
         if (e.ButtonState != MouseButtonState.Pressed)
             return;
 
+        // A combo box dropdown holds the mouse while it is open; its clicks
+        // belong to the dropdown, never to the drag logic.
+        if (Mouse.Captured is not null and not SettingsWindow)
+            return;
+
         // Interactive controls (buttons, switches, tabs, combo boxes) keep
         // their clicks; everywhere else starts a drag.
         var source = e.OriginalSource as DependencyObject;
         while (source != null && source != this)
         {
-            if (source is ButtonBase or ComboBox or TextBox)
+            if (source is ButtonBase or ComboBoxItem or ComboBox or TextBox)
                 return;
             source = VisualTreeHelper.GetParent(source);
         }
+
+        // The walk stopped at null instead of at this window: the click came
+        // from a popup's separate visual tree (e.g. a combo box dropdown),
+        // not from this window's surface, so it must not start a drag.
+        if (source is null)
+            return;
 
         _dragStart = PointToScreen(e.GetPosition(this));
         _startLeft = Left;
@@ -115,5 +126,14 @@ public partial class SettingsWindow : Window
 
         _dragging = false;
         ReleaseMouseCapture();
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+
+        // A closing dropdown can steal capture back before the button-up
+        // arrives; without this the window would keep following the mouse.
+        _dragging = false;
     }
 }
