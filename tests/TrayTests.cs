@@ -69,10 +69,10 @@ public class TrayTests
     }
 
     [Fact]
-    public void AutopasteIsDisabledByDefaultAndForLegacySettings()
+    public void AutopasteIsEnabledByDefaultAndForLegacySettings()
     {
         var defaults = new AppSettings();
-        Assert.False(defaults.AutoPaste);
+        Assert.True(defaults.AutoPaste);
 
         var legacy = JsonSerializer.Deserialize<AppSettings>("""
             {
@@ -83,7 +83,7 @@ public class TrayTests
             }
             """)!;
 
-        Assert.False(legacy.AutoPaste);
+        Assert.True(legacy.AutoPaste);
     }
 
     [Theory]

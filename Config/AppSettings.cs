@@ -18,7 +18,8 @@ public class AppSettings
     public bool AutoOffloadVram { get; set; }
     public bool UseCpuOnly { get; set; }
     public bool StartupEnabled { get; set; }
-    public bool AutoPaste { get; set; }
+    // Initializer supplies the default for configs written before the key existed.
+    public bool AutoPaste { get; set; } = true;
     // Initializer supplies the default for configs written before the key existed.
     public bool MinimizeToTray { get; set; } = true;
     public bool StartInTray { get; set; } = true;
@@ -86,7 +87,7 @@ public class AppSettings
             AutoOffloadVram = true,
             UseCpuOnly = false,
             StartupEnabled = false,
-            AutoPaste = false,
+            AutoPaste = true,
             MinimizeToTray = true,
             Providers = new List<ProviderConfig>
             {
