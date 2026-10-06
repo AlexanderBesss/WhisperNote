@@ -11,7 +11,7 @@ using WinForms = System.Windows.Forms;
 namespace WhisperNote.Services;
 
 /// <summary>
-/// Shell notification-area icon for WhisperNote. Double-clicking the icon (or picking
+/// Shell notification-area icon for WhisperNote. Clicking the icon (or picking
 /// Open in its menu) restores the main window; Exit shuts the app down.
 /// The ring is red while idle and green while the mic is listening or a request is
 /// being processed, matching the status dot in the main window.
@@ -42,10 +42,14 @@ public sealed class TrayIconService : IDisposable
             Text = Trim(tooltip),
             Visible = true
         };
-        _notifyIcon.DoubleClick += (_, _) => RestoreRequested?.Invoke(this, EventArgs.Empty);
         _notifyIcon.MouseUp += (_, e) =>
         {
-            if (e.Button == WinForms.MouseButtons.Right)
+            // Left click restores the window; a double-click simply restores
+            // twice, which the idempotent restore handles. Right click opens
+            // the menu.
+            if (e.Button == WinForms.MouseButtons.Left)
+                RestoreRequested?.Invoke(this, EventArgs.Empty);
+            else if (e.Button == WinForms.MouseButtons.Right)
                 ShowMenu();
         };
     }
