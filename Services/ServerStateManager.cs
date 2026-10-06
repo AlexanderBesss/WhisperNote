@@ -112,6 +112,7 @@ public class ServerStateManager : ViewModel, IDisposable
             }
 
             _server.SetUseCpuOnly(_state.UseCpuOnly);
+            await _server.EnsureBackendAsync(progress, ct);
             await _server.EnsureModelsAsync(progress, ct);
             await _server.StartAsync(ct);
             Status = ServerStatus.Launching;

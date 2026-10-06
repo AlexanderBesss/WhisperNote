@@ -1,10 +1,5 @@
 param(
-    [switch]$Kill,           # force-close the running app before publishing
-    [switch]$NoUpdate,       # never download: fail if a required backend is missing
-    [switch]$UpdateBackends, # also fetch the CUDA 12.4, Vulkan and NPU backends when missing
-    [switch]$ForceUpdate,    # run the update scripts even when binaries are already present
-    [switch]$RefreshModels,  # overwrite publish\models files from the source models folder
-    [string]$SourceRoot      # folder holding llm-servers\ and models\ (defaults to the All-llm monorepo)
+    [switch]$Kill            # force-close the running app before publishing
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,64 +9,11 @@ $publishDir  = Join-Path $projectPath "publish"
 $stagingDir  = Join-Path $projectPath "obj\publish-staging"
 $manifestFile = Join-Path $projectPath "obj\publish-manifest.txt"
 
-# The runtime payload (llama.cpp backends, models) lives outside this repo, in
-# the All-llm monorepo. Resolution order: -SourceRoot, WHISPERNOTE_SOURCE_ROOT,
-# a llm-servers folder next to this repo, then the sibling All-llm checkout.
-if (-not $SourceRoot) { $SourceRoot = $env:WHISPERNOTE_SOURCE_ROOT }
-if (-not $SourceRoot) {
-    $parent = Split-Path $projectPath -Parent
-    if (Test-Path -LiteralPath (Join-Path $parent 'llm-servers')) {
-        $SourceRoot = $parent
-    } else {
-        $SourceRoot = Join-Path $parent 'All-llm'
-    }
-}
-$llamaRoot   = Join-Path $SourceRoot "llm-servers\llama\windows"
-$modelsRoot  = Join-Path $SourceRoot "models"
-
-# llama.cpp backends: mirrored into publish\ so a rebuild removes exactly the
-# files the current build no longer produces.
-$backends = @(
-    [pscustomobject]@{
-        Name     = 'CUDA (NVIDIA)'
-        Required = $true
-        Source   = Join-Path $llamaRoot 'llama'
-        Target   = 'llama'
-        Marker   = 'llama-server.exe'
-        Updater  = Join-Path $llamaRoot 'update-llama.ps1'
-    },
-    [pscustomobject]@{
-        Name     = 'CUDA 12.4 (legacy NVIDIA: Maxwell, Pascal, Volta)'
-        Required = $false
-        Source   = Join-Path $llamaRoot 'cuda12'
-        Target   = 'cuda12'
-        Marker   = 'llama-server.exe'
-        Updater  = Join-Path $llamaRoot 'cuda12\update-cuda12.ps1'
-    },
-    [pscustomobject]@{
-        Name     = 'Vulkan (NVIDIA Pascal, AMD, Intel iGPU)'
-        Required = $false
-        Source   = Join-Path $llamaRoot 'vulkan'
-        Target   = 'vulkan'
-        Marker   = 'llama-server.exe'
-        Updater  = Join-Path $llamaRoot 'vulkan\update-vulkan.ps1'
-    },
-    [pscustomobject]@{
-        Name     = 'OpenVINO (Intel NPU)'
-        Required = $false
-        Source   = Join-Path $llamaRoot 'NPU\llama-ov'
-        Target   = 'NPU\llama-ov'
-        Marker   = 'llama-server.exe'
-        Updater  = Join-Path $llamaRoot 'NPU\update-npu.ps1'
-    }
-)
-
-# Model files: copied only when absent. Never deleted, never overwritten
-# (unless -RefreshModels), because each file is 0.3-2 GB.
-$modelFiles = @(
-    [pscustomobject]@{ Source = Join-Path $modelsRoot 'unslothai\Qwen3-ASR-1.7B-GGUF\Qwen3-ASR-1.7B-Q8_0.gguf'; Target = 'models\Qwen3-ASR-1.7B-Q8_0.gguf' }
-    [pscustomobject]@{ Source = Join-Path $modelsRoot 'unslothai\Qwen3-ASR-1.7B-GGUF\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf'; Target = 'models\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf' }
-)
+# The build never downloads or copies any runtime payload. The llama.cpp
+# backends and the model files are fetched on first use by the app itself
+# (BackendDownloader / ModelDownloader), into publish\, according to the
+# hardware of the machine. The merge below only ever touches files a previous
+# build produced, so those payload folders survive every rebuild.
 
 function Stop-RunningApp {
     $processes = @(Get-Process -Name "WhisperNote", "llama-server" -ErrorAction SilentlyContinue)
@@ -101,90 +43,6 @@ function Stop-RunningApp {
     }
 }
 
-function Invoke-BackendUpdater {
-    param($Backend)
-
-    if ($NoUpdate) {
-        return $false
-    }
-    if (-not (Test-Path -LiteralPath $Backend.Updater)) {
-        Write-Host "  No update script at $($Backend.Updater)." -ForegroundColor Red
-        return $false
-    }
-
-    Write-Host "  Downloading $($Backend.Name) from the latest llama.cpp preview ..." -ForegroundColor Cyan
-    & $Backend.Updater -NonInteractive
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  Update script for $($Backend.Name) failed (exit $LASTEXITCODE)." -ForegroundColor Red
-        return $false
-    }
-    return $true
-}
-
-function Ensure-Backends {
-    foreach ($backend in $backends) {
-        $marker = Join-Path $backend.Source $backend.Marker
-        $present = Test-Path -LiteralPath $marker
-
-        if ($present -and -not $ForceUpdate) {
-            continue
-        }
-
-        if (-not $backend.Required -and -not $UpdateBackends) {
-            if (-not $present) {
-                Write-Host "  $($backend.Name): not installed (optional). Run $($backend.Updater) to enable it." -ForegroundColor Yellow
-            }
-            continue
-        }
-
-        if (-not (Invoke-BackendUpdater $backend)) {
-            if ($backend.Required) {
-                Write-Host "ERROR: $($backend.Name) llama.cpp binaries are required and could not be obtained." -ForegroundColor Red
-                Write-Host "       Run: $($backend.Updater)" -ForegroundColor Yellow
-                exit 1
-            }
-            continue
-        }
-
-        if (-not (Test-Path -LiteralPath (Join-Path $backend.Source $backend.Marker))) {
-            if ($backend.Required) {
-                Write-Host "ERROR: update finished but $($backend.Source) still has no $($backend.Marker)." -ForegroundColor Red
-                exit 1
-            }
-            Write-Host "  $($backend.Name) is still not installed; continuing without it." -ForegroundColor Yellow
-        }
-    }
-
-    foreach ($backend in $backends) {
-        if (-not (Test-Path -LiteralPath (Join-Path $backend.Source $backend.Marker))) {
-            continue
-        }
-        $version = (Get-ChildItem -LiteralPath $backend.Source -Filter 'VERSION-*' -File |
-                    Sort-Object LastWriteTime -Descending |
-                    Select-Object -First 1)
-        $label = if ($version) { $version.Name.Substring('VERSION-'.Length) } else { 'version unknown' }
-        Write-Host "  $($backend.Name): $label" -ForegroundColor Gray
-    }
-}
-
-function Ensure-Models {
-    $missing = @()
-    foreach ($model in $modelFiles) {
-        if (-not (Test-Path -LiteralPath $model.Source)) {
-            $missing += $model.Target
-        }
-    }
-
-    if ($missing.Count -eq 0) {
-        return
-    }
-
-    Write-Host "  Model files not in $modelsRoot (the app downloads them on first use):" -ForegroundColor Yellow
-    foreach ($name in $missing) {
-        Write-Host "    $name" -ForegroundColor Yellow
-    }
-}
-
 function Copy-IfChanged {
     param([string]$Source, [string]$Dest)
 
@@ -204,72 +62,6 @@ function Copy-IfChanged {
     return $true
 }
 
-function Sync-BackendDirectory {
-    param([string]$Source, [string]$TargetDir)
-
-    $sourceRoot = $Source.TrimEnd('\')
-    # A backend that is not installed has no binaries to mirror: leave publish\
-    # untouched rather than creating an empty folder for it.
-    if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot 'llama-server.exe'))) {
-        return
-    }
-
-    if (-not (Test-Path -LiteralPath $TargetDir)) {
-        New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
-    }
-
-    $updated = 0
-    foreach ($file in Get-ChildItem -LiteralPath $sourceRoot -Recurse -File) {
-        # Update scripts and their logs stay in the source tree, not in publish\.
-        if ($file.Extension -in '.ps1', '.log') {
-            continue
-        }
-        $relative = $file.FullName.Substring($sourceRoot.Length).Trim('\')
-        if (Copy-IfChanged -Source $file.FullName -Dest (Join-Path $TargetDir $relative)) {
-            $updated++
-        }
-    }
-
-    # Remove published binaries the current backend folder no longer provides.
-    $removed = 0
-    foreach ($file in Get-ChildItem -LiteralPath $TargetDir -Recurse -File) {
-        if ($file.Extension -in '.ps1', '.log') {
-            continue
-        }
-        $relative = $file.FullName.Substring($TargetDir.Length).Trim('\')
-        if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot $relative))) {
-            Remove-Item -LiteralPath $file.FullName -Force
-            $removed++
-        }
-    }
-
-    $name = Split-Path $TargetDir -Leaf
-    Write-Host "  $name : $updated updated, $removed removed" -ForegroundColor Gray
-}
-
-function Sync-ModelFiles {
-    $copied = 0
-    foreach ($model in $modelFiles) {
-        if (-not (Test-Path -LiteralPath $model.Source)) {
-            continue
-        }
-        $dest = Join-Path $publishDir $model.Target
-        if ((Test-Path -LiteralPath $dest) -and -not $RefreshModels) {
-            continue
-        }
-        $dir = Split-Path $dest -Parent
-        if (-not (Test-Path -LiteralPath $dir)) {
-            New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        }
-        Write-Host "  Copying $((Split-Path $model.Target -Leaf)) ..." -ForegroundColor Gray
-        Copy-Item -LiteralPath $model.Source -Destination $dest -Force
-        $copied++
-    }
-    if ($copied -gt 0) {
-        Write-Host "  $copied model file(s) copied into publish\models." -ForegroundColor Gray
-    }
-}
-
 Stop-RunningApp
 
 if (Get-Process -Name "WhisperNote" -ErrorAction SilentlyContinue) {
@@ -277,12 +69,8 @@ if (Get-Process -Name "WhisperNote" -ErrorAction SilentlyContinue) {
     exit 1
 }
 
-Write-Host "Checking runtime payload ..." -ForegroundColor Cyan
-Ensure-Backends
-Ensure-Models
-
 # Publish into a private staging folder. The SDK only ever cleans the folder it
-# publishes into, so publish\ keeps its models, settings and logs.
+# publishes into, so publish\ keeps its payload, models, settings and logs.
 if (Test-Path -LiteralPath $stagingDir) {
     Remove-Item -LiteralPath $stagingDir -Recurse -Force
 }
@@ -336,13 +124,7 @@ foreach ($relative in $prior) {
     }
 }
 
-Write-Host "Syncing runtime payload into publish ..." -ForegroundColor Cyan
-foreach ($backend in $backends) {
-    Sync-BackendDirectory -Source $backend.Source -TargetDir (Join-Path $publishDir $backend.Target)
-}
-Sync-ModelFiles
-
 Set-Content -LiteralPath $manifestFile -Value $current -Encoding UTF8
 
-Write-Host "Done. $deleted stale build file(s) removed; models, settings and logs kept." -ForegroundColor Green
+Write-Host "Done. $deleted stale build file(s) removed; payload, models, settings and logs kept." -ForegroundColor Green
 Write-Host "Run: $publishDir\WhisperNote.exe" -ForegroundColor Green

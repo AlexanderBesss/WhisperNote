@@ -113,6 +113,11 @@ public class LlmServer : IDisposable
         HardwareBackend.Vulkan => AppConfig.VulkanServerExeRelative,
         HardwareBackend.NvidiaCudaLegacy => AppConfig.CudaLegacyServerExeRelative,
         HardwareBackend.IntelNpu => AppConfig.NpuServerExeRelative,
+        // CPU mode prefers the small CPU build downloaded at runtime and falls
+        // back to whatever CUDA build is installed (run with --device none).
+        HardwareBackend.Cpu => File.Exists(Path.Combine(AppPaths.BaseDirectory, AppConfig.CpuServerExeRelative))
+            ? AppConfig.CpuServerExeRelative
+            : AppConfig.CudaServerExeRelative,
         _ => AppConfig.CudaServerExeRelative
     };
 
@@ -141,6 +146,24 @@ public class LlmServer : IDisposable
             HardwareBackend.Cpu => new[] { HardwareBackend.Cpu },
             _ => new[] { _preferredBackend, HardwareBackend.Cpu }
         };
+    }
+
+    /// <summary>
+    /// Downloads the llama.cpp binaries for the backend this machine should
+    /// use when they are not installed yet, so a fresh install fetches only
+    /// what the hardware (or the CPU-only choice) actually needs.
+    /// </summary>
+    public Task EnsureBackendAsync(Action<string, long, long> progress, CancellationToken ct = default)
+    {
+        if (!IsLocal)
+            return Task.CompletedTask;
+
+        var backend = FallbackChain()[0];
+        if (BackendDownloader.IsInstalled(backend))
+            return Task.CompletedTask;
+
+        Logger.Info($"Backend {backend} is not installed; downloading it");
+        return BackendDownloader.EnsureAsync(backend, progress, ct);
     }
 
     public async Task EnsureModelsAsync(Action<string, long, long> progress, CancellationToken ct = default)

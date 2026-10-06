@@ -44,44 +44,11 @@
   </ItemGroup>
 
  <!--
-    Runtime payload (models + llama.cpp backends) lives outside this repo, in
-    the All-llm monorepo. SourceRoot resolves from -p:SourceRoot=..., the
-    WHISPERNOTE_SOURCE_ROOT environment variable, a llm-servers folder next to
-    this repo, or the sibling All-llm checkout.
-
-    Runtime payload (models + llama.cpp backends) is deliberately NOT published
-    by the SDK. build.ps1 syncs it into publish/ with its own rules, so a rebuild
-    can never delete the multi-gigabyte model files. CopyToPublishDirectory=Never
-    keeps the SDK's incremental publish-clean away from these folders.
+    Runtime payload (llama.cpp backends + models) is deliberately NOT built,
+    copied or downloaded here. The app fetches exactly what the machine needs
+    on first use (BackendDownloader / ModelDownloader) into publish\, and
+    build.ps1 keeps those folders through every rebuild.
   -->
-  <PropertyGroup>
-    <SourceRoot Condition="'$(SourceRoot)' == ''">$(WHISPERNOTE_SOURCE_ROOT)</SourceRoot>
-    <SourceRoot Condition="'$(SourceRoot)' == '' And Exists('$(MSBuildThisFileDirectory)..\llm-servers')">$(MSBuildThisFileDirectory)..\</SourceRoot>
-    <SourceRoot Condition="'$(SourceRoot)' == ''">$(MSBuildThisFileDirectory)..\All-llm\</SourceRoot>
-  </PropertyGroup>
-
- <ItemGroup Condition="Exists('$(SourceRoot)models\unslothai\Qwen3-ASR-1.7B-GGUF\Qwen3-ASR-1.7B-Q8_0.gguf')">
-    <None Include="$(SourceRoot)models\unslothai\Qwen3-ASR-1.7B-GGUF\Qwen3-ASR-1.7B-Q8_0.gguf" Link="models\Qwen3-ASR-1.7B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
-    <None Include="$(SourceRoot)models\unslothai\Qwen3-ASR-1.7B-GGUF\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf" Link="models\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
-  </ItemGroup>
-
-
-  <ItemGroup>
-    <None Include="$(SourceRoot)llm-servers\llama\windows\llama\**" Link="llama\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="$(SourceRoot)llm-servers\llama\windows\vulkan\**" Exclude="$(SourceRoot)llm-servers\llama\windows\vulkan\*.ps1;$(SourceRoot)llm-servers\llama\windows\vulkan\*.log" Link="vulkan\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
-  </ItemGroup>
-
-  <!-- CUDA 12.4 backend: the only CUDA build that still runs Maxwell/Pascal/Volta. -->
-  <ItemGroup>
-    <None Include="$(SourceRoot)llm-servers\llama\windows\cuda12\**" Exclude="$(SourceRoot)llm-servers\llama\windows\cuda12\*.ps1;$(SourceRoot)llm-servers\llama\windows\cuda12\*.log" Link="cuda12\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="$(SourceRoot)llm-servers\llama\windows\NPU\llama-ov\**" Link="NPU\llama-ov\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
-  </ItemGroup>
 
 
 

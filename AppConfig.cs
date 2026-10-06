@@ -21,6 +21,7 @@ public static class AppConfig
     public const int MicDeviceNumber = -1;
 
     public const string CudaServerExeRelative = @"llama\llama-server.exe";
+    public const string CpuServerExeRelative = @"cpu\llama-server.exe";
     // CUDA 12.4 build: the only CUDA binary that still runs Maxwell, Pascal and Volta GPUs.
     public const string CudaLegacyServerExeRelative = @"cuda12\llama-server.exe";
     public const string VulkanServerExeRelative = @"vulkan\llama-server.exe";
