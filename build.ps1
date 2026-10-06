@@ -1,7 +1,7 @@
 param(
     [switch]$Kill,           # force-close the running app before publishing
     [switch]$NoUpdate,       # never download: fail if a required backend is missing
-    [switch]$UpdateBackends, # also fetch the Vulkan (iGPU) and NPU backends when missing
+    [switch]$UpdateBackends, # also fetch the CUDA 12.4, Vulkan and NPU backends when missing
     [switch]$ForceUpdate,    # run the update scripts even when binaries are already present
     [switch]$RefreshModels   # overwrite publish\models files from the source models folder
 )
@@ -28,7 +28,15 @@ $backends = @(
         Updater  = Join-Path $llamaRoot 'update-llama.ps1'
     },
     [pscustomobject]@{
-        Name     = 'Vulkan (Intel iGPU)'
+        Name     = 'CUDA 12.4 (legacy NVIDIA: Maxwell, Pascal, Volta)'
+        Required = $false
+        Source   = Join-Path $llamaRoot 'cuda12'
+        Target   = 'cuda12'
+        Marker   = 'llama-server.exe'
+        Updater  = Join-Path $llamaRoot 'cuda12\update-cuda12.ps1'
+    },
+    [pscustomobject]@{
+        Name     = 'Vulkan (NVIDIA Pascal, AMD, Intel iGPU)'
         Required = $false
         Source   = Join-Path $llamaRoot 'vulkan'
         Target   = 'vulkan'

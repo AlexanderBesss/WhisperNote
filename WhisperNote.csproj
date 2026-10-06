@@ -68,6 +68,11 @@
     <None Include="..\llm-servers\llama\windows\vulkan\**" Exclude="..\llm-servers\llama\windows\vulkan\*.ps1;..\llm-servers\llama\windows\vulkan\*.log" Link="vulkan\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
+  <!-- CUDA 12.4 backend: the only CUDA build that still runs Maxwell/Pascal/Volta. -->
+  <ItemGroup>
+    <None Include="..\llm-servers\llama\windows\cuda12\**" Exclude="..\llm-servers\llama\windows\cuda12\*.ps1;..\llm-servers\llama\windows\cuda12\*.log" Link="cuda12\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Include="..\llm-servers\llama\windows\NPU\llama-ov\**" Link="NPU\llama-ov\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" ExcludeFromSingleFile="true" />
   </ItemGroup>

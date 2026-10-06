@@ -179,11 +179,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     void UpdateHardwareMode()
     {
-        HardwareMode = _useCpuOnly ? "CPU" : App.DetectedBackend switch
+        // Once the server is up, report the backend it actually runs on: the startup
+        // fallback chain may have demoted a GPU the preferred build cannot drive.
+        var backend = ServerManager.IsServerRunning ? ServerManager.Backend : App.DetectedBackend;
+        HardwareMode = _useCpuOnly ? "CPU" : backend switch
         {
-            HardwareBackend.IntelIgpu => "iGPU",
+            HardwareBackend.Vulkan => "GPU",
             HardwareBackend.IntelNpu => "NPU",
-            HardwareBackend.NvidiaCuda => "GPU",
+            HardwareBackend.NvidiaCuda or HardwareBackend.NvidiaCudaLegacy => "GPU",
+            HardwareBackend.Cpu => "CPU",
             _ => ""
         };
     }
@@ -275,6 +279,12 @@ public class MainWindowViewModel : ViewModel, IDisposable
             WarmupForRemoteRequestAsync,
             ReleaseRemoteWarmupAsync);
         RemoteServer.StatusChanged += RemoteServer_StatusChanged;
+        // The startup fallback chain may settle on another backend than the detected one.
+        ServerManager.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ServerManager.Status))
+                UpdateHardwareMode();
+        };
         RecordingManager = new RecordingStateManager();
         _highlightTimer.Tick += (_, _) =>
         {

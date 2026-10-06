@@ -35,9 +35,33 @@ produces are removed.
 | --- | --- |
 | `-Kill` | Force-close the running app (and its `llama-server`) before publishing. |
 | `-NoUpdate` | Never download; fail if a required backend is missing. |
-| `-UpdateBackends` | Also fetch the Vulkan (iGPU) and NPU backends when missing. |
+| `-UpdateBackends` | Also fetch the CUDA 12.4 (legacy NVIDIA), Vulkan (iGPU) and NPU backends when missing. |
 | `-ForceUpdate` | Run the update scripts even when binaries are already present. |
 | `-RefreshModels` | Overwrite `publish/models` from the source `models/` folder. |
+
+## GPU Backends
+
+At startup WhisperNote detects the GPU and picks the matching llama.cpp binary
+from `publish/`:
+
+| Detected hardware | Backend folder | Notes |
+| --- | --- | --- |
+| NVIDIA Turing (sm_75) or newer | `llama/` | CUDA 13 build. |
+| NVIDIA Maxwell, Pascal, Volta (pre-Turing, e.g. GTX 1080 Ti) | `cuda12/` | CUDA 12.4 build; the CUDA 13 build ships no kernels for these GPUs. |
+| AMD or Intel GPU | `vulkan/` | Also covers NVIDIA Pascal as a fallback. |
+| Intel Core Ultra (NPU) | `NPU/llama-ov/` | OpenVINO build; optional payload. |
+| No supported GPU | `llama/` with `--device none` | CPU inference. |
+
+If the selected backend aborts on the device (for example `no kernel image is
+available`), the server automatically retries the next backend in the chain
+(CUDA 13 → CUDA 12.4 → Vulkan → CPU, shortened to what was detected), so a
+wrong guess degrades instead of failing. The status chip in the main window
+shows which backend is running. **CPU only mode** in Settings skips every GPU
+backend.
+
+The backend payloads live in `llm-servers/llama/windows/` in this repository
+and are synced into `publish/` by `build.ps1`; `cuda12/update-cuda12.ps1` and
+`vulkan/update-vulkan.ps1` refresh them from llama.cpp preview releases.
 
 ## Requirements
 

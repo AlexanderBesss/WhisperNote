@@ -8,7 +8,7 @@ namespace WhisperNote;
 public partial class App : Application
 {
     public static AppState? AppState { get; private set; }
-    public static HardwareBackend DetectedBackend { get; private set; } = HardwareBackend.Unknown;
+    public static HardwareBackend DetectedBackend { get; internal set; } = HardwareBackend.Unknown;
     static LlmServer? _server;
 
     public static void RegisterServerForCleanup(LlmServer server) => _server = server;
