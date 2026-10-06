@@ -829,7 +829,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
             }
             else
             {
-                _ = RecordingManager.Cancel();
+                // The request was processed but the model returned nothing
+                // (silence or a failed ASR pass). Show it instead of silently
+                // dropping back to Ready, which looks like a lost request.
+                _ = RecordingManager.SetError("No speech detected, try again");
             }
         }
         catch (OperationCanceledException)

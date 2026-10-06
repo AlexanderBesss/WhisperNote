@@ -14,15 +14,18 @@
         AllowsTransparency="True"
         ShowActivated="False">
 
-    <!-- Bottom-center pill shown while recording; matches the app's dark design.
-         Click-through and non-activating so dictation focus never leaves the target app. -->
+    <!-- Bottom-center pill shown while recording and processing; matches the app's
+         dark design. Click-through and non-activating so dictation focus never
+         leaves the target app. -->
     <Border Background="#E61A1A1A" CornerRadius="18" Padding="18,10"
             BorderBrush="#3A3A3A" BorderThickness="1">
         <Border.Effect>
             <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.55"/>
         </Border.Effect>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-            <Ellipse Width="14" Height="14" Fill="#E5484D" VerticalAlignment="Center">
+            <!-- Recording: pulsing red dot. -->
+            <Ellipse Width="14" Height="14" Fill="#E5484D" VerticalAlignment="Center"
+                     Visibility="{Binding IsRecording, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <Ellipse.Triggers>
                     <EventTrigger RoutedEvent="FrameworkElement.Loaded">
                         <BeginStoryboard>
@@ -35,9 +38,36 @@
                     </EventTrigger>
                 </Ellipse.Triggers>
             </Ellipse>
+            <!-- Processing: spinning blue arc, same accent as the status text. -->
+            <Grid Width="16" Height="16" VerticalAlignment="Center"
+                  Visibility="{Binding IsProcessing, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Path Stroke="#ADD8E6" StrokeThickness="2.5"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      Data="M 8,1 A 7,7 0 1 1 1,8"
+                      RenderTransformOrigin="0.5,0.5">
+                    <Path.RenderTransform>
+                        <RotateTransform/>
+                    </Path.RenderTransform>
+                    <Path.Triggers>
+                        <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                     From="0" To="360" Duration="0:0:0.9"
+                                                     RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Path.Triggers>
+                </Path>
+            </Grid>
             <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
                 <TextBlock Text="Recording…" FontSize="14" FontWeight="SemiBold"
-                           Foreground="#F0F0F0"/>
+                           Foreground="#F0F0F0"
+                           Visibility="{Binding IsRecording, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                <TextBlock Text="Processing…" FontSize="14" FontWeight="SemiBold"
+                           Foreground="#F0F0F0"
+                           Visibility="{Binding IsProcessing, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 <TextBlock Text="{Binding InfoText}" FontSize="11" Foreground="#9A9A9A"
                            Margin="0,2,0,0" TextTrimming="CharacterEllipsis" MaxWidth="270"/>
             </StackPanel>

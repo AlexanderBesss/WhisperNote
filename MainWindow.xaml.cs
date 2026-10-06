@@ -125,13 +125,15 @@ public partial class MainWindow : Window
         UpdateOverlayState();
     }
 
-    // The recording pill is visible for the whole recording, hotkey- or button-started.
+    // The pill stays up through recording and processing, and only hides once
+    // the request is fully done, so a hotkey- or button-started recording never
+    // looks finished while the LLM is still working.
     void UpdateOverlayState()
     {
         if (_overlay == null)
             return;
 
-        if (_viewModel.RecordingManager.IsRecording)
+        if (_viewModel.RecordingManager.IsRecording || _viewModel.RecordingManager.IsProcessing)
             _overlay.ShowRecording();
         else
             _overlay.HideRecording();
