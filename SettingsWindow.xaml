@@ -213,14 +213,13 @@
                                           ToolTip="Hold the key to start and stop recording"/>
                         </Grid>
 
-                        <TextBlock Text="Recording key" Style="{StaticResource FieldLabel}"
-                                   Margin="0,4,0,4"/>
                         <ComboBox ItemsSource="{Binding HotkeyOptions}"
                                   DisplayMemberPath="Name"
                                   SelectedValuePath="VirtualKeyCode"
                                   SelectedValue="{Binding HotkeyVirtualKeyCode, Mode=TwoWay}"
                                   IsEnabled="{Binding HotkeyEnabled}"
-                                  Height="28"/>
+                                  Height="28"
+                                  Margin="0,4,0,0"/>
                     </StackPanel>
                 </Border>
 
