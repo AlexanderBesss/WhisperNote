@@ -56,8 +56,6 @@ $backends = @(
 # Model files: copied only when absent. Never deleted, never overwritten
 # (unless -RefreshModels), because each file is 0.3-2 GB.
 $modelFiles = @(
-    [pscustomobject]@{ Source = Join-Path $modelsRoot 'unsloth\gemma-4-E2B-it-GGUF\gemma-4-E2B-it-UD-Q4_K_XL.gguf';  Target = 'models\gemma-4-E2B-it-UD-Q4_K_XL.gguf' }
-    [pscustomobject]@{ Source = Join-Path $modelsRoot 'lmstudio-community\gemma-4-E2B-it-GGUF\mmproj-gemma-4-E2B-it-BF16.gguf'; Target = 'models\mmproj-BF16.gguf' }
     [pscustomobject]@{ Source = Join-Path $modelsRoot 'unslothai\Qwen3-ASR-1.7B-GGUF\Qwen3-ASR-1.7B-Q8_0.gguf'; Target = 'models\Qwen3-ASR-1.7B-Q8_0.gguf' }
     [pscustomobject]@{ Source = Join-Path $modelsRoot 'unslothai\Qwen3-ASR-1.7B-GGUF\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf'; Target = 'models\mmproj-Qwen3-ASR-1.7B-Q8_0.gguf' }
 )

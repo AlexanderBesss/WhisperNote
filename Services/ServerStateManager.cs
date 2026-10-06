@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using WhisperNote.Config;
 using WhisperNote.Models;
 using WhisperNote.ViewModels;
 
@@ -18,8 +17,6 @@ public class ServerStateManager : ViewModel, IDisposable
     readonly AppState _state;
     readonly SemaphoreSlim _operationLock = new(1, 1);
     readonly object _startLock = new();
-    readonly object _remoteWarmupLock = new();
-    CancellationTokenSource? _remoteWarmupCts;
 
     ServerStatus _status = ServerStatus.Offline;
     public ServerStatus Status
@@ -40,7 +37,6 @@ public class ServerStateManager : ViewModel, IDisposable
             throw new InvalidOperationException("No active provider configured. Check whispernote.json or restart to create defaults.");
         _server = new LlmServer();
         _server.Configure(provider);
-        _server.SetThinkingEnabled(_state.ThinkingEnabled);
         _server.SetUseCpuOnly(_state.UseCpuOnly);
         _transcription = new TranscriptionService(provider);
         App.RegisterServerForCleanup(_server);
@@ -115,7 +111,6 @@ public class ServerStateManager : ViewModel, IDisposable
                 return;
             }
 
-            _server.SetThinkingEnabled(_state.ThinkingEnabled);
             _server.SetUseCpuOnly(_state.UseCpuOnly);
             await _server.EnsureModelsAsync(progress, ct);
             await _server.StartAsync(ct);
@@ -178,17 +173,6 @@ public class ServerStateManager : ViewModel, IDisposable
             Status = ServerStatus.Failed("No provider configured");
             return;
         }
-        if (!provider.IsLocal)
-        {
-            if (provider.IsRemoteExecution)
-            {
-                var ready = await _transcription.IsServerReady();
-                Status = ready ? ServerStatus.RemoteConnected : ServerStatus.RemoteUnavailable;
-            }
-            else
-                Status = ServerStatus.Cloud(provider.Name);
-            return;
-        }
 
         await WithOperationLockAsync(async () =>
         {
@@ -204,18 +188,6 @@ public class ServerStateManager : ViewModel, IDisposable
         if (provider == null)
         {
             updateInfo("No provider configured");
-            return;
-        }
-        if (!provider.IsLocal)
-        {
-            if (provider.IsRemoteExecution)
-            {
-                var ready = await IsServerReady();
-                Status = ready ? ServerStatus.RemoteConnected : ServerStatus.RemoteUnavailable;
-                updateInfo(ready ? "Remote server connected" : "Remote server unavailable");
-            }
-            else
-                updateInfo($"Cloud provider ({provider.Name}) has no local server");
             return;
         }
 
@@ -248,7 +220,7 @@ public class ServerStateManager : ViewModel, IDisposable
     public async Task<bool> WaitForServerReady(Action<string> updateInfo)
     {
         var provider = _state.ActiveProvider;
-        if (provider == null || !provider.IsLocal)
+        if (provider == null)
             return true;
 
         return await WithOperationLockAsync(async () =>
@@ -274,160 +246,11 @@ public class ServerStateManager : ViewModel, IDisposable
         });
     }
 
-    bool _switchingProvider;
     bool _isStarting;
     Task? _startTask;
-    public async Task SwitchProvider(ProviderConfig provider)
-    {
-        if (_switchingProvider) return;
-        _switchingProvider = true;
-        CancelRemoteWarmup();
-        try
-        {
-            await WithOperationLockAsync(() => Task.Run(() =>
-            {
-                _server.Dispose();
-                _transcription.Dispose();
 
-                _server = new LlmServer();
-                _server.Configure(provider);
-                _server.SetThinkingEnabled(_state.ThinkingEnabled);
-                _server.SetUseCpuOnly(_state.UseCpuOnly);
-                _transcription = new TranscriptionService(provider);
-                App.RegisterServerForCleanup(_server);
-            }));
-
-            UpdateProviderStatus(provider);
-            if (provider.IsRemoteExecution)
-            {
-                var ready = await _transcription.IsServerReady();
-                Status = ready ? ServerStatus.RemoteConnected : ServerStatus.RemoteUnavailable;
-            }
-        }
-        finally
-        {
-            _switchingProvider = false;
-        }
-    }
-
-    void UpdateProviderStatus(ProviderConfig provider)
-    {
-        Status = provider.IsLocal ? ServerStatus.Offline :
-            provider.IsRemoteExecution ? ServerStatus.RemoteUnavailable : ServerStatus.Cloud(provider.Name);
-        Logger.Info($"Provider changed to {provider.Name} ({provider.Model})");
-    }
-
-    public async Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct)
-    {
-        CancelRemoteWarmup();
-        try
-        {
-            var text = await WithOperationLockAsync(() => _transcription.Transcribe(pcm, channels, ct: ct), ct);
-            if (_state.ActiveProvider?.IsRemoteExecution == true)
-                Status = ServerStatus.RemoteConnected;
-            return text;
-        }
-        catch
-        {
-            if (_state.ActiveProvider?.IsRemoteExecution == true)
-                Status = ServerStatus.RemoteUnavailable;
-            throw;
-        }
-    }
-
-    public async Task<bool> WarmupRemoteAsync(CancellationToken ct = default)
-    {
-        if (_state.ActiveProvider?.IsRemoteExecution != true)
-            return false;
-
-        var warmupCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        CancellationTokenSource? previousWarmup;
-        lock (_remoteWarmupLock)
-        {
-            previousWarmup = _remoteWarmupCts;
-            _remoteWarmupCts = warmupCts;
-        }
-        TryCancel(previousWarmup);
-
-        try
-        {
-            // HttpClient supports concurrent requests. Keeping this outside the
-            // operation lock prevents a slow best-effort warm-up from delaying audio.
-            var transcription = _transcription;
-            return await transcription.WarmupRemoteAsync(warmupCts.Token);
-        }
-        finally
-        {
-            lock (_remoteWarmupLock)
-            {
-                if (ReferenceEquals(_remoteWarmupCts, warmupCts))
-                    _remoteWarmupCts = null;
-            }
-            warmupCts.Dispose();
-        }
-    }
-
-    void CancelRemoteWarmup()
-    {
-        CancellationTokenSource? warmupCts;
-        lock (_remoteWarmupLock)
-        {
-            warmupCts = _remoteWarmupCts;
-            _remoteWarmupCts = null;
-        }
-        TryCancel(warmupCts);
-    }
-
-    static void TryCancel(CancellationTokenSource? cts)
-    {
-        if (cts == null)
-            return;
-
-        try { cts.Cancel(); }
-        catch (ObjectDisposedException) { }
-    }
-
-    public Task<bool> SyncRemoteSettingsAsync(CancellationToken ct = default) =>
-        SyncRemoteSettingsAsync(
-            new RemoteExecutionSettings(_state.AutoOffloadVram, _state.ThinkingEnabled),
-            ct);
-
-    public async Task<bool> SyncRemoteSettingsAsync(
-        RemoteExecutionSettings settings,
-        CancellationToken ct = default)
-    {
-        if (_state.ActiveProvider?.IsRemoteExecution != true)
-            return false;
-
-        var applied = await WithOperationLockAsync(() => _transcription.UpdateRemoteSettingsAsync(
-            settings.AutoOffloadVram,
-            settings.ThinkingEnabled,
-            ct), ct);
-        Status = applied ? ServerStatus.RemoteConnected : ServerStatus.RemoteSettingsSyncFailed;
-        return applied;
-    }
-
-    public async Task<RemoteExecutionSettings> ApplyRemoteSettingsAsync(
-        RemoteExecutionSettings settings,
-        CancellationToken ct)
-    {
-        if (_state.ActiveProvider?.IsLocal != true)
-            throw new InvalidOperationException("This server instance must be in Local LLM mode to apply remote settings.");
-
-        await WithOperationLockAsync(async () =>
-        {
-            var thinkingChanged = _state.ThinkingEnabled != settings.ThinkingEnabled;
-            _state.SetModelBehaviorSettings(settings.AutoOffloadVram, settings.ThinkingEnabled);
-            _server.SetThinkingEnabled(settings.ThinkingEnabled);
-
-            if (thinkingChanged && _server.IsRunning)
-            {
-                await Task.Run(() => _server.Stop());
-                Status = ServerStatus.Offline;
-            }
-        }, ct);
-        return settings;
-    }
+    public async Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct) =>
+        await WithOperationLockAsync(() => _transcription.Transcribe(pcm, channels, ct: ct), ct);
 
     public Task<bool> IsServerReady(CancellationToken ct = default) =>
         WithOperationLockAsync(() => _transcription.IsServerReady(ct), ct);
@@ -450,7 +273,6 @@ public class ServerStateManager : ViewModel, IDisposable
 
     public void Dispose()
     {
-        CancelRemoteWarmup();
         if (!_operationLock.Wait(TimeSpan.FromSeconds(10)))
         {
             Logger.Error("Timed out waiting to dispose server manager");

@@ -38,7 +38,6 @@ public class LlmServer : IDisposable
     string? _mmprojPath;
     string? _preferredExeOverride;
     Process? _process;
-    bool _thinkingEnabled;
     bool _useCpuOnly;
     HardwareBackend _preferredBackend = HardwareBackend.Unknown;
     HardwareBackend _backend = HardwareBackend.Unknown;
@@ -51,8 +50,6 @@ public class LlmServer : IDisposable
 
     public ProviderConfig? CurrentProvider { get; private set; }
     public HardwareBackend Backend => _backend;
-
-    public void SetThinkingEnabled(bool enabled) => _thinkingEnabled = enabled;
 
     public void SetUseCpuOnly(bool enabled) => _useCpuOnly = enabled;
 
@@ -503,7 +500,6 @@ public class LlmServer : IDisposable
             $"--batch-size {AppConfig.BatchSize} --ubatch-size {AppConfig.UBatchSize} " +
             "--jinja " +
             SamplingArgs() +
-            $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
             $"--metrics --slots --perf";
     }
 
@@ -525,7 +521,6 @@ public class LlmServer : IDisposable
             $"--batch-size {AppConfig.BatchSize} --ubatch-size {AppConfig.UBatchSize} " +
             "--jinja " +
             SamplingArgs() +
-            $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
             "--metrics --slots --perf";
     }
 
@@ -543,7 +538,6 @@ public class LlmServer : IDisposable
             $"--batch-size {AppConfig.NpuBatchSize} --ubatch-size {AppConfig.NpuUBatchSize} " +
             "--jinja " +
             $"--temp {AppConfig.Temperature} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} " +
-            $"--reasoning {(_thinkingEnabled ? "on" : "off")} " +
             $"--metrics --slots --perf";
     }
 

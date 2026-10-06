@@ -6,8 +6,7 @@ Voice-to-text desktop app for Windows. Hold a key, speak, release — transcribe
 
 - **Hold-to-record** — Right Ctrl (default) to start/stop recording
 - **Auto-start server** — llama.cpp server starts on demand, stops after each request
-- **Multi-provider** — local GGUF models or cloud APIs (OpenAI, Azure)
-- **Remote execution** — warm and send recordings to another WhisperNote instance that runs its local model
+- **Local GGUF models** — llama.cpp runs the selected model entirely on this machine
 - **Grammar correction** — LLM cleans up speech into proper English
 - **VRAM offload** — stop server after each request to free GPU memory
 - **Run on startup** — optional Windows auto-start
@@ -78,32 +77,10 @@ While a recording is active — hotkey-held or button-started — a small dark p
 screen with a pulsing red dot and "Recording…"; it hides automatically when the recording stops. The pill
 never steals focus and clicks pass through it, so the app you are dictating into keeps the caret.
 
-The main window's chevron button hides WhisperNote in the notification area, where the recording hotkey keeps
-working. Double-click the tray icon, or choose **Open WhisperNote** in its menu, to bring the window back;
+The main window's close button hides WhisperNote in the notification area, where the recording hotkey keeps
+working. Click the tray icon, or choose **Open WhisperNote** in its menu, to bring the window back;
 **Exit** in that menu quits the app. The tray icon's ring is red while nothing is being said and green while
 the mic is listening or a request is being processed, matching the status dot in the window. **Minimize to
 tray** in Settings controls what the close button does: when it is on, closing hides the window to the tray,
 and when it is off, closing exits the app.
 
-Remote providers have two independent modes in Settings:
-
-- **DirectApi** keeps using the configured provider endpoints, credentials, and ordered failover.
-- **RemoteExecution** sends PCM audio over HTTP to the configured WhisperNote server endpoint.
-
-On the server instance, enable **Accept remote execution**, choose an HTTP listen endpoint, and keep that
-instance in **Local LLM** mode. The default listener is `http://0.0.0.0:8090`, which binds all interfaces;
-configure the client with the server's reachable LAN hostname or address rather than `0.0.0.0`. The app
-opens the TCP listener directly, so no Windows URL ACL setup is required. Windows Firewall may still need
-an inbound rule for the selected port, and the listener should only be exposed on a trusted network. The
-protocol intentionally does not add authentication or TLS; cloud orchestration, streaming, and request
-queuing are not supported.
-
-When recording begins in RemoteExecution mode, the client sends a best-effort warm-up request so the
-server can load its model while the user is speaking. Audio is still sent only when recording ends. With
-auto-offload enabled, the warmed model remains loaded until that transcription finishes and is then
-offloaded as before. If no transcription follows, the server releases the warm-up after five minutes.
-
-To let a client control server-side model behavior, enable **Allow remote settings control** on the server.
-The client then synchronizes **Auto-offload VRAM** and **Thinking mode** when those settings are saved. This is
-disabled by default because the protocol has no authentication or TLS; any
-trusted-network client that can reach the listener may otherwise change those two settings.

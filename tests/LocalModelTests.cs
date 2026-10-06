@@ -6,10 +6,14 @@ namespace WhisperNote.Tests;
 
 public class LocalModelTests
 {
+    // Stands in for any model outside the catalog (legacy or custom configs):
+    // exercises the generic non-dedicated-ASR code paths.
+    const string CustomLlmModel = "custom-llm.gguf";
+
     [Fact]
-    public void CatalogContainsQwen3Asr17BAndGemma()
+    public void CatalogContainsQwen3Asr17B()
     {
-        Assert.Equal(2, LocalModels.All.Count);
+        Assert.Single(LocalModels.All);
 
         var qwen17 = LocalModels.FindById(LocalModels.DefaultId);
         Assert.NotNull(qwen17);
@@ -17,21 +21,13 @@ public class LocalModelTests
         Assert.Equal("unslothai/Qwen3-ASR-1.7B-GGUF", qwen17.HfRepo);
         Assert.Equal("mmproj-Qwen3-ASR-1.7B-Q8_0.gguf", qwen17.Mmproj);
         Assert.True(qwen17.DedicatedAsr);
-
-        var gemma = LocalModels.FindById("gemma-4-e2b");
-        Assert.NotNull(gemma);
-        Assert.Equal("gemma-4-E2B-it-Q4_0.gguf", gemma!.Model);
-        Assert.Equal("unsloth/gemma-4-E2B-it-GGUF", gemma.HfRepo);
-
-        Assert.False(gemma.DedicatedAsr);
     }
 
     [Fact]
     public void IsDedicatedAsrMatchesOnlyQwen3AsrModels()
     {
         Assert.True(LocalModels.IsDedicatedAsr("Qwen3-ASR-1.7B-Q8_0.gguf"));
-        Assert.False(LocalModels.IsDedicatedAsr("gemma-4-E2B-it-Q4_0.gguf"));
-        Assert.False(LocalModels.IsDedicatedAsr("custom-model.gguf"));
+        Assert.False(LocalModels.IsDedicatedAsr(CustomLlmModel));
         Assert.False(LocalModels.IsDedicatedAsr(null));
     }
 
@@ -50,7 +46,7 @@ public class LocalModelTests
     [Fact]
     public void LlmServerArgsKeepChatSamplingForNonAsrModels()
     {
-        var server = CreateConfiguredServer("gemma-4-E2B-it-Q4_0.gguf");
+        var server = CreateConfiguredServer(CustomLlmModel);
 
         var args = server.ServerArgs();
 
@@ -75,9 +71,9 @@ public class LocalModelTests
     [Fact]
     public async Task FormContentIncludesPromptForLlmModels()
     {
-        var service = new TranscriptionService(CreateLocalProvider("gemma-4-E2B-it-Q4_0.gguf"));
+        var service = new TranscriptionService(CreateLocalProvider(CustomLlmModel));
 
-        using var content = service.BuildFormContent(Array.Empty<byte>(), "gemma-4-E2B-it-Q4_0.gguf");
+        using var content = service.BuildFormContent(Array.Empty<byte>(), CustomLlmModel);
         var body = await content.ReadAsStringAsync();
 
         Assert.Contains("name=prompt", body);
@@ -86,7 +82,7 @@ public class LocalModelTests
     [Fact]
     public void ResolvePrefersExplicitSelectionOverCurrentModel()
     {
-        var option = LocalModels.Resolve("qwen3-asr-1.7b", "gemma-4-E2B-it-Q4_0.gguf");
+        var option = LocalModels.Resolve("qwen3-asr-1.7b", CustomLlmModel);
         Assert.Equal("qwen3-asr-1.7b", option!.Id);
     }
 
@@ -100,14 +96,14 @@ public class LocalModelTests
     [Fact]
     public void ResolveReturnsNullForUnknownModel()
     {
-        Assert.Null(LocalModels.Resolve(null, "custom-model.gguf"));
+        Assert.Null(LocalModels.Resolve(null, CustomLlmModel));
     }
 
     [Fact]
     public void ResolveFallsBackToCurrentModelWhenSelectionIsUnknown()
     {
-        var option = LocalModels.Resolve("not-in-catalog", "gemma-4-E2B-it-Q4_0.gguf");
-        Assert.Equal("gemma-4-e2b", option!.Id);
+        var option = LocalModels.Resolve("not-in-catalog", "Qwen3-ASR-1.7B-Q8_0.gguf");
+        Assert.Equal("qwen3-asr-1.7b", option!.Id);
     }
 
     [Fact]
@@ -128,35 +124,26 @@ public class LocalModelTests
     }
 
     [Fact]
-    public void SetLocalModelIsNoOpWhenAlreadySelected()
-    {
-        var state = CreateState();
-        Assert.False(state.SetLocalModel("gemma-4-e2b"));
-    }
-
-    [Fact]
     public void SetLocalModelRejectsUnknownId()
     {
         var state = CreateState();
         Assert.False(state.SetLocalModel("does-not-exist"));
-        Assert.Equal("gemma-4-E2B-it-Q4_0.gguf", state.LocalProvider!.Model);
+        Assert.Equal(CustomLlmModel, state.LocalProvider!.Model);
     }
 
     static AppState CreateState()
     {
         var settings = new AppSettings
         {
-            LocalModelId = "gemma-4-e2b",
+            LocalModelId = null,
             Providers =
             {
                 new ProviderConfig
                 {
-                    Name = "Gemma 4 E2B UD (local)",
+                    Name = "Custom (local)",
                     Type = "local",
                     ApiEndpoint = "http://localhost:8082",
-                    Model = "gemma-4-E2B-it-Q4_0.gguf",
-                    Mmproj = "mmproj-BF16.gguf",
-                    HfRepo = "unsloth/gemma-4-E2B-it-GGUF"
+                    Model = CustomLlmModel
                 }
             }
         };

@@ -1,5 +1,4 @@
     using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,7 +16,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
     readonly AppState _state;
     public ServerStateManager ServerManager { get; }
     public RecordingStateManager RecordingManager { get; }
-    public RemoteExecutionServer RemoteServer { get; }
     GlobalKeyboardHook? _keyboardHook;
     bool _hotkeyPressed;
     bool _pendingHotkeyStop;
@@ -59,22 +57,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
             {
                 _state.AutoOffloadVram = value;
                 RecordingManager.InfoText = value ? "Auto-offload enabled" : "Auto-offload disabled";
-            }
-        }
-    }
-
-    bool _thinkingEnabled;
-    public bool ThinkingEnabled
-    {
-        get => _thinkingEnabled;
-        set
-        {
-            if (SetProperty(ref _thinkingEnabled, value))
-            {
-                _state.ThinkingEnabled = value;
-                RecordingManager.InfoText = value
-                    ? "Thinking mode enabled (restart server)"
-                    : "Thinking mode disabled (restart server)";
             }
         }
     }
@@ -144,42 +126,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    bool _useRemote;
-    bool _applyingSettings;
-    public bool UseRemote
-    {
-        get => _useRemote;
-        set
-        {
-            if (SetProperty(ref _useRemote, value))
-            {
-                _state.SetActiveProviderForMode(value);
-                var provider = _state.ActiveProvider;
-                if (!_applyingSettings && provider != null)
-                    FireAndForget(ServerManager.SwitchProvider(provider), "SwitchProvider");
-                RecordingManager.InfoText = value ? "Using remote LLM" : "Using local LLM";
-                CheckModelExists();
-                OnPropertyChanged(nameof(HardwareModeForeground));
-                OnPropertyChanged(nameof(ActiveModuleName));
-                OnPropertyChanged(nameof(ProviderMode));
-            }
-        }
-    }
-
     public string? LocalModelId => _state.LocalModelId;
     public string ActiveModuleName => _state.ActiveProvider?.Model ?? "No local module";
-    public string CloudLlmUrl => _state.CloudLlmUrl;
-    public IReadOnlyList<string> CloudLlmUrls => _state.CloudLlmUrls;
-    public RemoteProviderMode RemoteProviderMode => _state.RemoteProviderMode;
-    public string RemoteServerEndpoint => _state.RemoteServerEndpoint;
-    public bool RemoteServerEnabled => _state.RemoteServerEnabled;
-    public bool RemoteSettingsControlEnabled => _state.RemoteSettingsControlEnabled;
-    public string RemoteListenEndpoint => _state.RemoteListenEndpoint;
-    public string ProviderMode => !_useRemote ? "Local LLM" :
-        _state.RemoteProviderMode == RemoteProviderMode.RemoteExecution ? "Remote execution" : "Direct API";
-    public string ServerRoleStatus => RemoteServer.Status;
 
-    public Brush HardwareModeForeground => _useRemote ? new SolidColorBrush(Color.FromRgb(128, 128, 128)) : new SolidColorBrush(Color.FromRgb(124, 252, 0));
+    public Brush HardwareModeForeground => new SolidColorBrush(Color.FromRgb(124, 252, 0));
 
     string _hardwareMode = "";
     public string HardwareMode
@@ -282,14 +232,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         _state = state;
         ServerManager = new ServerStateManager(state);
-        RemoteServer = new RemoteExecutionServer(
-            ProcessRemoteRequestAsync,
-            () => _state.ActiveProvider?.IsLocal == true,
-            () => _state.RemoteSettingsControlEnabled,
-            ApplyRemoteSettingsAsync,
-            WarmupForRemoteRequestAsync,
-            ReleaseRemoteWarmupAsync);
-        RemoteServer.StatusChanged += RemoteServer_StatusChanged;
         // The startup fallback chain may settle on another backend than the detected one.
         ServerManager.PropertyChanged += (_, e) =>
         {
@@ -316,7 +258,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         };
 
         _autoOffloadVram = state.AutoOffloadVram;
-        _thinkingEnabled = state.ThinkingEnabled;
         _useCpuOnly = state.UseCpuOnly;
         _startupEnabled = state.StartupEnabled;
         _autoPaste = state.AutoPaste;
@@ -327,7 +268,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
             _startupEnabled = true;
             state.StartupEnabled = true;
         }
-        _useRemote = state.ActiveProvider?.IsLocal == false;
         _hotkeyEnabled = state.HotkeyEnabled;
         _hotkeyVirtualKeyCode = state.HotkeyVirtualKeyCode;
         _hotkeyName = VkCodeToString(state.HotkeyVirtualKeyCode);
@@ -356,55 +296,26 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     public void ApplySettings(
         bool autoOffloadVram,
-        bool thinkingEnabled,
         bool useCpuOnly,
         bool startupEnabled,
         bool autoPaste,
         bool minimizeToTray,
         bool startInTray,
         string? localModelId,
-        bool useRemote,
         bool hotkeyEnabled,
-        int hotkeyVirtualKeyCode,
-        IReadOnlyList<string> cloudLlmUrls,
-        RemoteProviderMode remoteProviderMode,
-        string remoteServerEndpoint,
-        bool remoteServerEnabled,
-        bool remoteSettingsControlEnabled,
-        string remoteListenEndpoint)
+        int hotkeyVirtualKeyCode)
     {
-        var endpointChanged = _state.SetCloudLlmUrls(cloudLlmUrls);
-        var providerModeChanged = _useRemote != useRemote;
-        var remoteSettingsChanged = _state.SetRemoteExecutionSettings(
-            remoteProviderMode,
-            remoteServerEndpoint,
-            remoteServerEnabled,
-            remoteSettingsControlEnabled,
-            remoteListenEndpoint);
-        var behaviorChanged = _state.AutoOffloadVram != autoOffloadVram ||
-            _state.ThinkingEnabled != thinkingEnabled;
         var cpuModeChanged = _state.UseCpuOnly != useCpuOnly;
         var localModelChanged = _state.SetLocalModel(localModelId);
-        var remoteSettings = new RemoteExecutionSettings(autoOffloadVram, thinkingEnabled);
 
-        _applyingSettings = true;
-        try
-        {
-            AutoOffloadVram = autoOffloadVram;
-            ThinkingEnabled = thinkingEnabled;
-            UseCpuOnly = useCpuOnly;
-            StartupEnabled = startupEnabled;
-            AutoPaste = autoPaste;
-            MinimizeToTray = minimizeToTray;
-            StartInTray = startInTray;
-            HotkeyEnabled = hotkeyEnabled;
-            HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
-            UseRemote = useRemote;
-        }
-        finally
-        {
-            _applyingSettings = false;
-        }
+        AutoOffloadVram = autoOffloadVram;
+        UseCpuOnly = useCpuOnly;
+        StartupEnabled = startupEnabled;
+        AutoPaste = autoPaste;
+        MinimizeToTray = minimizeToTray;
+        StartInTray = startInTray;
+        HotkeyEnabled = hotkeyEnabled;
+        HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
 
         if (cpuModeChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForCpuMode");
@@ -414,51 +325,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (localModelChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForModelChange");
 
-        var shouldSyncRemoteSettings = RemoteSettingsSyncPolicy.ShouldSyncOnSave(
-            useRemote,
-            remoteProviderMode,
-            behaviorChanged);
-        var provider = _state.ActiveProvider;
-        var shouldSwitchProvider = provider != null &&
-            (providerModeChanged || (useRemote && (endpointChanged || remoteSettingsChanged)));
-
-        if (shouldSwitchProvider)
-            FireAndForget(SwitchProviderAfterSaveAsync(provider!, shouldSyncRemoteSettings ? remoteSettings : null), "UpdateCloudProvider");
-        else if (shouldSyncRemoteSettings)
-            FireAndForget(SyncRemoteSettingsAfterSaveAsync(remoteSettings), "SyncRemoteSettings");
-
-        if (remoteSettingsChanged)
-            FireAndForget(ConfigureRemoteServerAsync(), "ConfigureRemoteServer");
-
-        OnPropertyChanged(nameof(CloudLlmUrl));
-        OnPropertyChanged(nameof(CloudLlmUrls));
         OnPropertyChanged(nameof(ActiveModuleName));
-        OnPropertyChanged(nameof(ProviderMode));
-        OnPropertyChanged(nameof(RemoteProviderMode));
-        OnPropertyChanged(nameof(RemoteServerEndpoint));
-        OnPropertyChanged(nameof(RemoteServerEnabled));
-        OnPropertyChanged(nameof(RemoteSettingsControlEnabled));
-        OnPropertyChanged(nameof(RemoteListenEndpoint));
-
-    }
-
-    async Task SwitchProviderAfterSaveAsync(
-        ProviderConfig provider,
-        RemoteExecutionSettings? remoteSettings)
-    {
-        await ServerManager.SwitchProvider(provider);
-        if (remoteSettings != null)
-            await SyncRemoteSettingsAfterSaveAsync(remoteSettings);
-    }
-
-    async Task SyncRemoteSettingsAfterSaveAsync(RemoteExecutionSettings settings)
-    {
-        if (_state.ActiveProvider?.IsRemoteExecution != true)
-            return;
-
-        var applied = await ServerManager.SyncRemoteSettingsAsync(settings);
-        if (!applied)
-            RecordingManager.InfoText = "Remote settings sync failed; local values were saved";
     }
 
     async Task InitializeAsync()
@@ -467,80 +334,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         AudioRecorder.LogAvailableDevices();
         Logger.Info("App started");
         await ServerManager.InitializeAsync();
-        await ConfigureRemoteServerAsync();
-    }
-
-    async Task ConfigureRemoteServerAsync()
-    {
-        if (!_state.RemoteServerEnabled)
-        {
-            RemoteServer.Stop();
-            return;
-        }
-        await RemoteServer.StartAsync(_state.RemoteListenEndpoint);
-    }
-
-    async Task<string?> ProcessRemoteRequestAsync(byte[] pcm, int channels, CancellationToken ct)
-    {
-        if (_state.ActiveProvider?.IsLocal != true)
-            throw new InvalidOperationException("This server instance must be in Local LLM mode to process remote requests.");
-
-        if (!await ServerManager.IsServerReady(ct))
-            await ServerManager.StartAsync((_, _, _) => { }, ct);
-        var text = await ServerManager.TranscribeAsync(pcm, channels, ct);
-        if (_state.AutoOffloadVram)
-            await ServerManager.OffloadServerAsync();
-        return text;
-    }
-
-    Task WarmupForRemoteRequestAsync(CancellationToken ct)
-    {
-        if (_state.ActiveProvider?.IsLocal != true)
-            throw new InvalidOperationException("This server instance must be in Local LLM mode to warm up the model.");
-
-        return ServerManager.StartAsync((_, _, _) => { }, ct);
-    }
-
-    Task ReleaseRemoteWarmupAsync(CancellationToken ct)
-    {
-        if (_state.ActiveProvider?.IsLocal != true || !_state.AutoOffloadVram)
-            return Task.CompletedTask;
-
-        return ServerManager.OffloadServerAsync(ct);
-    }
-
-    async Task<RemoteExecutionSettings> ApplyRemoteSettingsAsync(
-        RemoteExecutionSettings settings,
-        CancellationToken ct)
-    {
-        if (_state.ActiveProvider?.IsLocal != true)
-            throw new InvalidOperationException("This server instance must be in Local LLM mode to apply remote settings.");
-
-        var applied = await ServerManager.ApplyRemoteSettingsAsync(settings, ct);
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher != null && !dispatcher.CheckAccess())
-        {
-            await dispatcher.InvokeAsync(() =>
-            {
-                AutoOffloadVram = applied.AutoOffloadVram;
-                ThinkingEnabled = applied.ThinkingEnabled;
-            });
-        }
-        else
-        {
-            AutoOffloadVram = applied.AutoOffloadVram;
-            ThinkingEnabled = applied.ThinkingEnabled;
-        }
-        return applied;
-    }
-
-    void RemoteServer_StatusChanged(object? sender, EventArgs e)
-    {
-        var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher == null || dispatcher.CheckAccess())
-            OnPropertyChanged(nameof(ServerRoleStatus));
-        else
-            dispatcher.BeginInvoke(() => OnPropertyChanged(nameof(ServerRoleStatus)));
     }
 
     void CheckModelExists()
@@ -665,18 +458,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         var provider = _state.ActiveProvider;
         if (provider != null && provider.IsLocal && !ServerManager.IsServerRunning)
-        {
             FireAndForget(ServerManager.StartAsync((msg, _, _) => RecordingManager.InfoText = msg), "StartServer");
-        }
-        else if (provider?.IsRemoteExecution == true)
-        {
-            RecordingManager.InfoText = "Preparing remote LLM...";
-            FireAndForget(ServerManager.WarmupRemoteAsync(), "WarmupRemoteServer");
-        }
-        else if (provider != null && !provider.IsLocal)
-        {
-            RecordingManager.InfoText = "Connecting to remote LLM...";
-        }
 
         if (isHotkey && !_hotkeyPressed)
             return;
@@ -901,8 +683,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _highlightTimer.Stop();
         _recordOperationLock.Dispose();
         _keyboardHook?.Dispose();
-        RemoteServer.StatusChanged -= RemoteServer_StatusChanged;
-        RemoteServer.Dispose();
         ServerManager.Dispose();
         RecordingManager.Dispose();
     }

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WhisperNote.Services;
@@ -11,16 +10,12 @@ namespace WhisperNote.Config;
 public class AppSettings
 {
     const int DefaultHotkeyVkCode = 0xA3;
-    public const string DefaultCloudLlmUrl = "http://192.168.0.96:8082";
-    public const string DefaultRemoteExecutionUrl = "http://localhost:8090";
-    public const string DefaultRemoteListenEndpoint = "http://0.0.0.0:8090";
 
     public int ActiveProviderIndex { get; set; }
     public List<ProviderConfig> Providers { get; set; } = new();
     // Null on legacy configs: resolved from the local provider's model file in NormalizeProviders.
     public string? LocalModelId { get; set; }
     public bool AutoOffloadVram { get; set; }
-    public bool ThinkingEnabled { get; set; }
     public bool UseCpuOnly { get; set; }
     public bool StartupEnabled { get; set; }
     public bool AutoPaste { get; set; }
@@ -29,11 +24,6 @@ public class AppSettings
     public bool StartInTray { get; set; } = true;
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
     public bool HotkeyEnabled { get; set; } = true;
-    public RemoteProviderMode RemoteProviderMode { get; set; } = RemoteProviderMode.DirectApi;
-    public string RemoteServerEndpoint { get; set; } = DefaultRemoteExecutionUrl;
-    public bool RemoteServerEnabled { get; set; }
-    public bool RemoteSettingsControlEnabled { get; set; }
-    public string RemoteListenEndpoint { get; set; } = DefaultRemoteListenEndpoint;
 
     static string ConfigPath() => AppPaths.SettingsPath;
 
@@ -94,15 +84,13 @@ public class AppSettings
             ActiveProviderIndex = 0,
             LocalModelId = LocalModels.DefaultId,
             AutoOffloadVram = true,
-            ThinkingEnabled = true,
             UseCpuOnly = false,
             StartupEnabled = false,
             AutoPaste = false,
             MinimizeToTray = true,
             Providers = new List<ProviderConfig>
             {
-                CreateDefaultLocalProvider(),
-                CreateDefaultRemoteProvider()
+                CreateDefaultLocalProvider()
             }
         };
     }
@@ -110,39 +98,16 @@ public class AppSettings
     bool NormalizeProviders()
     {
         var changed = false;
-        if (!Enum.IsDefined(RemoteProviderMode))
-        {
-            RemoteProviderMode = RemoteProviderMode.DirectApi;
-            changed = true;
-        }
 
-        if (!TryNormalizeHttpEndpoint(RemoteServerEndpoint, out var remoteServerEndpoint))
-            remoteServerEndpoint = DefaultRemoteExecutionUrl;
-        if (RemoteServerEndpoint != remoteServerEndpoint)
-        {
-            RemoteServerEndpoint = remoteServerEndpoint;
+        // Configs written while the removed remote-provider feature existed
+        // may still list cloud/remote-execution entries; the app is local-only
+        // now, so drop them.
+        if (Providers.RemoveAll(provider => !provider.IsLocal) > 0)
             changed = true;
-        }
 
-        if (!TryNormalizeHttpListenEndpoint(RemoteListenEndpoint, out var remoteListenEndpoint))
-            remoteListenEndpoint = DefaultRemoteListenEndpoint;
-        if (RemoteListenEndpoint != remoteListenEndpoint)
-        {
-            RemoteListenEndpoint = remoteListenEndpoint;
-            changed = true;
-        }
-        var hasLocal = Providers.Exists(p => p.IsLocal);
-        var hasRemote = Providers.Exists(p => !p.IsLocal);
-
-        if (!hasLocal)
+        if (!Providers.Exists(provider => provider.IsLocal))
         {
             Providers.Insert(0, CreateDefaultLocalProvider());
-            changed = true;
-        }
-
-        if (!hasRemote)
-        {
-            Providers.Add(CreateDefaultRemoteProvider());
             changed = true;
         }
 
@@ -168,38 +133,6 @@ public class AppSettings
             }
         }
 
-        foreach (var provider in Providers)
-        {
-            if (provider.IsLocal)
-                continue;
-
-            provider.ApiEndpoints ??= new List<string>();
-            var configuredEndpoints = provider.ApiEndpoints.Count > 0
-                ? provider.ApiEndpoints
-                : new List<string> { provider.ApiEndpoint };
-            var normalizedEndpoints = new List<string>();
-            foreach (var endpoint in configuredEndpoints)
-            {
-                if (TryNormalizeHttpEndpoint(endpoint, out var normalizedEndpoint))
-                    normalizedEndpoints.Add(normalizedEndpoint);
-            }
-
-            if (normalizedEndpoints.Count == 0)
-                normalizedEndpoints.Add(DefaultCloudLlmUrl);
-
-            if (!provider.ApiEndpoints.SequenceEqual(normalizedEndpoints))
-            {
-                provider.ApiEndpoints = normalizedEndpoints;
-                changed = true;
-            }
-
-            if (provider.ApiEndpoint != normalizedEndpoints[0])
-            {
-                provider.ApiEndpoint = normalizedEndpoints[0];
-                changed = true;
-            }
-        }
-
         if (ActiveProviderIndex < 0 || ActiveProviderIndex >= Providers.Count)
         {
             ActiveProviderIndex = 0;
@@ -207,34 +140,6 @@ public class AppSettings
         }
 
         return changed;
-    }
-
-    public static bool TryNormalizeHttpEndpoint(string? endpoint, out string normalizedEndpoint)
-    {
-        normalizedEndpoint = endpoint?.Trim().TrimEnd('/') ?? "";
-        if (!Uri.TryCreate(normalizedEndpoint, UriKind.Absolute, out var uri))
-            return false;
-
-        if ((uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
-            string.IsNullOrWhiteSpace(uri.Host))
-        {
-            normalizedEndpoint = "";
-            return false;
-        }
-
-        return true;
-    }
-
-    public static bool TryNormalizeHttpListenEndpoint(string? endpoint, out string normalizedEndpoint)
-    {
-        if (!TryNormalizeHttpEndpoint(endpoint, out normalizedEndpoint) ||
-            !Uri.TryCreate(normalizedEndpoint, UriKind.Absolute, out var uri) ||
-            uri.Scheme != Uri.UriSchemeHttp)
-        {
-            normalizedEndpoint = "";
-            return false;
-        }
-        return true;
     }
 
     static ProviderConfig CreateDefaultLocalProvider()
@@ -252,20 +157,4 @@ public class AppSettings
             HfRepo = option.HfRepo
         };
     }
-
-    static ProviderConfig CreateDefaultRemoteProvider() => new()
-    {
-        Name = "Remote (192.168.0.96)",
-        Type = "remote",
-        ApiEndpoint = DefaultCloudLlmUrl,
-        ApiEndpoints = new List<string> { DefaultCloudLlmUrl },
-        Model = "gemma-4-E2B-it-Q4_0.gguf"
-    };
-}
-
-[JsonConverter(typeof(JsonStringEnumConverter))]
-public enum RemoteProviderMode
-{
-    DirectApi,
-    RemoteExecution
 }

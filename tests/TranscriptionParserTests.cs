@@ -49,7 +49,7 @@ public class TranscriptionParserTests
     [Fact]
     public void PlainTextIsLeftUntouchedForLlmModels()
     {
-        // LLM-based models (Gemma, cloud) answer the custom prompt with plain
+        // LLM-based models (non-dedicated-ASR) answer the custom prompt with plain
         // text and may legitimately start with the word "Language".
         var text = TranscriptionParser.Parse("""{"text":"Language models are great."}""", dedicatedAsr: false);
 

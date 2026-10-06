@@ -1,9 +1,6 @@
 using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Runtime.ExceptionServices;
-using System.Net.Http.Json;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using WhisperNote.Config;
@@ -28,7 +25,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
     const int RetryDelayMs = 3000;
     const int TruncateMaxLen = 300;
     const int HealthCheckTimeoutSeconds = 2;
-    const int WarmupTimeoutSeconds = 2;
     const int HttpTimeoutMinutes = 5;
 
     readonly HttpClient _http;
@@ -58,9 +54,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
     public async Task<bool> IsServerReady(CancellationToken ct = default)
     {
-        if (!_provider.IsLocal && !_provider.IsRemoteExecution)
-            return true;
-
         try
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -82,9 +75,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
     public async Task<string?> Transcribe(byte[] pcm, int channels = 1, CancellationToken ct = default)
     {
-        if (_provider.IsRemoteExecution)
-            return await TranscribeRemotely(pcm, channels, ct);
-
         if (channels > 1)
             pcm = AudioProcessor.DownmixToMono(pcm, channels);
 
@@ -98,104 +88,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         var raw = await SendWithRetry(wavBytes, modelName, ct);
 
         return TranscriptionParser.Parse(raw, LocalModels.IsDedicatedAsr(modelName));
-    }
-
-    async Task<string?> TranscribeRemotely(byte[] pcm, int channels, CancellationToken ct)
-    {
-        using var response = await _http.PostAsJsonAsync(
-            BuildEndpointUri(_provider.ApiEndpoint, "/api/transcriptions"),
-            new RemoteTranscriptionRequest(pcm, channels),
-            ct);
-        var raw = await response.Content.ReadAsStringAsync(ct);
-        Logger.Info($"Remote execution response [{response.StatusCode}]: {Truncate(raw)}");
-        EnsureSuccess(response, raw);
-        var result = JsonSerializer.Deserialize<RemoteTranscriptionResponse>(raw,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        return result?.Text;
-    }
-
-    public async Task<bool> WarmupRemoteAsync(CancellationToken ct = default)
-    {
-        if (!_provider.IsRemoteExecution)
-            return false;
-
-        try
-        {
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(WarmupTimeoutSeconds));
-            using var content = new ByteArrayContent(Array.Empty<byte>());
-            using var response = await _http.PostAsync(
-                BuildEndpointUri(_provider.ApiEndpoint, "/api/warmup"),
-                content,
-                timeoutCts.Token);
-            if (response.IsSuccessStatusCode)
-                return true;
-
-            Logger.Warn($"Remote warm-up rejected [{response.StatusCode}]");
-            return false;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (OperationCanceledException)
-        {
-            Logger.Warn("Remote warm-up timed out");
-            return false;
-        }
-        catch (Exception ex)
-        {
-            // Warm-up is only a latency optimization. The audio request retains
-            // the existing start-on-demand fallback if this call cannot be sent.
-            Logger.Warn($"Remote warm-up failed: {ex.Message}");
-            return false;
-        }
-    }
-
-    public async Task<bool> UpdateRemoteSettingsAsync(
-        bool autoOffloadVram,
-        bool thinkingEnabled,
-        CancellationToken ct = default)
-    {
-        if (!_provider.IsRemoteExecution)
-            return false;
-
-        try
-        {
-            using var response = await _http.PostAsJsonAsync(
-                BuildEndpointUri(_provider.ApiEndpoint, "/api/settings"),
-                new RemoteExecutionSettings(autoOffloadVram, thinkingEnabled),
-                ct);
-            var raw = await response.Content.ReadAsStringAsync(ct);
-            Logger.Info($"Remote settings response [{response.StatusCode}]: {Truncate(raw)}");
-
-            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden ||
-                response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                Logger.Warn($"Remote settings sync rejected by server: {Truncate(raw)}");
-                return false;
-            }
-
-            EnsureSuccess(response, raw);
-            var result = JsonSerializer.Deserialize<RemoteSettingsResponse>(raw,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (result?.Applied == true &&
-                result.AutoOffloadVram == autoOffloadVram &&
-                result.ThinkingEnabled == thinkingEnabled)
-                return true;
-
-            Logger.Warn("Remote settings sync failed: server did not confirm the requested values.");
-            return false;
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"Remote settings sync failed: {ex.Message}");
-            return false;
-        }
     }
 
     internal MultipartFormDataContent BuildFormContent(byte[] wavBytes, string modelName)
@@ -224,9 +116,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
     async Task<string?> SendWithRetry(byte[] wavBytes, string modelName, CancellationToken ct)
     {
-        if (!_provider.IsLocal)
-            return await SendWithEndpointFailover(wavBytes, modelName, ct);
-
         using var content = BuildFormContent(wavBytes, modelName);
         using (var response = await _http.PostAsync(
             BuildEndpointUri(_provider.ApiEndpoint, "/v1/audio/transcriptions"), content, ct))
@@ -234,7 +123,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
             var raw = await response.Content.ReadAsStringAsync(ct);
             Logger.Info($"Response [{response.StatusCode}]: {Truncate(raw)}");
 
-            if (_provider.IsLocal && ShouldRetry(response, raw))
+            if (ShouldRetry(response, raw))
             {
                 Logger.Info("Retrying after 3s...");
                 await Task.Delay(RetryDelayMs, ct);
@@ -250,41 +139,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
             EnsureSuccess(response, raw);
             return raw;
         }
-    }
-
-    async Task<string?> SendWithEndpointFailover(
-        byte[] wavBytes,
-        string modelName,
-        CancellationToken ct)
-    {
-        Exception? lastFailure = null;
-        foreach (var endpoint in _provider.GetApiEndpoints())
-        {
-            try
-            {
-                using var content = BuildFormContent(wavBytes, modelName);
-                using var response = await _http.PostAsync(
-                    BuildEndpointUri(endpoint, "/v1/audio/transcriptions"), content, ct);
-                var raw = await response.Content.ReadAsStringAsync(ct);
-                Logger.Info($"Response from {endpoint} [{response.StatusCode}]: {Truncate(raw)}");
-                EnsureSuccess(response, raw);
-                return raw;
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                lastFailure = ex;
-                Logger.Error($"Cloud endpoint {endpoint} failed: {ex.Message}");
-            }
-        }
-
-        if (lastFailure != null)
-            ExceptionDispatchInfo.Capture(lastFailure).Throw();
-
-        throw new InvalidOperationException("No cloud transcription endpoint is configured.");
     }
 
     // .NET stalls ~2 s probing IPv6 [::1] before falling back to IPv4 when the

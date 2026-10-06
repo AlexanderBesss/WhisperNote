@@ -19,7 +19,9 @@ public partial class RecordingOverlayWindow : Window
 
     const int MONITOR_DEFAULTTONEAREST = 2;
 
-    const double BottomMargin = 72;
+    // The window has a 20-unit transparent margin around the pill (shadow room),
+    // so the visible pill sits 20 units above the window's bottom edge.
+    const double BottomMargin = 52;
 
     [DllImport("user32.dll")]
     static extern int GetWindowLong(IntPtr hWnd, int nIndex);

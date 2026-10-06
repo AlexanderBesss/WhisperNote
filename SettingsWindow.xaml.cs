@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using WhisperNote.Services;
@@ -22,13 +23,28 @@ public partial class SettingsWindow : Window
 
     void SaveButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_viewModel.TryApply())
-            return;
-
+        _viewModel.Apply();
         DialogResult = true;
     }
 
     void CancelButton_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+
+    void Tab_Checked(object sender, RoutedEventArgs e)
+    {
+        // Fires while InitializeComponent() builds the tab bar, before the
+        // content panels exist.
+        if (PanelModel is null || PanelRecord is null || PanelOutput is null || PanelSystem is null)
+            return;
+
+        var tab = (string)((RadioButton)sender).Tag;
+        PanelModel.Visibility = TabVisibility(tab == "model");
+        PanelRecord.Visibility = TabVisibility(tab == "record");
+        PanelOutput.Visibility = TabVisibility(tab == "output");
+        PanelSystem.Visibility = TabVisibility(tab == "system");
+    }
+
+    static Visibility TabVisibility(bool show) =>
+        show ? Visibility.Visible : Visibility.Collapsed;
 
     void SettingsWindow_PreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -39,24 +55,65 @@ public partial class SettingsWindow : Window
         DialogResult = false;
     }
 
+    // Custom drag: DragMove() only moves this window and misbehaves inside
+    // preview events, so track the mouse manually and move the owner (main
+    // window) along with the settings window.
+    bool _dragging;
+    Point _dragStart;
+    double _startLeft, _startTop;
+    double _ownerStartLeft, _ownerStartTop;
+
     void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (FindVisualParent<Button>(e.OriginalSource as DependencyObject) != null)
+        if (e.ButtonState != MouseButtonState.Pressed)
             return;
 
-        DragMove();
-    }
-
-    static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
-    {
-        while (child != null)
+        // Interactive controls (buttons, switches, tabs, combo boxes) keep
+        // their clicks; everywhere else starts a drag.
+        var source = e.OriginalSource as DependencyObject;
+        while (source != null && source != this)
         {
-            if (child is T match)
-                return match;
-
-            child = VisualTreeHelper.GetParent(child);
+            if (source is ButtonBase or ComboBox or TextBox)
+                return;
+            source = VisualTreeHelper.GetParent(source);
         }
 
-        return null;
+        _dragStart = PointToScreen(e.GetPosition(this));
+        _startLeft = Left;
+        _startTop = Top;
+        _ownerStartLeft = Owner?.Left ?? 0;
+        _ownerStartTop = Owner?.Top ?? 0;
+        _dragging = true;
+        CaptureMouse();
+        e.Handled = true;
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (!_dragging)
+            return;
+
+        var current = PointToScreen(e.GetPosition(this));
+        var dx = current.X - _dragStart.X;
+        var dy = current.Y - _dragStart.Y;
+        Left = _startLeft + dx;
+        Top = _startTop + dy;
+
+        if (Owner is { WindowState: WindowState.Normal })
+        {
+            Owner.Left = _ownerStartLeft + dx;
+            Owner.Top = _ownerStartTop + dy;
+        }
+    }
+
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonUp(e);
+        if (!_dragging)
+            return;
+
+        _dragging = false;
+        ReleaseMouseCapture();
     }
 }
