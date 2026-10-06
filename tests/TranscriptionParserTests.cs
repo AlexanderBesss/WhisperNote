@@ -25,6 +25,28 @@ public class TranscriptionParserTests
     }
 
     [Fact]
+    public void DedicatedAsrNormalizesNumberWordsToDigits()
+    {
+        // Qwen3-ASR transcribes numbers verbatim as words; the parser converts
+        // them because the model cannot follow the transcription prompt.
+        var text = TranscriptionParser.Parse(
+            """{"text":"language English<asr_text>Call me at twenty five.</asr_text>"}""",
+            dedicatedAsr: true);
+
+        Assert.Equal("Call me at 25.", text);
+    }
+
+    [Fact]
+    public void LlmModelOutputKeepsNumberWordsUnnormalized()
+    {
+        // LLM models follow the prompt's digit rules themselves; their output
+        // must not be rewritten by the normalizer.
+        var text = TranscriptionParser.Parse("""{"text":"I have twenty five dollars."}""", dedicatedAsr: false);
+
+        Assert.Equal("I have twenty five dollars.", text);
+    }
+
+    [Fact]
     public void PlainTextIsLeftUntouchedForLlmModels()
     {
         // LLM-based models (Gemma, cloud) answer the custom prompt with plain

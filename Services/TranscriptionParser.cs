@@ -50,6 +50,11 @@ static class TranscriptionParser
 
             text = CleanAsrOutput(text);
 
+            // Dedicated ASR models transcribe numbers as words and cannot be
+            // steered by the transcription prompt, so normalize them here.
+            if (dedicatedAsr && text != null)
+                text = NumberNormalizer.Normalize(text);
+
             if (string.IsNullOrWhiteSpace(text))
             {
                 Logger.Info("Server returned empty text");

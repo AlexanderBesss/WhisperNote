@@ -16,7 +16,9 @@ public class TranscriptionService : IDisposable
 - Grammar: subject-verb agreement, verb tenses, pronouns
 - Spelling and word choice
 - Capitalization and punctuation
-- Convert numbers to words if appropriate
+- Always write numbers as digits, never as words, including small numbers: 25 not twenty-five, 3.5 not three point five, 1,000 not one thousand
+- Keep numbers numeric in money, dates, times, phone numbers, addresses and measurements: $40, 5:30 pm, 12/05/2026, +1 555 0100, 10 kg
+- Only spell out a number when it is part of a name or fixed expression, e.g. one of them, Code Red
 - Translate any non-English speech to English
 - Remove filler words (um, uh, you know)
 - Maintain the original meaning and tone
