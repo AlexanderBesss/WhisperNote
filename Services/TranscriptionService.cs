@@ -287,8 +287,16 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         throw new InvalidOperationException("No cloud transcription endpoint is configured.");
     }
 
-    static Uri BuildEndpointUri(string endpoint, string path) =>
-        new(endpoint.TrimEnd('/') + path, UriKind.Absolute);
+    // .NET stalls ~2 s probing IPv6 [::1] before falling back to IPv4 when the
+    // host is "localhost", while llama.cpp only listens on the IPv4 loopback.
+    // Pinning the loopback address removes that stall from every request.
+    internal static Uri BuildEndpointUri(string endpoint, string path)
+    {
+        var uri = new Uri(endpoint.TrimEnd('/') + path, UriKind.Absolute);
+        if (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+            uri = new UriBuilder(uri) { Host = "127.0.0.1" }.Uri;
+        return uri;
+    }
 
     static void EnsureSuccess(HttpResponseMessage response, string body)
     {
