@@ -5,3 +5,4 @@
 - After every code change, rebuild with `./build.ps1` and restart the app (`publish\WhisperNote.exe`) so the user can verify the result immediately.
 - `build.ps1` publishes into `obj/publish-staging` and merges into `publish/`. Do not point `dotnet publish` straight at `publish/`: the SDK's incremental publish-clean deletes payload files it no longer produces, which wipes the multi-gigabyte `publish/models` files.
 - Runtime payload (models, `llama/`, `vulkan/`, `NPU/llama-ov/`) uses `CopyToPublishDirectory="Never"` in `WhisperNote.csproj` and is synced by `build.ps1`. Keep that metadata so the SDK never owns those folders.
+- The payload sources (`llm-servers/`, `models/`) live in the All-llm monorepo, not in this repo. `build.ps1` and `WhisperNote.csproj` resolve them from `-SourceRoot` / `-p:SourceRoot`, the `WHISPERNOTE_SOURCE_ROOT` environment variable, or the sibling `All-llm` checkout.

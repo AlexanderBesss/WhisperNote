@@ -3,18 +3,31 @@ param(
     [switch]$NoUpdate,       # never download: fail if a required backend is missing
     [switch]$UpdateBackends, # also fetch the CUDA 12.4, Vulkan and NPU backends when missing
     [switch]$ForceUpdate,    # run the update scripts even when binaries are already present
-    [switch]$RefreshModels   # overwrite publish\models files from the source models folder
+    [switch]$RefreshModels,  # overwrite publish\models files from the source models folder
+    [string]$SourceRoot      # folder holding llm-servers\ and models\ (defaults to the All-llm monorepo)
 )
 
 $ErrorActionPreference = 'Stop'
 
 $projectPath = $PSScriptRoot
-$repoRoot    = Split-Path $projectPath -Parent
 $publishDir  = Join-Path $projectPath "publish"
 $stagingDir  = Join-Path $projectPath "obj\publish-staging"
 $manifestFile = Join-Path $projectPath "obj\publish-manifest.txt"
-$llamaRoot   = Join-Path $repoRoot "llm-servers\llama\windows"
-$modelsRoot  = Join-Path $repoRoot "models"
+
+# The runtime payload (llama.cpp backends, models) lives outside this repo, in
+# the All-llm monorepo. Resolution order: -SourceRoot, WHISPERNOTE_SOURCE_ROOT,
+# a llm-servers folder next to this repo, then the sibling All-llm checkout.
+if (-not $SourceRoot) { $SourceRoot = $env:WHISPERNOTE_SOURCE_ROOT }
+if (-not $SourceRoot) {
+    $parent = Split-Path $projectPath -Parent
+    if (Test-Path -LiteralPath (Join-Path $parent 'llm-servers')) {
+        $SourceRoot = $parent
+    } else {
+        $SourceRoot = Join-Path $parent 'All-llm'
+    }
+}
+$llamaRoot   = Join-Path $SourceRoot "llm-servers\llama\windows"
+$modelsRoot  = Join-Path $SourceRoot "models"
 
 # llama.cpp backends: mirrored into publish\ so a rebuild removes exactly the
 # files the current build no longer produces.
