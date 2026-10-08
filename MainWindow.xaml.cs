@@ -32,9 +32,6 @@ public partial class MainWindow : Window
         // Created here rather than on Loaded so the tray exists even when the window
         // starts hidden in the notification area.
         CreateTrayIcon();
-
-        if (_viewModel.StartInTray)
-            Visibility = Visibility.Hidden;
     }
 
     void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -98,11 +95,16 @@ public partial class MainWindow : Window
 
     void MainWindow_Closed(object? sender, EventArgs e)
     {
+        // ShutdownMode is OnExplicitShutdown (tray app with hidden starts), so a
+        // real exit must shut the dispatcher down explicitly.
+        var shouldExit = _exitRequested || !_viewModel.MinimizeToTray;
         _tray?.Dispose();
         _tray = null;
         _overlay?.Close();
         _overlay = null;
         _viewModel.Dispose();
+        if (shouldExit)
+            Application.Current?.Shutdown();
     }
 
     void TrayStatus_PropertyChanged(object? sender, PropertyChangedEventArgs e)

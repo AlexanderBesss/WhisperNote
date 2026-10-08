@@ -254,6 +254,14 @@ public class MainWindowViewModel : ViewModel, IDisposable
             _startupEnabled = true;
             state.StartupEnabled = true;
         }
+        else if (_startupEnabled && !StartupRegistry.IsEnabled())
+        {
+            // Settings ask for autostart but the Run entry is missing or points
+            // elsewhere (moved folder, registry cleaner): recreate it so the
+            // toggle reflects reality and the app actually starts with Windows.
+            Logger.Warn("Startup entry missing or stale; recreating it");
+            StartupRegistry.SetEnabled(true);
+        }
         _hotkeyEnabled = state.HotkeyEnabled;
         _hotkeyVirtualKeyCode = state.HotkeyVirtualKeyCode;
         _hotkeyName = VkCodeToString(state.HotkeyVirtualKeyCode);
