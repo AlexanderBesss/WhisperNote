@@ -111,8 +111,9 @@ public sealed class SettingsViewModel : ViewModel
             new(0x14, "Caps Lock"),
             new(0xA0, "Left Shift"),
             new(0xA1, "Right Shift"),
-            new(0x10, "Ctrl"),
-            new(0x11, "Alt"),
+            new(0x10, "Shift"),
+            new(0x11, "Ctrl"),
+            new(0x12, "Alt"),
             new(0x5B, "Left Win"),
             new(0x5C, "Right Win")
         };

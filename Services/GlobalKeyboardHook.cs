@@ -67,6 +67,11 @@ public class GlobalKeyboardHook : IDisposable
         if (nCode >= 0)
         {
             var ks = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+            // Ignore synthesized keystrokes (LLMHF_INJECTED): our own Ctrl+V
+            // auto-paste (or another macro tool) must never retrigger the hotkey.
+            const uint LLMHF_INJECTED = 0x10;
+            if ((ks.flags & LLMHF_INJECTED) != 0)
+                return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
             if (ks.vkCode == (uint)_vkCode)
             {
                 if (IsKeyDown(wParam))

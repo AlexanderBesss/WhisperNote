@@ -204,8 +204,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
         0x14 => "Caps Lock",
         0xA0 => "Left Shift",
         0xA1 => "Right Shift",
-        0x10 => "Ctrl",
-        0x11 => "Alt",
+        0x10 => "Shift",
+        0x11 => "Ctrl",
+        0x12 => "Alt",
         0x5B => "Left Win",
         0x5C => "Right Win",
         _ => $"VK_{vk:X}"
@@ -560,13 +561,38 @@ public class MainWindowViewModel : ViewModel, IDisposable
             {
                 var copied = TrySetClipboardText(text);
                 var pasted = false;
+                string? pasteFailure = null;
                 if (copied && _autoPaste)
-                    pasted = AutoPaster.SendCtrlV();
+                {
+                    // Let the clipboard settle and any hotkey key-up reach the
+                    // system before synthesizing Ctrl+V.
+                    await Task.Delay(100);
+                    if (ct.IsCancellationRequested)
+                    {
+                        _ = RecordingManager.Cancel();
+                        return;
+                    }
+                    var result = AutoPaster.SendCtrlV();
+                    if (!result.Success)
+                    {
+                        // Transient failure (focus still moving between windows):
+                        // one retry before reporting. A failed first attempt
+                        // injected nothing, so a retry cannot double-paste.
+                        await Task.Delay(250);
+                        if (!ct.IsCancellationRequested)
+                            result = AutoPaster.SendCtrlV();
+                    }
+                    pasted = result.Success;
+                    if (!pasted)
+                        pasteFailure = result.ShortReason;
+                }
                 RecordingManager.SetSuccess(text);
                 if (!copied)
                     RecordingManager.InfoText = "Transcribed, but clipboard was unavailable";
                 else if (pasted)
                     RecordingManager.InfoText = "Copied and pasted";
+                else if (_autoPaste)
+                    RecordingManager.InfoText = $"Copied, but auto-paste failed ({pasteFailure})";
                 NotificationSound.Play();
                 await OffloadServerAfterSuccessAsync();
             }
