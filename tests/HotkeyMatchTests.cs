@@ -29,4 +29,39 @@ public class HotkeyMatchTests
     {
         Assert.Equal(expected, GlobalKeyboardHook.MatchesHotkey(configured, vkCode));
     }
+
+    [Theory]
+    // Alt and Win taps activate menu mode / Start and steal the caret, so
+    // their hotkey events must be hidden from the target app.
+    [InlineData(0x12, true)] // Alt
+    [InlineData(0xA4, true)] // Left Alt
+    [InlineData(0xA5, true)] // Right Alt
+    [InlineData(0x5B, true)] // Left Win
+    [InlineData(0x5C, true)] // Right Win
+    // Ctrl/Shift/Caps Lock taps are harmless to focus and stay pass-through.
+    [InlineData(0x11, false)] // Ctrl
+    [InlineData(0xA2, false)] // Left Ctrl
+    [InlineData(0xA3, false)] // Right Ctrl
+    [InlineData(0x10, false)] // Shift
+    [InlineData(0xA0, false)] // Left Shift
+    [InlineData(0xA1, false)] // Right Shift
+    [InlineData(0x14, false)] // Caps Lock
+    public void FocusStealingModifiers(int vkCode, bool expected)
+    {
+        Assert.Equal(expected, GlobalKeyboardHook.IsFocusStealingModifier(vkCode));
+    }
+
+    [Theory]
+    // AltGr on many layouts is delivered as Right Ctrl + Left Alt: while
+    // RCtrl is held, a Left Alt event is the character modifier, not the
+    // Alt hotkey, and must not be swallowed or replayed as an Alt chord.
+    [InlineData(0xA4, true, true)]  // Left Alt while RCtrl held = AltGr
+    [InlineData(0xA4, false, false)] // plain Left Alt press
+    [InlineData(0xA5, true, false)] // Right Alt is never the AltGr half
+    [InlineData(0x5B, true, false)] // Left Win + RCtrl is a chord, not AltGr
+    [InlineData(0x41, true, false)] // A key + RCtrl is a chord, not AltGr
+    public void AltGrPress(int vkCode, bool rightCtrlHeld, bool expected)
+    {
+        Assert.Equal(expected, GlobalKeyboardHook.IsAltGrPress(vkCode, rightCtrlHeld));
+    }
 }

@@ -20,6 +20,11 @@ public static class AutoPaster
     // keystrokes from other tools (remappers, macros) still work as hotkeys.
     internal static readonly IntPtr PasteMarker = new(0x574E5054);
 
+    // Second tag for the keystrokes the hotkey hook replays when the user
+    // chords a shortcut (Alt+Tab, Win+E...) with a swallowed Alt/Win hotkey:
+    // the hook must not mistake its own replay for a fresh hotkey press.
+    internal static readonly IntPtr HotkeyReplayMarker = new(0x574E4B52);
+
     [StructLayout(LayoutKind.Sequential)]
     struct INPUT
     {
@@ -95,10 +100,10 @@ public static class AutoPaster
     {
         var inputs = new[]
         {
-            Key(VK_CONTROL, keyUp: false),
-            Key(VK_V, keyUp: false),
-            Key(VK_V, keyUp: true),
-            Key(VK_CONTROL, keyUp: true)
+            Key(VK_CONTROL, keyUp: false, PasteMarker),
+            Key(VK_V, keyUp: false, PasteMarker),
+            Key(VK_V, keyUp: true, PasteMarker),
+            Key(VK_CONTROL, keyUp: true, PasteMarker)
         };
 
         try
@@ -207,7 +212,20 @@ public static class AutoPaster
         }
     }
 
-    static INPUT Key(ushort vk, bool keyUp) => new()
+    // Replays a single keystroke tagged with HotkeyReplayMarker, used by the
+    // hotkey hook to re-send a swallowed Alt/Win (and the chord key) so
+    // shortcuts like Alt+Tab still reach the target app.
+    internal static void SendReplay(ushort vk, bool keyUp)
+    {
+        var inputs = new[] { Key(vk, keyUp, HotkeyReplayMarker) };
+        // A failed modifier key-up leaves the target app thinking Alt/Win is
+        // still held (the physical key-up is swallowed by the hook), so log it
+        // the same way SendCtrlV reports a blocked/failed injection.
+        if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) != inputs.Length)
+            Logger.Error($"Hotkey replay failed: vk=0x{vk:X2} keyUp={keyUp} error={Marshal.GetLastWin32Error()}");
+    }
+
+    static INPUT Key(ushort vk, bool keyUp, IntPtr marker) => new()
     {
         Type = INPUT_KEYBOARD,
         Data = new InputUnion
@@ -221,7 +239,7 @@ public static class AutoPaster
                 dwFlags = keyUp ? KEYEVENTF_KEYUP : 0u,
                 // Stamp our own keystrokes so the global hotkey hook can tell
                 // them apart from physical (and other tools') input.
-                dwExtraInfo = PasteMarker
+                dwExtraInfo = marker
             }
         }
     };
