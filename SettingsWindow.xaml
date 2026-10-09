@@ -142,13 +142,7 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                     <Button Style="{StaticResource IconButton}"
                             Width="28" Height="28" Padding="0"
-                            Click="SaveButton_Click" ToolTip="Save settings">
-                        <TextBlock Text="&#xE73E;" FontFamily="Segoe MDL2 Assets"
-                                   FontSize="13" Foreground="#3FAE65"/>
-                    </Button>
-                    <Button Style="{StaticResource IconButton}"
-                            Width="28" Height="28" Padding="0" Margin="6,0,0,0"
-                            Click="CancelButton_Click"
+                            Click="CloseButton_Click"
                             ToolTip="Close settings">
                         <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets"
                                    FontSize="12" Foreground="#B8B8B8"/>

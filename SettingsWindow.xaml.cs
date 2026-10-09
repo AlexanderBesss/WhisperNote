@@ -21,13 +21,8 @@ public partial class SettingsWindow : Window
         PreviewKeyDown += SettingsWindow_PreviewKeyDown;
     }
 
-    void SaveButton_Click(object sender, RoutedEventArgs e)
-    {
-        _viewModel.Apply();
-        DialogResult = true;
-    }
-
-    void CancelButton_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+    // Settings save on change, so closing never discards anything.
+    void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 
     void Tab_Checked(object sender, RoutedEventArgs e)
     {
@@ -52,7 +47,7 @@ public partial class SettingsWindow : Window
             return;
 
         e.Handled = true;
-        DialogResult = false;
+        Close();
     }
 
     // Custom drag: DragMove() only moves this window and misbehaves inside

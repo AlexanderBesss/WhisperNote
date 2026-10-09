@@ -85,7 +85,7 @@ public sealed class SettingsViewModel : ViewModel
                 return;
 
             // Apply right away: the mic choice takes effect on the next
-            // recording, and closing settings without Save must not lose it.
+            // recording and must be persisted the moment it changes.
             // "System default" (-1) has no name to remember.
             string? name = null;
             if (value >= 0)
@@ -118,6 +118,18 @@ public sealed class SettingsViewModel : ViewModel
         HotkeyOptions = CreateHotkeyOptions(_hotkeyVirtualKeyCode);
         _micDeviceNumber = mainViewModel.MicDeviceNumber;
         MicOptions = CreateMicOptions(_micDeviceNumber);
+
+        // Save on change: every edit is pushed to the main view model right
+        // away, which persists it. The constructor filled the backing fields
+        // directly, so no event fires until the user actually changes something.
+        // The mic selection applies itself in its setter; re-applying the other
+        // values on top of it is harmless because the main setters are no-ops
+        // when the value did not change.
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(MicDeviceNumber))
+                Apply();
+        };
     }
 
     public void Apply()
