@@ -86,6 +86,42 @@ public class TrayTests
         Assert.True(legacy.AutoPaste);
     }
 
+    [Fact]
+    public void AutoOffloadVramIsDisabledByDefaultAndForLegacySettings()
+    {
+        var defaults = new AppSettings();
+        Assert.False(defaults.AutoOffloadVram);
+
+        var legacy = JsonSerializer.Deserialize<AppSettings>("""
+            {
+              "ActiveProviderIndex": 0,
+              "Providers": [
+                { "Name": "Local", "Type": "local", "ApiEndpoint": "http://localhost:8082" }
+              ]
+            }
+            """)!;
+
+        Assert.False(legacy.AutoOffloadVram);
+    }
+
+    [Fact]
+    public void StartupIsEnabledByDefaultAndForLegacySettings()
+    {
+        var defaults = new AppSettings();
+        Assert.True(defaults.StartupEnabled);
+
+        var legacy = JsonSerializer.Deserialize<AppSettings>("""
+            {
+              "ActiveProviderIndex": 0,
+              "Providers": [
+                { "Name": "Local", "Type": "local", "ApiEndpoint": "http://localhost:8082" }
+              ]
+            }
+            """)!;
+
+        Assert.True(legacy.StartupEnabled);
+    }
+
     [Theory]
     [InlineData("WhisperNote.TrayIcon.ico")]
     [InlineData("WhisperNote.TrayIconIdle.ico")]

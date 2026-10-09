@@ -17,7 +17,8 @@ public class AppSettings
     public string? LocalModelId { get; set; }
     public bool AutoOffloadVram { get; set; }
     public bool UseCpuOnly { get; set; }
-    public bool StartupEnabled { get; set; }
+    // Initializer supplies the default for configs written before the key existed.
+    public bool StartupEnabled { get; set; } = true;
     // Initializer supplies the default for configs written before the key existed.
     public bool AutoPaste { get; set; } = true;
     // Initializer supplies the default for configs written before the key existed.
@@ -103,9 +104,9 @@ public class AppSettings
         {
             ActiveProviderIndex = 0,
             LocalModelId = LocalModels.DefaultId,
-            AutoOffloadVram = true,
+            AutoOffloadVram = false,
             UseCpuOnly = false,
-            StartupEnabled = false,
+            StartupEnabled = true,
             AutoPaste = true,
             MinimizeToTray = true,
             Providers = new List<ProviderConfig>
