@@ -353,6 +353,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         Logger.Info("Available microphones:");
         AudioRecorder.LogAvailableDevices();
         Logger.Info("App started");
+        FireAndForget(RecordingManager.WarmUpMic(), "WarmUpMic");
         await ServerManager.InitializeAsync();
     }
 

@@ -77,6 +77,10 @@ public class RecordingStateManager : ViewModel
         TransitionTo(RecordingState.Recording, isHotkey, hotkeyName: hotkeyName);
     }
 
+    // Pays the mic wake-up cost once at app start so the first hotkey press
+    // is as fast as every later one.
+    public Task WarmUpMic() => _recorder.WarmUpAsync();
+
     public async Task<byte[]> StopRecording()
     {
         if (State != RecordingState.Recording)
