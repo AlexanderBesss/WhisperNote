@@ -13,7 +13,12 @@ jobs:
   build:
     # The app is a Windows-only WPF single-file exe; build.ps1 is the same
     # script used locally, so the artifact matches the local publish output.
+    # contents: write is scoped to this job (not the workflow) so pull_request
+    # runs never get write access from the top-level block; the release steps
+    # below are skipped on those runs anyway.
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -37,3 +42,27 @@ jobs:
           name: WhisperNote-win-x64
           path: publish/
           if-no-files-found: error
+
+      # Rolling prerelease: every push to main replaces the same 'latest'
+      # release, so the download link never moves and the newest build is
+      # always the one on the releases page. gh is preinstalled on the
+      # windows-latest image; GH_TOKEN is the built-in workflow token, made
+      # sufficient by the job's contents: write permission.
+      - name: Package app for release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: Compress-Archive -Path publish\* -DestinationPath WhisperNote-win-x64.zip -Force
+
+      - name: Publish rolling prerelease
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --cleanup-tag --yes
+          if ($LASTEXITCODE -ne 0) { Write-Host "No previous 'latest' release to replace." }
+          gh release create latest WhisperNote-win-x64.zip `
+            --target ${{ github.sha }} `
+            --title "WhisperNote (latest build)" `
+            --prerelease `
+            --notes "Automatic build of main at ${{ github.sha }}. Models and llama.cpp backends are downloaded by the app on first run."
