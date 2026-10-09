@@ -1,13 +1,24 @@
 param(
-    [switch]$Kill            # force-close the running app before publishing
+    [switch]$Kill       # force-close the running app before publishing
 )
 
 $ErrorActionPreference = 'Stop'
+
+# On PowerShell 7.3+ (CI's shell: pwsh) a non-zero native exit code becomes a
+# terminating error under Stop, which would skip the explicit $LASTEXITCODE
+# checks below. Keep those checks authoritative; a no-op on Windows PowerShell.
+$PSNativeCommandUseErrorActionPreference = $false
 
 $projectPath = $PSScriptRoot
 $publishDir  = Join-Path $projectPath "publish"
 $stagingDir  = Join-Path $projectPath "obj\publish-staging"
 $manifestFile = Join-Path $projectPath "obj\publish-manifest.txt"
+
+# Single source of truth for the build settings. CI runs this same script, so
+# changing the RID, configuration or publish properties here never requires a
+# matching change in .github\workflows\build.yml.
+$configuration     = 'Release'
+$runtimeIdentifier = 'win-x64'
 
 # The build never downloads or copies any runtime payload. The llama.cpp
 # backends and the model files are fetched on first use by the app itself
@@ -62,7 +73,30 @@ function Copy-IfChanged {
     return $true
 }
 
+# Tests always run first and build the app for the same configuration/RID the
+# publish below uses, so that build is incremental and nothing compiles twice.
+# Running them before closing the app means a failing test never kills a
+# working one.
+Write-Host "Running tests ($configuration $runtimeIdentifier) ..." -ForegroundColor Cyan
+dotnet test (Join-Path $projectPath "tests\WhisperNote.Tests.csproj") `
+    -c $configuration `
+    -r $runtimeIdentifier `
+    --verbosity minimal
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: tests failed (exit $LASTEXITCODE)." -ForegroundColor Red
+    exit 1
+}
+
 Stop-RunningApp
+
+# A force-killed app can take several seconds to disappear while its audio and
+# server threads unwind, and Stop-Process returns before the handles are
+# released. Poll before declaring failure so the check does not race the
+# dying process.
+$deadline = (Get-Date).AddSeconds(15)
+while ((Get-Process -Name "WhisperNote" -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 500
+}
 
 if (Get-Process -Name "WhisperNote" -ErrorAction SilentlyContinue) {
     Write-Host "ERROR: WhisperNote is still running and could not be closed." -ForegroundColor Red
@@ -75,10 +109,10 @@ if (Test-Path -LiteralPath $stagingDir) {
     Remove-Item -LiteralPath $stagingDir -Recurse -Force
 }
 
-Write-Host "Publishing Release to staging ..." -ForegroundColor Cyan
+Write-Host "Publishing $configuration to staging ..." -ForegroundColor Cyan
 dotnet publish "$projectPath\WhisperNote.csproj" `
-    -c Release `
-    -r win-x64 `
+    -c $configuration `
+    -r $runtimeIdentifier `
     -o $stagingDir `
     /p:PublishSingleFile=true `
     /p:SelfContained=false `

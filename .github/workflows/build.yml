@@ -1,0 +1,39 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # The app is a Windows-only WPF single-file exe; build.ps1 is the same
+    # script used locally, so the artifact matches the local publish output.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # build.ps1 is the single source of truth: it runs the tests, then
+      # publishes, compiling the app exactly once. Any build-setting change
+      # (RID, configuration, properties) stays inside the script.
+      - name: Build
+        shell: pwsh
+        run: ./build.ps1
+
+      # On a clean checkout publish\ holds only the freshly built app files:
+      # the llama.cpp backends and models are downloaded on first use by the
+      # app itself, so they are intentionally not part of the artifact.
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WhisperNote-win-x64
+          path: publish/
+          if-no-files-found: error
