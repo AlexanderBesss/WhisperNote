@@ -72,5 +72,4 @@ jobs:
           gh release create $tag WhisperNote-win-x64.zip `
             --target ${{ github.sha }} `
             --title "WhisperNote main $shortSha" `
-            --prerelease `
             --generate-notes
