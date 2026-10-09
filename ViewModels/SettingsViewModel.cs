@@ -107,7 +107,9 @@ public sealed class SettingsViewModel : ViewModel
         var options = new List<HotkeyOption>
         {
             new(0xA3, "Right Ctrl"),
+            new(0xA2, "Left Ctrl"),
             new(0xA5, "Right Alt"),
+            new(0xA4, "Left Alt"),
             new(0x14, "Caps Lock"),
             new(0xA0, "Left Shift"),
             new(0xA1, "Right Shift"),

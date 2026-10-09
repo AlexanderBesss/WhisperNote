@@ -14,6 +14,12 @@ public static class AutoPaster
     const ushort VK_V = 0x56;
     const uint MAPVK_VK_TO_VSC = 0;
 
+    // Tag stamped into dwExtraInfo on every keystroke we synthesize. The
+    // global hotkey hook ignores exactly these events, so our own Ctrl+V
+    // auto-paste can never retrigger a Ctrl-based hotkey — while injected
+    // keystrokes from other tools (remappers, macros) still work as hotkeys.
+    internal static readonly IntPtr PasteMarker = new(0x574E5054);
+
     [StructLayout(LayoutKind.Sequential)]
     struct INPUT
     {
@@ -212,7 +218,10 @@ public static class AutoPaster
                 // Some targets (games, RDP, non-US layouts) ignore VK-only
                 // events; the scan code costs nothing and fixes those.
                 wScan = (ushort)MapVirtualKeyW(vk, MAPVK_VK_TO_VSC),
-                dwFlags = keyUp ? KEYEVENTF_KEYUP : 0u
+                dwFlags = keyUp ? KEYEVENTF_KEYUP : 0u,
+                // Stamp our own keystrokes so the global hotkey hook can tell
+                // them apart from physical (and other tools') input.
+                dwExtraInfo = PasteMarker
             }
         }
     };

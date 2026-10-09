@@ -42,6 +42,9 @@ public partial class RecordingOverlayWindow : Window
     [DllImport("user32.dll")]
     static extern uint GetDpiForSystem();
 
+    [DllImport("shcore.dll")]
+    static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
+
     [StructLayout(LayoutKind.Sequential)]
     struct RECT
     {
@@ -77,8 +80,12 @@ public partial class RecordingOverlayWindow : Window
     void Reposition()
     {
         var work = ForegroundMonitorWorkArea();
-        Left = work.X + (work.Width - Width) / 2;
-        Top = work.Y + work.Height - Height - BottomMargin;
+        var left = work.X + (work.Width - Width) / 2;
+        var top = work.Y + work.Height - Height - BottomMargin;
+        // Clamp inside the work area so mixed-DPI rounding can never push the
+        // pill off-screen on a secondary monitor.
+        Left = Math.Min(Math.Max(left, work.X), work.X + work.Width - Width);
+        Top = Math.Min(Math.Max(top, work.Y), work.Y + work.Height - Height);
     }
 
     static Rect ForegroundMonitorWorkArea()
@@ -88,17 +95,43 @@ public partial class RecordingOverlayWindow : Window
         if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info))
             return SystemParameters.WorkArea;
 
-        // rcWork is in physical pixels; the app is system-DPI-aware, so WPF
-        // device-independent units use the system scale on every monitor.
-        var scale = GetDpiForSystem() / 96.0;
-        if (scale <= 0)
-            scale = 1.0;
+        // rcWork is in physical pixels; convert with *that monitor's* DPI.
+        // The old code used the system DPI for every monitor, which misplaces
+        // the pill (up to fully off-screen) on mixed-DPI multi-monitor setups.
+        var scale = EffectiveMonitorScale(monitor);
 
         return new Rect(
             info.rcWork.Left / scale,
             info.rcWork.Top / scale,
             (info.rcWork.Right - info.rcWork.Left) / scale,
             (info.rcWork.Bottom - info.rcWork.Top) / scale);
+    }
+
+    static double EffectiveMonitorScale(IntPtr monitor)
+    {
+        try
+        {
+            const int MDT_EFFECTIVE_DPI = 0;
+            if (GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, out var dpiX, out _) == 0 && dpiX > 0)
+                return dpiX / 96.0;
+        }
+        catch (DllNotFoundException)
+        {
+            // Pre-Windows 8.1: fall through to the system DPI below.
+        }
+
+        try
+        {
+            var systemDpi = GetDpiForSystem();
+            if (systemDpi > 0)
+                return systemDpi / 96.0;
+        }
+        catch (Exception)
+        {
+            // Very old Windows: fall through to 1.0.
+        }
+
+        return 1.0;
     }
 
     protected override void OnSourceInitialized(EventArgs e)

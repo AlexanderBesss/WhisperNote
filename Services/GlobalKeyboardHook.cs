@@ -67,12 +67,13 @@ public class GlobalKeyboardHook : IDisposable
         if (nCode >= 0)
         {
             var ks = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
-            // Ignore synthesized keystrokes (LLMHF_INJECTED): our own Ctrl+V
-            // auto-paste (or another macro tool) must never retrigger the hotkey.
-            const uint LLMHF_INJECTED = 0x10;
-            if ((ks.flags & LLMHF_INJECTED) != 0)
+            // Ignore only our own Ctrl+V auto-paste keystrokes (stamped with
+            // AutoPaster.PasteMarker): they must never retrigger a Ctrl-based
+            // hotkey. Anything else — including injected input from remappers
+            // or macro tools — still counts as a physical hotkey press.
+            if (ks.dwExtraInfo == AutoPaster.PasteMarker)
                 return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
-            if (ks.vkCode == (uint)_vkCode)
+            if (MatchesHotkey(_vkCode, ks.vkCode))
             {
                 if (IsKeyDown(wParam))
                 {
@@ -96,6 +97,24 @@ public class GlobalKeyboardHook : IDisposable
 
     static bool IsKeyUp(IntPtr message) =>
         message == (IntPtr)WM_KEYUP || message == (IntPtr)WM_SYSKEYUP;
+
+    // The low-level hook reports the specific left/right codes (0xA0-0xA5),
+    // never the generic Shift/Ctrl/Alt codes (0x10-0x12), so a generic
+    // selection must match either side. A specific left/right selection keeps
+    // exact matching and only fires for that side.
+    internal static bool MatchesHotkey(int configured, uint vkCode)
+    {
+        if ((uint)configured == vkCode)
+            return true;
+
+        return configured switch
+        {
+            0x10 => vkCode is 0xA0 or 0xA1,
+            0x11 => vkCode is 0xA2 or 0xA3,
+            0x12 => vkCode is 0xA4 or 0xA5,
+            _ => false,
+        };
+    }
 
     void InvokeHandler(Func<Task> handler, string label)
     {
