@@ -56,6 +56,16 @@ public class AppState
         get => _settings.HotkeyEnabled;
         set { _settings.HotkeyEnabled = value; _settings.Save(); }
     }
+    public int MicDeviceNumber
+    {
+        get => _settings.MicDeviceNumber;
+        set { _settings.MicDeviceNumber = value; _settings.Save(); }
+    }
+    public string? MicDeviceName
+    {
+        get => _settings.MicDeviceName;
+        set { _settings.MicDeviceName = value; _settings.Save(); }
+    }
 
     public AppState(AppSettings settings)
     {

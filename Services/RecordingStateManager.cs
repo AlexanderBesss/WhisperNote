@@ -56,6 +56,13 @@ public class RecordingStateManager : ViewModel
 
     public int ChannelCount => _recorder.ChannelCount;
 
+    // -1 means "system default"; forwarded to the recorder for the next StartRecording.
+    public void SetMicDevice(int deviceNumber, string? deviceName)
+    {
+        _recorder.PreferredDeviceNumber = deviceNumber;
+        _recorder.PreferredDeviceName = deviceName;
+    }
+
     public RecordingStateManager()
     {
         _recorder = new AudioRecorder();

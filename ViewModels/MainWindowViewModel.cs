@@ -190,6 +190,23 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    int _micDeviceNumber;
+    string? _micDeviceName;
+    public int MicDeviceNumber => _micDeviceNumber;
+
+    public void SetMicSelection(int deviceNumber, string? deviceName)
+    {
+        if (_micDeviceNumber == deviceNumber && string.Equals(_micDeviceName, deviceName, StringComparison.Ordinal))
+            return;
+
+        _micDeviceNumber = deviceNumber;
+        _micDeviceName = deviceName;
+        _state.MicDeviceNumber = deviceNumber;
+        _state.MicDeviceName = deviceName;
+        // Picked up by the next recording; no restart needed.
+        RecordingManager.SetMicDevice(deviceNumber, deviceName);
+    }
+
     string _hotkeyName = "";
     public string HotkeyName
     {
@@ -268,6 +285,22 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _hotkeyEnabled = state.HotkeyEnabled;
         _hotkeyVirtualKeyCode = state.HotkeyVirtualKeyCode;
         _hotkeyName = VkCodeToString(state.HotkeyVirtualKeyCode);
+        _micDeviceNumber = state.MicDeviceNumber;
+        _micDeviceName = state.MicDeviceName;
+        if (_micDeviceNumber >= 0 && string.IsNullOrEmpty(_micDeviceName))
+        {
+            // Anchor the saved number to its current name so a later device
+            // reshuffle can be survived by name matching.
+            foreach (var (number, name) in AudioRecorder.GetInputDevices())
+            {
+                if (number != _micDeviceNumber)
+                    continue;
+                _micDeviceName = name;
+                _state.MicDeviceName = name;
+                break;
+            }
+        }
+        RecordingManager.SetMicDevice(_micDeviceNumber, _micDeviceName);
         UpdateHardwareMode();
 
         CheckModelExists();

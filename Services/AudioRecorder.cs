@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,11 @@ public class AudioRecorder : IDisposable
     bool IsRecording { get; set; }
     public int ChannelCount { get; private set; }
 
+    // -1 means "system default"; any other value is a WaveIn device number.
+    public int PreferredDeviceNumber { get; set; } = -1;
+    // Preferred over the number: MME indexes reshuffle when devices change.
+    public string? PreferredDeviceName { get; set; }
+
     public async Task StartAsync()
     {
         await _stateLock.WaitAsync();
@@ -31,7 +37,6 @@ public class AudioRecorder : IDisposable
 
             _pcmStream = new MemoryStream();
             var deviceNum = SelectDeviceNumber();
-
             var caps = WaveInEvent.GetCapabilities(deviceNum);
             var deviceName = caps.ProductName;
             ChannelCount = Math.Min(caps.Channels, 2);
@@ -57,12 +62,23 @@ public class AudioRecorder : IDisposable
         }
     }
 
-    static int SelectDeviceNumber()
+    int SelectDeviceNumber()
     {
         if (WaveInEvent.DeviceCount == 0)
             throw new InvalidOperationException("No recording devices found");
 
-        var deviceNum = AppConfig.MicDeviceNumber >= 0 ? AppConfig.MicDeviceNumber : 0;
+        if (PreferredDeviceNumber >= 0 && !string.IsNullOrEmpty(PreferredDeviceName))
+        {
+            for (int i = 0; i < WaveInEvent.DeviceCount; i++)
+            {
+                var caps = WaveInEvent.GetCapabilities(i);
+                if (string.Equals(caps.ProductName?.Trim(), PreferredDeviceName, StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+            Logger.Error($"Saved mic \"{PreferredDeviceName}\" not found; trying its old device number");
+        }
+
+        var deviceNum = PreferredDeviceNumber >= 0 ? PreferredDeviceNumber : 0;
         if (deviceNum < WaveInEvent.DeviceCount)
             return deviceNum;
 
@@ -77,13 +93,24 @@ public class AudioRecorder : IDisposable
             WaveFormat = new WaveFormat(AppConfig.SampleRate, AppConfig.BitsPerSample, channelCount)
         };
 
-    public static void LogAvailableDevices()
+    public static IReadOnlyList<(int Number, string Name)> GetInputDevices()
     {
+        var devices = new List<(int, string)>();
         for (int i = 0; i < WaveInEvent.DeviceCount; i++)
         {
             var caps = WaveInEvent.GetCapabilities(i);
-            Logger.Info($"  Mic {i}: \"{caps.ProductName}\" (channels={caps.Channels})");
+            var name = caps.ProductName?.Trim();
+            if (string.IsNullOrEmpty(name))
+                name = $"Microphone {i}";
+            devices.Add((i, name));
         }
+        return devices;
+    }
+
+    public static void LogAvailableDevices()
+    {
+        foreach (var (number, name) in GetInputDevices())
+            Logger.Info($"  Mic {number}: \"{name}\"");
     }
 
     void OnDataAvailable(object? sender, WaveInEventArgs e)

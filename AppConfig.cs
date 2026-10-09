@@ -18,7 +18,6 @@ public static class AppConfig
     public const double MinP = 0.1;
     public const double RepeatPenalty = 1.2;
     public const int MaxTokens = 4096;
-    public const int MicDeviceNumber = -1;
 
     public const string CudaServerExeRelative = @"llama\llama-server.exe";
     public const string CpuServerExeRelative = @"cpu\llama-server.exe";

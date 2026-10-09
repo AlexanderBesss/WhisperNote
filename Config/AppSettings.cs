@@ -25,6 +25,11 @@ public class AppSettings
     public bool StartInTray { get; set; } = true;
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
     public bool HotkeyEnabled { get; set; } = true;
+    // -1 means "system default"; any other value is a WaveIn device number.
+    public int MicDeviceNumber { get; set; } = -1;
+    // Product name of the selected mic; preferred over the number because MME
+    // device indexes reshuffle when devices are added/removed.
+    public string? MicDeviceName { get; set; }
 
     static string ConfigPath() => AppPaths.SettingsPath;
 

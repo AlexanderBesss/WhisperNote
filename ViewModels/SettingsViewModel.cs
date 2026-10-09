@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using WhisperNote.Config;
+using WhisperNote.Services;
 
 namespace WhisperNote.ViewModels;
 
@@ -15,6 +16,7 @@ public sealed class SettingsViewModel : ViewModel
     string? _localModelId;
     bool _hotkeyEnabled;
     int _hotkeyVirtualKeyCode;
+    int _micDeviceNumber;
 
     public bool AutoOffloadVram
     {
@@ -73,6 +75,34 @@ public sealed class SettingsViewModel : ViewModel
 
     public IReadOnlyList<HotkeyOption> HotkeyOptions { get; }
 
+    public IReadOnlyList<MicOption> MicOptions { get; }
+    public int MicDeviceNumber
+    {
+        get => _micDeviceNumber;
+        set
+        {
+            if (!SetProperty(ref _micDeviceNumber, value))
+                return;
+
+            // Apply right away: the mic choice takes effect on the next
+            // recording, and closing settings without Save must not lose it.
+            // "System default" (-1) has no name to remember.
+            string? name = null;
+            if (value >= 0)
+            {
+                foreach (var option in MicOptions)
+                {
+                    if (option.Number == value)
+                    {
+                        name = option.Name;
+                        break;
+                    }
+                }
+            }
+            _mainViewModel.SetMicSelection(value, name);
+        }
+    }
+
     public SettingsViewModel(MainWindowViewModel mainViewModel)
     {
         _mainViewModel = mainViewModel;
@@ -86,6 +116,8 @@ public sealed class SettingsViewModel : ViewModel
         _hotkeyEnabled = mainViewModel.HotkeyEnabled;
         _hotkeyVirtualKeyCode = mainViewModel.HotkeyVirtualKeyCode;
         HotkeyOptions = CreateHotkeyOptions(_hotkeyVirtualKeyCode);
+        _micDeviceNumber = mainViewModel.MicDeviceNumber;
+        MicOptions = CreateMicOptions(_micDeviceNumber);
     }
 
     public void Apply()
@@ -125,6 +157,24 @@ public sealed class SettingsViewModel : ViewModel
 
         return options;
     }
+
+    static IReadOnlyList<MicOption> CreateMicOptions(int currentDeviceNumber)
+    {
+        var options = new List<MicOption>
+        {
+            new(-1, "System default")
+        };
+
+        foreach (var (number, name) in AudioRecorder.GetInputDevices())
+            options.Add(new MicOption(number, name));
+
+        // A saved device that is currently unplugged still needs a row, so the
+        // combo box keeps the user's choice instead of silently resetting.
+        if (currentDeviceNumber >= 0 && !options.Exists(option => option.Number == currentDeviceNumber))
+            options.Add(new MicOption(currentDeviceNumber, $"Device {currentDeviceNumber} (not connected)"));
+
+        return options;
+    }
 }
 
 public sealed class HotkeyOption
@@ -140,5 +190,19 @@ public sealed class HotkeyOption
 
     // The custom ComboBox template shows the raw item, so ToString() is what
     // ends up in the selection box and the dropdown rows.
+    public override string ToString() => Name;
+}
+
+public sealed class MicOption
+{
+    public int Number { get; }
+    public string Name { get; }
+
+    public MicOption(int number, string name)
+    {
+        Number = number;
+        Name = name;
+    }
+
     public override string ToString() => Name;
 }
