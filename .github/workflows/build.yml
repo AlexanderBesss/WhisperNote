@@ -43,26 +43,34 @@ jobs:
           path: publish/
           if-no-files-found: error
 
-      # Rolling prerelease: every push to main replaces the same 'latest'
-      # release, so the download link never moves and the newest build is
-      # always the one on the releases page. gh is preinstalled on the
-      # windows-latest image; GH_TOKEN is the built-in workflow token, made
-      # sufficient by the job's contents: write permission.
+      # One release per push to main: the tag is derived from the commit, so
+      # every merge adds a new entry to the releases page instead of replacing
+      # the previous one. gh is preinstalled on the windows-latest image;
+      # GH_TOKEN is the built-in workflow token, made sufficient by the job's
+      # contents: write permission.
       - name: Package app for release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: pwsh
         run: Compress-Archive -Path publish\* -DestinationPath WhisperNote-win-x64.zip -Force
 
-      - name: Publish rolling prerelease
+      - name: Publish release for this commit
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latest --cleanup-tag --yes
-          if ($LASTEXITCODE -ne 0) { Write-Host "No previous 'latest' release to replace." }
-          gh release create latest WhisperNote-win-x64.zip `
+          $shortSha = '${{ github.sha }}'.Substring(0, 7)
+          $tag = "main-$shortSha"
+
+          # Re-running the same commit must not fail on an existing tag.
+          gh release view $tag --json tagName | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Replacing the existing $tag release from a previous run."
+            gh release delete $tag --cleanup-tag --yes
+          }
+
+          gh release create $tag WhisperNote-win-x64.zip `
             --target ${{ github.sha }} `
-            --title "WhisperNote (latest build)" `
+            --title "WhisperNote main $shortSha" `
             --prerelease `
-            --notes "Automatic build of main at ${{ github.sha }}. Models and llama.cpp backends are downloaded by the app on first run."
+            --generate-notes
