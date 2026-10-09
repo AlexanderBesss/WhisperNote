@@ -21,6 +21,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history and tags: the release description is built from the
+          # commits between the previous release tag and HEAD.
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -53,6 +57,38 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path publish\* -DestinationPath WhisperNote-win-x64.zip -Force
 
+      # The description is the commit list since the previous release tag, so
+      # it stays in sync with what actually landed instead of relying on
+      # GitHub's generated changelog link.
+      - name: Build release notes from the commit list
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          # Newest previous main-* tag that HEAD descends from. Empty for the
+          # first release, in which case the whole history is listed.
+          $previous = ''
+          foreach ($tag in @(git tag --list 'main-*' --sort=-creatordate) | ForEach-Object { $_.Trim() }) {
+            if ((git rev-parse ($tag + '^{commit}')).Trim() -eq '${{ github.sha }}') { continue }
+            git merge-base --is-ancestor $tag HEAD
+            if ($LASTEXITCODE -eq 0) { $previous = $tag; break }
+          }
+
+          $range = if ($previous) { "$previous..HEAD" } else { 'HEAD' }
+          $commits = @(git log --no-merges --pretty=format:'- %s (%h)' $range)
+          Write-Host "Release notes cover $range ($($commits.Count) commit(s))."
+
+          $lines = @(
+            "Automatic build of main at ${{ github.sha }}.",
+            '',
+            '## Changes',
+            ''
+          ) + $commits + @(
+            '',
+            '',
+            'Models and llama.cpp backends are downloaded by the app on first run.'
+          )
+          Set-Content -LiteralPath release-notes.md -Value $lines -Encoding UTF8
+
       - name: Publish release for this commit
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: pwsh
@@ -72,4 +108,4 @@ jobs:
           gh release create $tag WhisperNote-win-x64.zip `
             --target ${{ github.sha }} `
             --title "WhisperNote main $shortSha" `
-            --generate-notes
+            --notes-file release-notes.md
