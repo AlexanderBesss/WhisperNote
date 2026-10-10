@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -165,11 +166,27 @@ static class NumberNormalizer
         return TryFormatCurrency(text, runIndex, runLength, formatted, ref consumed) ?? formatted;
     }
 
-    static bool FollowedByCurrencyWord(string text, int runIndex, int runLength)
+    // Matches the next word after `text` and reports whether it is a currency
+    // word, yielding its symbol and match position when it is.
+    static bool TryGetNextCurrencySymbol(string text, out string? symbol, out int symbolIndex, out int symbolLength)
     {
-        var next = NextWord.Match(text.Substring(runIndex + runLength));
-        return next.Success && CurrencySymbols.ContainsKey(next.Groups[1].Value);
+        var next = NextWord.Match(text);
+        if (next.Success && CurrencySymbols.TryGetValue(next.Groups[1].Value, out var value))
+        {
+            symbol = value;
+            symbolIndex = next.Groups[1].Index;
+            symbolLength = next.Groups[1].Length;
+            return true;
+        }
+
+        symbol = null;
+        symbolIndex = 0;
+        symbolLength = 0;
+        return false;
     }
+
+    static bool FollowedByCurrencyWord(string text, int runIndex, int runLength) =>
+        TryGetNextCurrencySymbol(text.Substring(runIndex + runLength), out _, out _, out _);
 
     static bool IsGuardedSingleWord(string text, int runIndex, int runLength, string word)
     {
@@ -202,11 +219,10 @@ static class NumberNormalizer
     static string? TryFormatCurrency(string text, int runIndex, int runLength, string formatted, ref int consumed)
     {
         var after = text.Substring(runIndex + runLength);
-        var next = NextWord.Match(after);
-        if (!next.Success || !CurrencySymbols.TryGetValue(next.Groups[1].Value, out var symbol))
+        if (!TryGetNextCurrencySymbol(after, out var symbol, out var symbolIndex, out var symbolLength))
             return null;
 
-        consumed = runLength + next.Groups[1].Index + next.Groups[1].Length;
+        consumed = runLength + symbolIndex + symbolLength;
 
         // "forty dollars and fifty cents" -> "$40.50"
         var value = formatted;
@@ -319,12 +335,17 @@ static class NumberNormalizer
         return state == State.And ? null : total + current;
     }
 
+    // Longest alternatives first so "eighty" wins over "eight".
+    static string Alternation(IEnumerable<string> words)
+    {
+        var sorted = words.ToArray();
+        Array.Sort(sorted, (a, b) => b.Length.CompareTo(a.Length));
+        return "(?:" + string.Join("|", sorted) + ")";
+    }
+
     static Regex BuildNumberRunRegex()
     {
-        // Longest alternatives first so "eighty" wins over "eight".
-        var sorted = (string[])NumberWords.Clone();
-        Array.Sort(sorted, (a, b) => b.Length.CompareTo(a.Length));
-        var word = "(?:" + string.Join("|", sorted) + ")";
+        var word = Alternation(NumberWords);
         return new Regex(
             $@"\b{word}(?:[\s\-]+{word})*\b",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -334,8 +355,7 @@ static class NumberNormalizer
     {
         var small = new List<string>(Ones.Keys);
         small.AddRange(Tens.Keys);
-        small.Sort((a, b) => b.Length.CompareTo(a.Length));
-        var word = "(?:" + string.Join("|", small) + ")";
+        var word = Alternation(small);
         return new Regex(
             $@"^\s+and\s+({word}(?:[\s\-]+{word})*)\s+cents\b",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);

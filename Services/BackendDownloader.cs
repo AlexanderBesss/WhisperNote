@@ -21,8 +21,6 @@ namespace WhisperNote.Services;
 public static class BackendDownloader
 {
     const string ReleasesApiUrl = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=15";
-    const int DownloadBufferSize = 128 * 1024;
-    const int ProgressReportIntervalSeconds = 1;
     static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(30);
 
     sealed record BackendSpec(string Directory, string Label, string[] AssetPatterns);
@@ -98,7 +96,7 @@ public static class BackendDownloader
 
     static async Task<List<(string Name, string Url)>?> FindAssetsAsync(BackendSpec spec, CancellationToken ct)
     {
-        using var client = CreateClient();
+        using var client = ModelDownloader.CreateClient(DownloadTimeout);
         using var response = await client.GetAsync(ReleasesApiUrl, ct);
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(ct);
@@ -162,7 +160,7 @@ public static class BackendDownloader
             progress(message, 0, 0);
             Logger.Info($"Downloading {asset.Url}");
 
-            using (var client = CreateClient())
+            using (var client = ModelDownloader.CreateClient(DownloadTimeout))
             using (var response = await client.GetAsync(asset.Url, HttpCompletionOption.ResponseHeadersRead, ct))
             {
                 response.EnsureSuccessStatusCode();
@@ -171,21 +169,7 @@ public static class BackendDownloader
 
                 using var stream = await response.Content.ReadAsStreamAsync(ct);
                 using var file = File.Create(zipPath);
-                var buffer = new byte[DownloadBufferSize];
-                long downloaded = 0;
-                int read;
-                var lastReport = DateTimeOffset.UtcNow;
-
-                while ((read = await stream.ReadAsync(buffer, ct)) > 0)
-                {
-                    await file.WriteAsync(buffer.AsMemory(0, read), ct);
-                    downloaded += read;
-                    if (DateTimeOffset.UtcNow - lastReport > TimeSpan.FromSeconds(ProgressReportIntervalSeconds))
-                    {
-                        progress(message, downloaded, total);
-                        lastReport = DateTimeOffset.UtcNow;
-                    }
-                }
+                await ModelDownloader.CopyWithProgressAsync(stream, file, message, total, progress, ct);
             }
 
             progress($"Installing {label}...", 0, 0);
@@ -198,13 +182,6 @@ public static class BackendDownloader
             try { File.Delete(zipPath); } catch { }
             try { Directory.Delete(extractDir, true); } catch { }
         }
-    }
-
-    static HttpClient CreateClient()
-    {
-        var client = new HttpClient { Timeout = DownloadTimeout };
-        client.DefaultRequestHeaders.Add("User-Agent", "WhisperNote/1.0");
-        return client;
     }
 
     static void ExtractZip(string zipPath, string extractDir)

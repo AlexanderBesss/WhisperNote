@@ -171,9 +171,7 @@ public sealed class TrayIconService : IDisposable
         catch (Exception ex)
         {
             Logger.Error($"Tray blink frames failed: {ex.Message}");
-            foreach (var frame in _blinkFrames)
-                frame.Dispose();
-            _blinkFrames.Clear();
+            DisposeBlinkFrames();
         }
 
         void AddFrame(Bitmap source, double opacity)
@@ -272,6 +270,11 @@ public sealed class TrayIconService : IDisposable
         _notifyIcon.Dispose();
         _activeIcon.Dispose();
         _idleIcon.Dispose();
+        DisposeBlinkFrames();
+    }
+
+    void DisposeBlinkFrames()
+    {
         foreach (var frame in _blinkFrames)
             frame.Dispose();
         _blinkFrames.Clear();

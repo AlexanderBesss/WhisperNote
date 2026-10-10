@@ -153,9 +153,7 @@ public class GlobalKeyboardHook : IDisposable
                     {
                         // If a shortcut chord replayed the modifier down, the app
                         // still thinks it is held; release it so the chord commits.
-                        if (_modifierReplayed)
-                            AutoPaster.SendReplay(_physicalVk, keyUp: true);
-                        _modifierReplayed = false;
+                        ReleaseReplayedModifier();
                         return (IntPtr)1;
                     }
                 }
@@ -217,6 +215,17 @@ public class GlobalKeyboardHook : IDisposable
         }));
     }
 
+    // Releases a modifier the hook replayed as down (see HookCallback) so the
+    // target app is not left with a stuck Alt/Win when the hotkey release or
+    // hook teardown reaches it.
+    void ReleaseReplayedModifier()
+    {
+        if (!_modifierReplayed)
+            return;
+        AutoPaster.SendReplay(_physicalVk, keyUp: true);
+        _modifierReplayed = false;
+    }
+
     public void Dispose()
     {
         if (_hookHandle != IntPtr.Zero)
@@ -227,11 +236,7 @@ public class GlobalKeyboardHook : IDisposable
             // If the hook is torn down while that modifier is still "held" from the
             // target app's point of view (hotkey setting changed or hook disabled
             // mid-press), release it so the app is not left with a stuck Alt/Win.
-            if (_modifierReplayed)
-            {
-                AutoPaster.SendReplay(_physicalVk, keyUp: true);
-                _modifierReplayed = false;
-            }
+            ReleaseReplayedModifier();
         }
     }
 }

@@ -54,13 +54,7 @@ public class AudioRecorder : IDisposable
     public int PreferredDeviceNumber
     {
         get => _preferredDeviceNumber;
-        set
-        {
-            if (_preferredDeviceNumber == value)
-                return;
-            _preferredDeviceNumber = value;
-            _captureDirty = true;
-        }
+        set => SetDevicePreference(ref _preferredDeviceNumber, value);
     }
 
     string? _preferredDeviceName;
@@ -68,19 +62,23 @@ public class AudioRecorder : IDisposable
     public string? PreferredDeviceName
     {
         get => _preferredDeviceName;
-        set
-        {
-            if (_preferredDeviceName == value)
-                return;
-            _preferredDeviceName = value;
-            _captureDirty = true;
-        }
+        set => SetDevicePreference(ref _preferredDeviceName, value);
+    }
+
+    // Both preferred-device setters share the same pattern: ignore unchanged
+    // values, otherwise remember the new one and mark the capture stale so the
+    // next EnsureCapture rebuilds against it.
+    void SetDevicePreference<T>(ref T field, T value)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+            return;
+        field = value;
+        _captureDirty = true;
     }
 
     public async Task StartAsync()
     {
-        await _stateLock.WaitAsync();
-        try
+        await WithStateLockAsync(async () =>
         {
             if (IsRecording)
             {
@@ -88,14 +86,42 @@ public class AudioRecorder : IDisposable
                 return;
             }
 
-            await Task.Run(StartCaptureCore);
-            IsRecording = true;
-        }
-        catch
+            try
+            {
+                await Task.Run(StartCaptureCore);
+                IsRecording = true;
+            }
+            catch
+            {
+                ResetBuffer();
+                IsRecording = false;
+                throw;
+            }
+        });
+    }
+
+    // Shared lock/try/finally scaffolding for the recording lifecycle methods.
+    // Dispose keeps its synchronous, timeout-bounded shape and does not use
+    // these helpers.
+    async Task WithStateLockAsync(Func<Task> operation)
+    {
+        await _stateLock.WaitAsync();
+        try
         {
-            ResetBuffer();
-            IsRecording = false;
-            throw;
+            await operation();
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+    }
+
+    async Task<T> WithStateLockAsync<T>(Func<Task<T>> operation)
+    {
+        await _stateLock.WaitAsync();
+        try
+        {
+            return await operation();
         }
         finally
         {
@@ -126,10 +152,17 @@ public class AudioRecorder : IDisposable
 
     void StartConfirmed()
     {
-        _captureDied = false;
-        _captureDiedException = null;
+        ResetCaptureDied();
         _capture!.StartRecording();
         ConfirmCaptureStarted();
+    }
+
+    // Clear any stale death report from the previous capture before (re)using
+    // the current one.
+    void ResetCaptureDied()
+    {
+        _captureDied = false;
+        _captureDiedException = null;
     }
 
     // NAudio surfaces a dead audio client asynchronously: StartRecording
@@ -151,20 +184,12 @@ public class AudioRecorder : IDisposable
 
     // Briefly starts and stops the reusable capture so the first hotkey press
     // does not pay the device wake-up cost.
-    public async Task WarmUpAsync()
+    public Task WarmUpAsync() => WithStateLockAsync(async () =>
     {
-        await _stateLock.WaitAsync();
-        try
-        {
-            if (IsRecording)
-                return;
-            await Task.Run(WarmUpCore);
-        }
-        finally
-        {
-            _stateLock.Release();
-        }
-    }
+        if (IsRecording)
+            return;
+        await Task.Run(WarmUpCore);
+    });
 
     async Task WarmUpCore()
     {
@@ -203,8 +228,7 @@ public class AudioRecorder : IDisposable
         // while a handler is attached at that moment. Normal stops carry no
         // exception, so they pass through untouched.
         _capture.RecordingStopped += OnCaptureDied;
-        _captureDied = false;
-        _captureDiedException = null;
+        ResetCaptureDied();
     }
 
     void ReleaseCapture()
@@ -300,48 +324,40 @@ public class AudioRecorder : IDisposable
         Logger.Error($"Capture died unexpectedly: {e.Exception.Message}");
     }
 
-    public async Task<byte[]> StopAsync()
+    public Task<byte[]> StopAsync() => WithStateLockAsync(async () =>
     {
-        await _stateLock.WaitAsync();
-        try
+        if (_capture == null)
         {
-            if (_capture == null)
-            {
-                IsRecording = false;
-                return Array.Empty<byte>();
-            }
-
-            if (_captureDied)
-            {
-                // The capture thread already reported a device failure and
-                // RecordingStopped has fired; waiting for it again would just
-                // burn the full timeout. Rebuild for the next recording.
-                var diedException = _captureDiedException
-                    ?? new InvalidOperationException("Capture device stopped unexpectedly");
-                ReleaseCapture();
-                ResetBuffer();
-                IsRecording = false;
-                throw new InvalidOperationException("Recording failed: capture device disconnected", diedException);
-            }
-
-            var stopException = await StopCaptureAsync(_capture);
             IsRecording = false;
-            var pcm = await Task.Run(ConvertToTargetFormat);
-
-            if (stopException != null)
-            {
-                // Unknown capture state after a failed stop: rebuild next time.
-                ReleaseCapture();
-                throw new InvalidOperationException("Recording stop failed", stopException);
-            }
-
-            return pcm;
+            return Array.Empty<byte>();
         }
-        finally
+
+        if (_captureDied)
         {
-            _stateLock.Release();
+            // The capture thread already reported a device failure and
+            // RecordingStopped has fired; waiting for it again would just
+            // burn the full timeout. Rebuild for the next recording.
+            var diedException = _captureDiedException
+                ?? new InvalidOperationException("Capture device stopped unexpectedly");
+            ReleaseCapture();
+            ResetBuffer();
+            IsRecording = false;
+            throw new InvalidOperationException("Recording failed: capture device disconnected", diedException);
         }
-    }
+
+        var stopException = await StopCaptureAsync(_capture);
+        IsRecording = false;
+        var pcm = await Task.Run(ConvertToTargetFormat);
+
+        if (stopException != null)
+        {
+            // Unknown capture state after a failed stop: rebuild next time.
+            ReleaseCapture();
+            throw new InvalidOperationException("Recording stop failed", stopException);
+        }
+
+        return pcm;
+    });
 
     // Stops the capture but keeps the object alive for the next recording;
     // that is what keeps the mic endpoint warm.

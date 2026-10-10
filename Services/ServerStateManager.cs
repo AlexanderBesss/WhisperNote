@@ -17,6 +17,8 @@ public class ServerStateManager : ViewModel, IDisposable
     readonly AppState _state;
     readonly SemaphoreSlim _operationLock = new(1, 1);
     readonly object _startLock = new();
+    bool _isStarting;
+    Task? _startTask;
 
     ServerStatus _status = ServerStatus.Offline;
     public ServerStatus Status
@@ -97,6 +99,14 @@ public class ServerStateManager : ViewModel, IDisposable
         }
     }
 
+    async Task<bool> CheckReadyAndMarkOnlineAsync(CancellationToken ct = default)
+    {
+        if (!await _transcription.IsServerReady(ct))
+            return false;
+        Status = ServerStatus.Online;
+        return true;
+    }
+
     async Task StartCoreAsync(Action<string, long, long> progress, CancellationToken ct)
     {
         var lockTaken = false;
@@ -105,11 +115,8 @@ public class ServerStateManager : ViewModel, IDisposable
             await _operationLock.WaitAsync(ct);
             lockTaken = true;
 
-            if (await _transcription.IsServerReady(ct))
-            {
-                Status = ServerStatus.Online;
+            if (await CheckReadyAndMarkOnlineAsync(ct))
                 return;
-            }
 
             _server.SetUseCpuOnly(_state.UseCpuOnly);
             await _server.EnsureBackendAsync(progress, ct);
@@ -177,9 +184,7 @@ public class ServerStateManager : ViewModel, IDisposable
 
         await WithOperationLockAsync(async () =>
         {
-            var ready = await _transcription.IsServerReady();
-            if (ready)
-                Status = ServerStatus.Online;
+            await CheckReadyAndMarkOnlineAsync();
         });
     }
 
@@ -198,14 +203,9 @@ public class ServerStateManager : ViewModel, IDisposable
             await WithOperationLockAsync(async () =>
             {
                 if (_server.IsRunning)
-                {
-                    await Task.Run(() => _server.Stop());
-                    Status = ServerStatus.Offline;
-                }
+                    await StopCoreAsync();
                 else
-                {
                     shouldStart = true;
-                }
             });
 
             if (shouldStart)
@@ -226,19 +226,13 @@ public class ServerStateManager : ViewModel, IDisposable
 
         return await WithOperationLockAsync(async () =>
         {
-            if (await _transcription.IsServerReady())
-            {
-                Status = ServerStatus.Online;
+            if (await CheckReadyAndMarkOnlineAsync())
                 return true;
-            }
 
             for (int i = 0; i < StartMaxAttempts; i++)
             {
-                if (await _transcription.IsServerReady())
-                {
-                    Status = ServerStatus.Online;
+                if (await CheckReadyAndMarkOnlineAsync())
                     return true;
-                }
                 await Task.Delay(WaitPollIntervalMs);
                 updateInfo($"Waiting for server ({i * WaitPollIntervalMs / 1000 + WaitPollIntervalMs / 1000}s)");
             }
@@ -247,23 +241,20 @@ public class ServerStateManager : ViewModel, IDisposable
         });
     }
 
-    bool _isStarting;
-    Task? _startTask;
-
     public async Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct) =>
         await WithOperationLockAsync(() => _transcription.Transcribe(pcm, channels, ct: ct), ct);
 
     public Task<bool> IsServerReady(CancellationToken ct = default) =>
         WithOperationLockAsync(() => _transcription.IsServerReady(ct), ct);
 
-    public async Task StopServerAsync()
+    async Task StopCoreAsync()
     {
-        await WithOperationLockAsync(async () =>
-        {
-            await Task.Run(() => _server.Stop());
-            Status = ServerStatus.Offline;
-        });
+        await Task.Run(() => _server.Stop());
+        Status = ServerStatus.Offline;
     }
+
+    public async Task StopServerAsync() =>
+        await WithOperationLockAsync(StopCoreAsync);
 
     public Task OffloadServerAsync() => StopServerAsync();
 

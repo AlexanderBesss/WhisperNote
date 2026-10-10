@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using WhisperNote.Config;
 using WhisperNote.Services;
 
@@ -89,16 +90,7 @@ public sealed class SettingsViewModel : ViewModel
             // "System default" (-1) has no name to remember.
             string? name = null;
             if (value >= 0)
-            {
-                foreach (var option in MicOptions)
-                {
-                    if (option.Number == value)
-                    {
-                        name = option.Name;
-                        break;
-                    }
-                }
-            }
+                name = MicOptions.FirstOrDefault(option => option.Number == value)?.Name;
             _mainViewModel.SetMicSelection(value, name);
         }
     }

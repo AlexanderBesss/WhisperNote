@@ -108,7 +108,7 @@ public static class AutoPaster
 
         try
         {
-            var injected = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+            var injected = Inject(inputs);
             if (injected == inputs.Length)
                 return new PasteResult(true, "ok", "ok");
 
@@ -221,9 +221,14 @@ public static class AutoPaster
         // A failed modifier key-up leaves the target app thinking Alt/Win is
         // still held (the physical key-up is swallowed by the hook), so log it
         // the same way SendCtrlV reports a blocked/failed injection.
-        if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) != inputs.Length)
+        if (Inject(inputs) != inputs.Length)
             Logger.Error($"Hotkey replay failed: vk=0x{vk:X2} keyUp={keyUp} error={Marshal.GetLastWin32Error()}");
     }
+
+    // Injects a batch of synthesized keystrokes; SendInput reports the number
+    // accepted, so callers compare it against inputs.Length for success.
+    static uint Inject(INPUT[] inputs) =>
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
 
     static INPUT Key(ushort vk, bool keyUp, IntPtr marker) => new()
     {

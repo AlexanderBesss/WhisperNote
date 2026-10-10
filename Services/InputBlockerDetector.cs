@@ -52,11 +52,8 @@ static class InputBlockerDetector
                 using (service)
                 {
                     var name = (service["Name"] as string ?? "").ToLowerInvariant();
-                    foreach (var (match, label) in KnownBlockers)
-                    {
-                        if (name.Contains(match, StringComparison.Ordinal))
-                            return label;
-                    }
+                    if (MatchLabel(name) is { } label)
+                        return label;
                 }
             }
         }
@@ -82,16 +79,24 @@ static class InputBlockerDetector
                 {
                     process.Dispose();
                 }
-                foreach (var (match, label) in KnownBlockers)
-                {
-                    if (name.Contains(match, StringComparison.Ordinal))
-                        return label;
-                }
+                if (MatchLabel(name) is { } label)
+                    return label;
             }
         }
         catch (Exception ex)
         {
             Logger.Error($"InputBlockerDetector (processes): {ex.Message}");
+        }
+
+        return null;
+    }
+
+    static string? MatchLabel(string name)
+    {
+        foreach (var (match, label) in KnownBlockers)
+        {
+            if (name.Contains(match, StringComparison.Ordinal))
+                return label;
         }
 
         return null;

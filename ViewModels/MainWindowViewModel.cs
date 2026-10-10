@@ -1,4 +1,4 @@
-    using System;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +14,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
 {
     readonly AppState _state;
     public ServerStateManager ServerManager { get; }
-    public RecordingStateManager RecordingManager { get; }
+    public RecordingStateManager RecordingManager { get; private set; }
     GlobalKeyboardHook? _keyboardHook;
     bool _hotkeyPressed;
     bool _pendingHotkeyStop;
@@ -39,18 +39,25 @@ public class MainWindowViewModel : ViewModel, IDisposable
         OnPropertyChanged(nameof(WindowOpacity));
     }
 
+    // Shared setter for the persisted settings toggles: fire PropertyChanged,
+    // persist to AppState, then surface the effect in the status line.
+    bool SyncSetting(ref bool field, bool value, Action persist, string? infoText = null)
+    {
+        if (!SetProperty(ref field, value))
+            return false;
+        persist();
+        if (infoText != null)
+            RecordingManager.InfoText = infoText;
+        return true;
+    }
+
     bool _autoOffloadVram;
     public bool AutoOffloadVram
     {
         get => _autoOffloadVram;
-        set
-        {
-            if (SetProperty(ref _autoOffloadVram, value))
-            {
-                _state.AutoOffloadVram = value;
-                RecordingManager.InfoText = value ? "Auto-offload enabled" : "Auto-offload disabled";
-            }
-        }
+        set => SyncSetting(ref _autoOffloadVram, value,
+            () => _state.AutoOffloadVram = value,
+            value ? "Auto-offload enabled" : "Auto-offload disabled");
     }
 
     bool _useCpuOnly;
@@ -59,14 +66,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
         get => _useCpuOnly;
         set
         {
-            if (SetProperty(ref _useCpuOnly, value))
-            {
-                _state.UseCpuOnly = value;
+            if (SyncSetting(ref _useCpuOnly, value,
+                    () => _state.UseCpuOnly = value,
+                    value ? "CPU mode enabled (server will restart)" : "CPU mode disabled (server will restart)"))
                 UpdateHardwareMode();
-                RecordingManager.InfoText = value
-                    ? "CPU mode enabled (server will restart)"
-                    : "CPU mode disabled (server will restart)";
-            }
         }
     }
 
@@ -74,48 +77,32 @@ public class MainWindowViewModel : ViewModel, IDisposable
     public bool StartupEnabled
     {
         get => _startupEnabled;
-        set
+        set => SyncSetting(ref _startupEnabled, value, () =>
         {
-            if (SetProperty(ref _startupEnabled, value))
-            {
-                _state.StartupEnabled = value;
-                StartupRegistry.SetEnabled(value);
-                RecordingManager.InfoText = value ? "Added to startup" : "Removed from startup";
-            }
-        }
+            _state.StartupEnabled = value;
+            StartupRegistry.SetEnabled(value);
+        }, value ? "Added to startup" : "Removed from startup");
     }
 
     bool _autoPaste;
     public bool AutoPaste
     {
         get => _autoPaste;
-        set
-        {
-            if (SetProperty(ref _autoPaste, value))
-                _state.AutoPaste = value;
-        }
+        set => SyncSetting(ref _autoPaste, value, () => _state.AutoPaste = value);
     }
 
     bool _minimizeToTray;
     public bool MinimizeToTray
     {
         get => _minimizeToTray;
-        set
-        {
-            if (SetProperty(ref _minimizeToTray, value))
-                _state.MinimizeToTray = value;
-        }
+        set => SyncSetting(ref _minimizeToTray, value, () => _state.MinimizeToTray = value);
     }
 
     bool _startInTray;
     public bool StartInTray
     {
         get => _startInTray;
-        set
-        {
-            if (SetProperty(ref _startInTray, value))
-                _state.StartInTray = value;
-        }
+        set => SyncSetting(ref _startInTray, value, () => _state.StartInTray = value);
     }
 
     public string? LocalModelId => _state.LocalModelId;
@@ -164,9 +151,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
         get => _hotkeyEnabled;
         set
         {
-            if (SetProperty(ref _hotkeyEnabled, value))
+            if (SyncSetting(ref _hotkeyEnabled, value, () => _state.HotkeyEnabled = value))
             {
-                _state.HotkeyEnabled = value;
                 if (value)
                     InstallHook();
                 else
@@ -238,13 +224,33 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         _state = state;
         ServerManager = new ServerStateManager(state);
+        RecordingManager = new RecordingStateManager();
+        WireRecordingEvents();
+        SeedSettingsFromState();
+        RecordingManager.SetMicDevice(_micDeviceNumber, _micDeviceName);
+        UpdateHardwareMode();
+
+        CheckModelExists();
+
+        ServerCommand = new RelayCommand(_ => FireAndForget(
+            ServerManager.ToggleServerAsync(s => RecordingManager.InfoText = s ?? ""),
+            "ToggleServer"));
+        DownloadModelCommand = new RelayCommand(_ => FireAndForget(DownloadModelAsync(), "DownloadModel"));
+
+        if (_hotkeyEnabled)
+            InstallHook();
+
+        FireAndForget(InitializeAsync(), "Initialize");
+    }
+
+    void WireRecordingEvents()
+    {
         // The startup fallback chain may settle on another backend than the detected one.
         ServerManager.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ServerManager.Status))
                 UpdateHardwareMode();
         };
-        RecordingManager = new RecordingStateManager();
         _highlightTimer.Tick += (_, _) =>
         {
             _highlightTimer.Stop();
@@ -262,17 +268,31 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 _highlightTimer.Start();
             }
         };
+    }
 
-        _autoOffloadVram = state.AutoOffloadVram;
-        _useCpuOnly = state.UseCpuOnly;
-        _startupEnabled = state.StartupEnabled;
-        _autoPaste = state.AutoPaste;
-        _minimizeToTray = state.MinimizeToTray;
-        _startInTray = state.StartInTray;
+    void SeedSettingsFromState()
+    {
+        _autoOffloadVram = _state.AutoOffloadVram;
+        _useCpuOnly = _state.UseCpuOnly;
+        _startupEnabled = _state.StartupEnabled;
+        _autoPaste = _state.AutoPaste;
+        _minimizeToTray = _state.MinimizeToTray;
+        _startInTray = _state.StartInTray;
+        SyncStartupEntry();
+        _hotkeyEnabled = _state.HotkeyEnabled;
+        _hotkeyVirtualKeyCode = _state.HotkeyVirtualKeyCode;
+        _hotkeyName = VkCodeToString(_state.HotkeyVirtualKeyCode);
+        _micDeviceNumber = _state.MicDeviceNumber;
+        _micDeviceName = _state.MicDeviceName;
+        AnchorMicDeviceName();
+    }
+
+    void SyncStartupEntry()
+    {
         if (!_startupEnabled && StartupRegistry.IsEnabled())
         {
             _startupEnabled = true;
-            state.StartupEnabled = true;
+            _state.StartupEnabled = true;
         }
         else if (_startupEnabled && !StartupRegistry.IsEnabled())
         {
@@ -282,38 +302,22 @@ public class MainWindowViewModel : ViewModel, IDisposable
             Logger.Warn("Startup entry missing or stale; recreating it");
             StartupRegistry.SetEnabled(true);
         }
-        _hotkeyEnabled = state.HotkeyEnabled;
-        _hotkeyVirtualKeyCode = state.HotkeyVirtualKeyCode;
-        _hotkeyName = VkCodeToString(state.HotkeyVirtualKeyCode);
-        _micDeviceNumber = state.MicDeviceNumber;
-        _micDeviceName = state.MicDeviceName;
-        if (_micDeviceNumber >= 0 && string.IsNullOrEmpty(_micDeviceName))
+    }
+
+    void AnchorMicDeviceName()
+    {
+        if (_micDeviceNumber < 0 || !string.IsNullOrEmpty(_micDeviceName))
+            return;
+        // Anchor the saved number to its current name so a later device
+        // reshuffle can be survived by name matching.
+        foreach (var (number, name) in AudioRecorder.GetInputDevices())
         {
-            // Anchor the saved number to its current name so a later device
-            // reshuffle can be survived by name matching.
-            foreach (var (number, name) in AudioRecorder.GetInputDevices())
-            {
-                if (number != _micDeviceNumber)
-                    continue;
-                _micDeviceName = name;
-                _state.MicDeviceName = name;
-                break;
-            }
+            if (number != _micDeviceNumber)
+                continue;
+            _micDeviceName = name;
+            _state.MicDeviceName = name;
+            break;
         }
-        RecordingManager.SetMicDevice(_micDeviceNumber, _micDeviceName);
-        UpdateHardwareMode();
-
-        CheckModelExists();
-
-        ServerCommand = new RelayCommand(_ => FireAndForget(
-            ServerManager.ToggleServerAsync(s => RecordingManager.InfoText = s ?? ""),
-            "ToggleServer"));
-        DownloadModelCommand = new RelayCommand(_ => FireAndForget(DownloadModelAsync(), "DownloadModel"));
-
-        if (_hotkeyEnabled)
-            InstallHook();
-
-        FireAndForget(InitializeAsync(), "Initialize");
     }
 
     public void ApplySettings(
@@ -536,21 +540,17 @@ public class MainWindowViewModel : ViewModel, IDisposable
         var provider = _state.ActiveProvider;
         if (provider != null && provider.IsLocal && !await ServerManager.IsServerReady())
         {
+            RecordingManager.InfoText = "Waiting for server...";
             if (ServerManager.IsStarting)
             {
-                RecordingManager.InfoText = "Waiting for server...";
                 if (!await ServerManager.WaitForServerReady(s => RecordingManager.InfoText = s))
                 {
                     _ = RecordingManager.SetError("Server failed to start");
                     return;
                 }
             }
-            else
-            {
-                RecordingManager.InfoText = "Waiting for server...";
-                if (!await EnsureServerStartedAsync())
-                    return;
-            }
+            else if (!await EnsureServerStartedAsync())
+                return;
         }
 
         await TranscribeAndHandleResultAsync(pcm, ct);
@@ -596,31 +596,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
             if (!string.IsNullOrWhiteSpace(text))
             {
                 var copied = TrySetClipboardText(text);
-                var pasted = false;
+                bool pasted = false;
                 string? pasteFailure = null;
                 if (copied && _autoPaste)
                 {
-                    // Let the clipboard settle and any hotkey key-up reach the
-                    // system before synthesizing Ctrl+V.
-                    await Task.Delay(100);
-                    if (ct.IsCancellationRequested)
-                    {
-                        _ = RecordingManager.Cancel();
+                    var (aborted, pastedNow, failure) = await TryAutoPasteAsync(ct);
+                    if (aborted)
                         return;
-                    }
-                    var result = AutoPaster.SendCtrlV();
-                    if (!result.Success)
-                    {
-                        // Transient failure (focus still moving between windows):
-                        // one retry before reporting. A failed first attempt
-                        // injected nothing, so a retry cannot double-paste.
-                        await Task.Delay(250);
-                        if (!ct.IsCancellationRequested)
-                            result = AutoPaster.SendCtrlV();
-                    }
-                    pasted = result.Success;
-                    if (!pasted)
-                        pasteFailure = result.ShortReason;
+                    pasted = pastedNow;
+                    pasteFailure = failure;
                 }
                 RecordingManager.SetSuccess(text);
                 if (!copied)
@@ -649,6 +633,33 @@ public class MainWindowViewModel : ViewModel, IDisposable
             Logger.Error($"[ProcessAudio] exception: {ex.Message}");
             _ = RecordingManager.SetError(ex.Message);
         }
+    }
+
+    // Returns (aborted, pasted, failure): aborted means cancellation was
+    // handled and the transcription result must be dropped entirely.
+    async Task<(bool aborted, bool pasted, string? failure)> TryAutoPasteAsync(CancellationToken ct)
+    {
+        // Let the clipboard settle and any hotkey key-up reach the
+        // system before synthesizing Ctrl+V.
+        await Task.Delay(100);
+        if (ct.IsCancellationRequested)
+        {
+            _ = RecordingManager.Cancel();
+            return (true, false, null);
+        }
+
+        var result = AutoPaster.SendCtrlV();
+        if (!result.Success)
+        {
+            // Transient failure (focus still moving between windows):
+            // one retry before reporting. A failed first attempt
+            // injected nothing, so a retry cannot double-paste.
+            await Task.Delay(250);
+            if (!ct.IsCancellationRequested)
+                result = AutoPaster.SendCtrlV();
+        }
+
+        return (false, result.Success, result.Success ? null : result.ShortReason);
     }
 
     async Task OffloadServerAfterSuccessAsync()

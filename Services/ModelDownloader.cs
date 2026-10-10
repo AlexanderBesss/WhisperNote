@@ -31,11 +31,7 @@ public static class ModelDownloader
 
         progress($"Downloading {filename}...", 0, 0);
 
-        using var client = new HttpClient
-        {
-            Timeout = DownloadTimeout
-        };
-        client.DefaultRequestHeaders.Add("User-Agent", "WhisperNote/1.0");
+        using var client = CreateClient(DownloadTimeout);
 
         var url = $"{HfBaseUrl}/{repo}/resolve/main/{filename}";
         Logger.Info($"Downloading {url}");
@@ -50,21 +46,7 @@ public static class ModelDownloader
         {
             using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var file = File.Create(tmpPath);
-            var buffer = new byte[DownloadBufferSize];
-            long downloaded = 0;
-            int read;
-            var lastReport = DateTimeOffset.UtcNow;
-
-            while ((read = await stream.ReadAsync(buffer, ct)) > 0)
-            {
-                await file.WriteAsync(buffer.AsMemory(0, read), ct);
-                downloaded += read;
-                if (DateTimeOffset.UtcNow - lastReport > TimeSpan.FromSeconds(ProgressReportIntervalSeconds))
-                {
-                    progress($"Downloading {filename}...", downloaded, total);
-                    lastReport = DateTimeOffset.UtcNow;
-                }
-            }
+            var downloaded = await CopyWithProgressAsync(stream, file, $"Downloading {filename}...", total, progress, ct);
 
             file.Dispose();
 
@@ -101,6 +83,43 @@ public static class ModelDownloader
                 File.Delete(tmpPath);
             throw;
         }
+    }
+
+    internal static HttpClient CreateClient(TimeSpan timeout)
+    {
+        var client = new HttpClient { Timeout = timeout };
+        client.DefaultRequestHeaders.Add("User-Agent", "WhisperNote/1.0");
+        return client;
+    }
+
+    /// <summary>
+    /// Shared by ModelDownloader and BackendDownloader: streams the response body
+    /// into the destination file, reporting progress at most once per second.
+    /// Returns the number of bytes written.
+    /// </summary>
+    internal static async Task<long> CopyWithProgressAsync(
+        Stream source, Stream destination,
+        string message, long total,
+        Action<string, long, long> progress,
+        CancellationToken ct)
+    {
+        var buffer = new byte[DownloadBufferSize];
+        long downloaded = 0;
+        int read;
+        var lastReport = DateTimeOffset.UtcNow;
+
+        while ((read = await source.ReadAsync(buffer, ct)) > 0)
+        {
+            await destination.WriteAsync(buffer.AsMemory(0, read), ct);
+            downloaded += read;
+            if (DateTimeOffset.UtcNow - lastReport > TimeSpan.FromSeconds(ProgressReportIntervalSeconds))
+            {
+                progress(message, downloaded, total);
+                lastReport = DateTimeOffset.UtcNow;
+            }
+        }
+
+        return downloaded;
     }
 
     public static string FormatBytes(long bytes)

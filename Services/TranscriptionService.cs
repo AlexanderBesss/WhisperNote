@@ -112,10 +112,9 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
     async Task<string?> SendWithRetry(byte[] wavBytes, string modelName, CancellationToken ct)
     {
         using var content = BuildFormContent(wavBytes, modelName);
-        using (var response = await _http.PostAsync(
-            BuildEndpointUri(_provider.ApiEndpoint, "/v1/audio/transcriptions"), content, ct))
+        var (response, raw) = await PostTranscriptionAsync(content, ct);
+        using (response)
         {
-            var raw = await response.Content.ReadAsStringAsync(ct);
             Logger.Info($"Response [{response.StatusCode}]: {Truncate(raw)}");
 
             if (ShouldRetry(response, raw))
@@ -123,17 +122,29 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
                 Logger.Info("Retrying after 3s...");
                 await Task.Delay(RetryDelayMs, ct);
                 using var retryContent = BuildFormContent(wavBytes, modelName);
-                using var retryResponse = await _http.PostAsync(
-                    BuildEndpointUri(_provider.ApiEndpoint, "/v1/audio/transcriptions"), retryContent, ct);
-                raw = await retryResponse.Content.ReadAsStringAsync(ct);
-                Logger.Info($"Retry response [{retryResponse.StatusCode}]: {Truncate(raw)}");
-                EnsureSuccess(retryResponse, raw);
-                return raw;
+                var (retryResponse, retryRaw) = await PostTranscriptionAsync(retryContent, ct);
+                using (retryResponse)
+                {
+                    Logger.Info($"Retry response [{retryResponse.StatusCode}]: {Truncate(retryRaw)}");
+                    EnsureSuccess(retryResponse, retryRaw);
+                    return retryRaw;
+                }
             }
 
             EnsureSuccess(response, raw);
             return raw;
         }
+    }
+
+    // Posts the form and reads the body; both the initial attempt and the
+    // retry share this path.
+    async Task<(HttpResponseMessage response, string raw)> PostTranscriptionAsync(
+        MultipartFormDataContent content, CancellationToken ct)
+    {
+        var response = await _http.PostAsync(
+            BuildEndpointUri(_provider.ApiEndpoint, "/v1/audio/transcriptions"), content, ct);
+        var raw = await response.Content.ReadAsStringAsync(ct);
+        return (response, raw);
     }
 
     // .NET stalls ~2 s probing IPv6 [::1] before falling back to IPv4 when the

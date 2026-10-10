@@ -171,8 +171,7 @@ public class LlmServer : IDisposable
         if (!IsLocal || CurrentProvider == null) return;
         if (string.IsNullOrEmpty(CurrentProvider.HfRepo)) return;
 
-        _downloadCts?.Cancel();
-        _downloadCts?.Dispose();
+        CancelAndDisposeDownloadCts();
         _downloadCts = new CancellationTokenSource();
         var linkedCt = CancellationTokenSource.CreateLinkedTokenSource(ct, _downloadCts.Token).Token;
 
@@ -278,18 +277,7 @@ public class LlmServer : IDisposable
         };
 
         if (_backend == HardwareBackend.IntelNpu && !_useCpuOnly)
-        {
-            startInfo.EnvironmentVariables["GGML_OPENVINO_DEVICE"] = "NPU";
-            startInfo.EnvironmentVariables["GGML_OPENVINO_PREFILL_CHUNK_SIZE"] = "512";
-            startInfo.EnvironmentVariables["GGML_OPENVINO_STATEFUL_EXECUTION"] = "0";
-
-            var ovRuntime = @"C:\Program Files (x86)\Intel\openvino_2026\runtime\bin\intel64\Release";
-            if (Directory.Exists(ovRuntime))
-            {
-                var existing = startInfo.EnvironmentVariables["PATH"] ?? Environment.GetEnvironmentVariable("PATH");
-                startInfo.EnvironmentVariables["PATH"] = ovRuntime + ";" + existing;
-            }
-        }
+            ConfigureNpuEnvironment(startInfo);
 
         _process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start server process");
 
@@ -304,6 +292,23 @@ public class LlmServer : IDisposable
                 throw new BackendUnavailableException(FirstMatchingLine(output));
             throw new InvalidOperationException(
                 "Server process exited during startup. Check logs.log for details.");
+        }
+    }
+
+    // The OpenVINO NPU build needs its device-selection env vars and the OpenVINO
+    // runtime DLLs on the child's PATH; without the DLLs the server cannot find
+    // the NPU plugins.
+    void ConfigureNpuEnvironment(ProcessStartInfo startInfo)
+    {
+        startInfo.EnvironmentVariables["GGML_OPENVINO_DEVICE"] = "NPU";
+        startInfo.EnvironmentVariables["GGML_OPENVINO_PREFILL_CHUNK_SIZE"] = "512";
+        startInfo.EnvironmentVariables["GGML_OPENVINO_STATEFUL_EXECUTION"] = "0";
+
+        var ovRuntime = @"C:\Program Files (x86)\Intel\openvino_2026\runtime\bin\intel64\Release";
+        if (Directory.Exists(ovRuntime))
+        {
+            var existing = startInfo.EnvironmentVariables["PATH"] ?? Environment.GetEnvironmentVariable("PATH");
+            startInfo.EnvironmentVariables["PATH"] = ovRuntime + ";" + existing;
         }
     }
 
@@ -449,10 +454,17 @@ public class LlmServer : IDisposable
         return !IsPortInUse(AppConfig.ServerPort);
     }
 
-    public void Stop()
+    // Cancels and disposes the current download CTS; callers then assign the
+    // next CTS (per download request) or null (on shutdown).
+    void CancelAndDisposeDownloadCts()
     {
         _downloadCts?.Cancel();
         _downloadCts?.Dispose();
+    }
+
+    public void Stop()
+    {
+        CancelAndDisposeDownloadCts();
         _downloadCts = null;
 
         var process = _process;
@@ -504,6 +516,16 @@ public class LlmServer : IDisposable
         ? "--temp 0 "
         : $"--temp {AppConfig.Temperature} --top-p {AppConfig.TopP} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} ";
 
+    // Header shared by every server-args variant: model path, optional
+    // multimodal projector, and the loopback endpoint.
+    string ModelArgs(bool mmprojOffload)
+    {
+        var mmprojArg = _mmprojPath != null
+            ? $"--mmproj \"{_mmprojPath}\"" + (mmprojOffload ? " --mmproj-offload " : " ")
+            : "";
+        return $"-m \"{_modelPath}\" " + mmprojArg + $"--port {AppConfig.ServerPort} --host 127.0.0.1 ";
+    }
+
     internal string ServerArgs()
     {
         if (_useCpuOnly || _backend == HardwareBackend.Cpu)
@@ -512,11 +534,8 @@ public class LlmServer : IDisposable
         if (_backend == HardwareBackend.IntelNpu)
             return NpuServerArgs();
 
-        var mmprojArg = _mmprojPath != null ? $"--mmproj \"{_mmprojPath}\" --mmproj-offload " : "";
         return
-            $"-m \"{_modelPath}\" " +
-            mmprojArg +
-            $"--port {AppConfig.ServerPort} --host 127.0.0.1 " +
+            ModelArgs(mmprojOffload: true) +
             $"--gpu-layers {AppConfig.GpuLayers} --ctx-size {AppConfig.ContextSize} " +
             $"--cache-type-k q4_0 --cache-type-v q4_0 " +
             $"--flash-attn on " +
@@ -528,11 +547,8 @@ public class LlmServer : IDisposable
 
     string CpuServerArgs()
     {
-        var mmprojArg = _mmprojPath != null ? $"--mmproj \"{_mmprojPath}\" " : "";
         return
-            $"-m \"{_modelPath}\" " +
-            mmprojArg +
-            $"--port {AppConfig.ServerPort} --host 127.0.0.1 " +
+            ModelArgs(mmprojOffload: false) +
             // --device none keeps the CUDA backend from initializing at all; without it
             // the CUDA build probes the GPU even with --gpu-layers 0 and aborts on GPUs
             // the bundled kernels were not compiled for (e.g. "no kernel image").
@@ -549,13 +565,10 @@ public class LlmServer : IDisposable
 
     string NpuServerArgs()
     {
-        var mmprojArg = _mmprojPath != null ? $"--mmproj \"{_mmprojPath}\" " : "";
         return
-            $"-m \"{_modelPath}\" " +
-            mmprojArg +
-            $"--port {AppConfig.ServerPort} --host 127.0.0.1 " +
+            ModelArgs(mmprojOffload: false) +
             $"--gpu-layers {AppConfig.NpuGpuLayers} " +
-            $"--parallel 1 " +
+            "--parallel 1 " +
             $"--ctx-size {AppConfig.NpuContextSize} " +
             $"--cache-type-k q4_0 --cache-type-v q4_0 " +
             $"--batch-size {AppConfig.NpuBatchSize} --ubatch-size {AppConfig.NpuUBatchSize} " +

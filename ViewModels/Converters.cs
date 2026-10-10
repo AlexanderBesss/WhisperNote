@@ -5,24 +5,30 @@ using System.Windows.Media;
 
 namespace WhisperNote.ViewModels;
 
+// The shared status palette; brushes are cached because Convert runs on every
+// status change and WPF renders from the same brush instance far better.
+static class StatusBrushes
+{
+    public static readonly SolidColorBrush GrayBrush = new(Color.FromRgb(128, 128, 128));
+    public static readonly SolidColorBrush GreenBrush = new(Color.FromRgb(144, 238, 144));
+    public static readonly SolidColorBrush OrangeBrush = new(Color.FromRgb(255, 165, 0));
+    public static readonly SolidColorBrush RedBrush = new(Color.FromRgb(220, 50, 50));
+    public static readonly SolidColorBrush LightBlueBrush = new(Color.FromRgb(173, 216, 230));
+}
+
 public class ServerStatusKindToBrushConverter : IValueConverter
 {
-    static readonly SolidColorBrush GrayBrush = new(Color.FromRgb(128, 128, 128));
-    static readonly SolidColorBrush GreenBrush = new(Color.FromRgb(144, 238, 144));
-    static readonly SolidColorBrush OrangeBrush = new(Color.FromRgb(255, 165, 0));
-    static readonly SolidColorBrush RedBrush = new(Color.FromRgb(220, 50, 50));
-
     public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
     {
         if (value is not WhisperNote.Models.ServerStatusKind kind)
-            return GrayBrush;
+            return StatusBrushes.GrayBrush;
 
         return kind switch
         {
-            WhisperNote.Models.ServerStatusKind.Green => GreenBrush,
-            WhisperNote.Models.ServerStatusKind.Orange => OrangeBrush,
-            WhisperNote.Models.ServerStatusKind.Red => RedBrush,
-            _ => GrayBrush
+            WhisperNote.Models.ServerStatusKind.Green => StatusBrushes.GreenBrush,
+            WhisperNote.Models.ServerStatusKind.Orange => StatusBrushes.OrangeBrush,
+            WhisperNote.Models.ServerStatusKind.Red => StatusBrushes.RedBrush,
+            _ => StatusBrushes.GrayBrush
         };
     }
 
@@ -32,24 +38,18 @@ public class ServerStatusKindToBrushConverter : IValueConverter
 
 public class StatusKindToBrushConverter : IValueConverter
 {
-    static readonly SolidColorBrush GrayBrush = new(Color.FromRgb(128, 128, 128));
-    static readonly SolidColorBrush GreenBrush = new(Color.FromRgb(144, 238, 144));
-    static readonly SolidColorBrush OrangeBrush = new(Color.FromRgb(255, 165, 0));
-    static readonly SolidColorBrush RedBrush = new(Color.FromRgb(220, 50, 50));
-    static readonly SolidColorBrush LightBlueBrush = new(Color.FromRgb(173, 216, 230));
-
     public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
     {
         if (value is not string kind)
-            return GrayBrush;
+            return StatusBrushes.GrayBrush;
 
         return kind switch
         {
-            "Green" => GreenBrush,
-            "Orange" => OrangeBrush,
-            "Red" => RedBrush,
-            "LightBlue" => LightBlueBrush,
-            _ => GrayBrush
+            "Green" => StatusBrushes.GreenBrush,
+            "Orange" => StatusBrushes.OrangeBrush,
+            "Red" => StatusBrushes.RedBrush,
+            "LightBlue" => StatusBrushes.LightBlueBrush,
+            _ => StatusBrushes.GrayBrush
         };
     }
 
