@@ -22,10 +22,25 @@ public class TranscriptionService : IDisposable
 
 Output ONLY the corrected transcription. No explanations, no quotes, no extra text.";
     const string TranscriptionTemperature = "0.3";
+    // Dedicated ASR models are trained to emit their "language X<asr_text>..."
+    // answer under greedy decoding. llama.cpp honours a request-level
+    // temperature (a non-numeric value is rejected with 400 "invalid stof
+    // argument"), so sending 0.3 here would override the server's --temp 0 and
+    // push the model into chat-style answers the parser rejects.
+    const string DedicatedAsrTemperature = "0";
     const int RetryDelayMs = 3000;
+    const int EmptyResultRetryDelayMs = 250;
+    // Qwen3-ASR format drift and one-token answers are transient: re-sending the
+    // same audio usually produces a well-formed answer, so the recording is not
+    // thrown away on the first unusable response.
+    const int MaxTranscriptAttempts = 3;
     const int TruncateMaxLen = 300;
     const int HealthCheckTimeoutSeconds = 2;
     const int HttpTimeoutMinutes = 5;
+
+    // Surfaced in the UI when a request stalls, so a timeout is not mistaken
+    // for the user's own cancellation.
+    public static string TimeoutDescription => $"{HttpTimeoutMinutes} minutes";
 
     readonly HttpClient _http;
     readonly ProviderConfig _provider;
@@ -80,9 +95,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         Logger.Info($"Model: {modelName}, WAV: {wavBytes.Length} bytes, duration: {durationSec:F2}s");
         AudioProcessor.LogAmplitude(pcm);
 
-        var raw = await SendWithRetry(wavBytes, modelName, ct);
-
-        return TranscriptionParser.Parse(raw, LocalModels.IsDedicatedAsr(modelName));
+        return await TranscribeWithRetriesAsync(wavBytes, modelName, LocalModels.IsDedicatedAsr(modelName), ct);
     }
 
     internal MultipartFormDataContent BuildFormContent(byte[] wavBytes, string modelName)
@@ -99,41 +112,60 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         // Dedicated ASR models (Qwen3-ASR) only produce a proper
         // "language X<asr_text>..." output for the instruction they were
         // trained on, so omit the prompt for them and let the server default win.
-        if (!LocalModels.IsDedicatedAsr(modelName))
+        var dedicatedAsr = LocalModels.IsDedicatedAsr(modelName);
+        if (!dedicatedAsr)
             content.Add(new StringContent(SystemPrompt), "prompt");
 
-        content.Add(new StringContent(TranscriptionTemperature), "temperature");
+        content.Add(new StringContent(dedicatedAsr ? DedicatedAsrTemperature : TranscriptionTemperature), "temperature");
         content.Add(new StringContent(AppConfig.MaxTokens.ToString()), "max_tokens");
         return content;
     }
 
     public void Dispose() => _http.Dispose();
 
-    async Task<string?> SendWithRetry(byte[] wavBytes, string modelName, CancellationToken ct)
+    async Task<string?> TranscribeWithRetriesAsync(
+        byte[] wavBytes, string modelName, bool dedicatedAsr, CancellationToken ct)
     {
-        using var content = BuildFormContent(wavBytes, modelName);
-        var (response, raw) = await PostTranscriptionAsync(content, ct);
-        using (response)
+        string? lastRaw = null;
+
+        for (int attempt = 1; attempt <= MaxTranscriptAttempts; attempt++)
         {
-            Logger.Info($"Response [{response.StatusCode}]: {Truncate(raw)}");
-
-            if (ShouldRetry(response, raw))
+            using var content = BuildFormContent(wavBytes, modelName);
+            var (response, raw) = await PostTranscriptionAsync(content, ct);
+            using (response)
             {
-                Logger.Info("Retrying after 3s...");
-                await Task.Delay(RetryDelayMs, ct);
-                using var retryContent = BuildFormContent(wavBytes, modelName);
-                var (retryResponse, retryRaw) = await PostTranscriptionAsync(retryContent, ct);
-                using (retryResponse)
-                {
-                    Logger.Info($"Retry response [{retryResponse.StatusCode}]: {Truncate(retryRaw)}");
-                    EnsureSuccess(retryResponse, retryRaw);
-                    return retryRaw;
-                }
-            }
+                lastRaw = raw;
+                Logger.Info($"Response [{response.StatusCode}] (attempt {attempt}/{MaxTranscriptAttempts}): {Truncate(raw)}");
 
-            EnsureSuccess(response, raw);
-            return raw;
+                if (ShouldRetryAudioLoad(response, raw) && attempt < MaxTranscriptAttempts)
+                {
+                    Logger.Info("Server rejected the audio file; retrying after 3s...");
+                    await Task.Delay(RetryDelayMs, ct);
+                    continue;
+                }
+
+                EnsureSuccess(response, raw);
+
+                var text = TranscriptionParser.Parse(raw, dedicatedAsr);
+                if (!string.IsNullOrWhiteSpace(text))
+                    return text;
+
+                if (attempt < MaxTranscriptAttempts)
+                {
+                    Logger.Info($"Attempt {attempt} produced no usable transcript; resending the same audio...");
+                    await Task.Delay(EmptyResultRetryDelayMs, ct);
+                    continue;
+                }
+
+                // Every attempt failed to produce a formatted transcript: keep a
+                // chat-style answer if the model gave one, instead of reporting
+                // "no speech" for audio that clearly contained speech.
+                return TranscriptionParser.SalvageUnformatted(raw);
+            }
         }
+
+        // Only reachable when every attempt was rejected before a parse decision.
+        return TranscriptionParser.SalvageUnformatted(lastRaw);
     }
 
     // Posts the form and reads the body; both the initial attempt and the
@@ -170,7 +202,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
             $"Transcription failed ({(int)response.StatusCode} {reason}): {Truncate(body)}");
     }
 
-    static bool ShouldRetry(HttpResponseMessage response, string body) =>
+    static bool ShouldRetryAudioLoad(HttpResponseMessage response, string body) =>
         (int)response.StatusCode == 400 && body.Contains("Failed to load image or audio file");
 
     static string Truncate(string s) =>

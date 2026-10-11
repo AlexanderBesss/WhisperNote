@@ -63,4 +63,24 @@ public class TranscriptionParserTests
         Assert.Null(TranscriptionParser.Parse("""{"text":"   "}""", dedicatedAsr: true));
         Assert.Null(TranscriptionParser.Parse(""));
     }
+
+    [Fact]
+    public void SalvageKeepsAChatStyleTranscriptThatDroppedTheAsrTextTag()
+    {
+        // Observed in logs.log: the model transcribed the speech correctly but
+        // answered in chat style, so the strict parser threw the words away.
+        var text = TranscriptionParser.SalvageUnformatted(
+            """{"type":"transcript.text.done","text":"language English. Yeah, apply small fixes, low risk."}""");
+
+        Assert.Equal("Yeah, apply small fixes, low risk.", text);
+    }
+
+    [Fact]
+    public void SalvageReturnsNothingWhenTheModelReportedNoLanguage()
+    {
+        Assert.Null(TranscriptionParser.SalvageUnformatted("""{"text":"language None"}"""));
+        Assert.Null(TranscriptionParser.SalvageUnformatted("""{"text":""}"""));
+        Assert.Null(TranscriptionParser.SalvageUnformatted("not json"));
+        Assert.Null(TranscriptionParser.SalvageUnformatted(null));
+    }
 }

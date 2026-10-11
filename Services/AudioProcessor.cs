@@ -4,7 +4,9 @@ namespace WhisperNote.Services;
 
 static class AudioProcessor
 {
-    const int AmplitudeSilenceThreshold = 500;
+    // Room tone and a dead/muted endpoint peak far below speech: recorded
+    // speech on this machine peaks at 900-11000, silent rooms at 1-350.
+    public const int SilenceThreshold = 500;
 
     public static byte[] DownmixToMono(byte[] pcm, int channels)
     {
@@ -22,7 +24,7 @@ static class AudioProcessor
         return mono;
     }
 
-    static int GetMaxAmplitude(byte[] pcm)
+    public static int GetMaxAmplitude(byte[] pcm)
     {
         if (pcm.Length < 2) return 0;
         var max = 0;
@@ -37,7 +39,7 @@ static class AudioProcessor
     public static void LogAmplitude(byte[] pcm)
     {
         var maxAmplitude = GetMaxAmplitude(pcm);
-        var label = maxAmplitude < AmplitudeSilenceThreshold ? "likely SILENCE" : "audio detected";
+        var label = maxAmplitude < SilenceThreshold ? "likely SILENCE" : "audio detected";
         Logger.Info($"PCM max amplitude: {maxAmplitude} ({label})");
     }
 }

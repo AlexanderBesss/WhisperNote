@@ -428,6 +428,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
                     _pendingHotkeyStop = false;
                     FireAndForget(StartHoldRecord(true), "StartHoldRecord");
                 }
+                else
+                {
+                    // A press that changes nothing looks like a dead app.
+                    Logger.Info($"Hotkey press ignored while {RecordingManager.State}");
+                    if (RecordingManager.IsProcessing)
+                        RecordingManager.InfoText = "Still finishing the previous recording...";
+                }
                 await Task.CompletedTask;
             },
             async () =>
@@ -500,6 +507,14 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             if (queueHotkeyStop)
                 _pendingHotkeyStop = true;
+            else
+            {
+                // Dropping a press without a word is indistinguishable from the
+                // app having stopped responding, so say what is actually busy.
+                Logger.Info($"[{context}] ignored: still busy with the previous recording");
+                if (RecordingManager.IsProcessing)
+                    RecordingManager.InfoText = "Still finishing the previous recording...";
+            }
             return;
         }
 
@@ -524,11 +539,36 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    // Names the failing stage so a lost "no response" is never ambiguous: an
+    // empty or silent buffer is a capture problem, an empty model answer is a
+    // model one. Falls back to Idle + info line when the state machine has
+    // already left Processing, so the user always sees why nothing happened.
+    void ShowFailure(string message)
+    {
+        if (!RecordingManager.SetError(message))
+        {
+            RecordingManager.Reset();
+            RecordingManager.InfoText = message;
+        }
+    }
+
     async Task ProcessAudio(byte[] pcm)
     {
         if (pcm.Length == 0)
         {
-            RecordingManager.Cancel();
+            Logger.Warn("Verdict: the capture produced no audio at all");
+            ShowFailure("Microphone captured nothing — check the mic or pick another one");
+            return;
+        }
+
+        var maxAmplitude = AudioProcessor.GetMaxAmplitude(pcm);
+        if (maxAmplitude < AudioProcessor.SilenceThreshold)
+        {
+            // Near-silence must not reach the model: Qwen3-ASR invents a
+            // sentence for it (measured: amplitude 1 -> "The two men were in a
+            // hurry.") and the app pastes that into the user's document.
+            Logger.Warn($"Verdict: recording is silent (max amplitude {maxAmplitude})");
+            ShowFailure("No clear audio captured — speak closer to the mic");
             return;
         }
 
@@ -545,7 +585,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
             {
                 if (!await ServerManager.WaitForServerReady(s => RecordingManager.InfoText = s))
                 {
-                    _ = RecordingManager.SetError("Server failed to start");
+                    ShowFailure("Server failed to start — try again");
                     return;
                 }
             }
@@ -569,7 +609,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         catch (Exception ex)
         {
             Logger.Error($"[ProcessAudio] server start failed: {ex.Message}");
-            _ = RecordingManager.SetError(ex.Message);
+            ShowFailure(ex.Message);
             return false;
         }
     }
@@ -618,11 +658,20 @@ public class MainWindowViewModel : ViewModel, IDisposable
             }
             else
             {
-                // The request was processed but the model returned nothing
-                // (silence or a failed ASR pass). Show it instead of silently
-                // dropping back to Ready, which looks like a lost request.
-                _ = RecordingManager.SetError("No speech detected, try again");
+                // The audio was real and the request succeeded, but the model
+                // still gave nothing usable after the retries. Say which stage
+                // failed instead of silently dropping back to Ready, which
+                // looks exactly like a lost request.
+                ShowFailure("Model returned no transcription — try again");
             }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // HttpClient throws TaskCanceledException on its own timeout; that
+            // is not the user cancelling, and swallowing it as a cancel leaves
+            // the UI on "Ready" with no explanation.
+            Logger.Error($"[ProcessAudio] transcription request timed out after {TranscriptionService.TimeoutDescription}");
+            ShowFailure($"Model did not respond in {TranscriptionService.TimeoutDescription} — try again");
         }
         catch (OperationCanceledException)
         {
@@ -631,7 +680,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         catch (Exception ex)
         {
             Logger.Error($"[ProcessAudio] exception: {ex.Message}");
-            _ = RecordingManager.SetError(ex.Message);
+            ShowFailure(ex.Message);
         }
     }
 
