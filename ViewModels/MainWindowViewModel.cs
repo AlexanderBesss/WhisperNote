@@ -200,23 +200,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         set => SetProperty(ref _hotkeyName, value);
     }
 
-    internal static string VkCodeToString(int vk) => vk switch
-    {
-        0xA2 => "Left Ctrl",
-        0xA3 => "Right Ctrl",
-        0xA4 => "Left Alt",
-        0xA5 => "Right Alt",
-        0x14 => "Caps Lock",
-        0xA0 => "Left Shift",
-        0xA1 => "Right Shift",
-        0x10 => "Shift",
-        0x11 => "Ctrl",
-        0x12 => "Alt",
-        0x5B => "Left Win",
-        0x5C => "Right Win",
-        _ => $"VK_{vk:X}"
-    };
-
     public ICommand ServerCommand { get; }
     public ICommand DownloadModelCommand { get; }
 
@@ -281,7 +264,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         SyncStartupEntry();
         _hotkeyEnabled = _state.HotkeyEnabled;
         _hotkeyVirtualKeyCode = _state.HotkeyVirtualKeyCode;
-        _hotkeyName = VkCodeToString(_state.HotkeyVirtualKeyCode);
+        _hotkeyName = HotkeyCatalog.NameOf(_state.HotkeyVirtualKeyCode);
         _micDeviceNumber = _state.MicDeviceNumber;
         _micDeviceName = _state.MicDeviceName;
         AnchorMicDeviceName();
@@ -320,28 +303,19 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    public void ApplySettings(
-        bool autoOffloadVram,
-        bool useCpuOnly,
-        bool startupEnabled,
-        bool autoPaste,
-        bool minimizeToTray,
-        bool startInTray,
-        string? localModelId,
-        bool hotkeyEnabled,
-        int hotkeyVirtualKeyCode)
+    public void ApplySettings(SettingsSnapshot settings)
     {
-        var cpuModeChanged = _state.UseCpuOnly != useCpuOnly;
-        var localModelChanged = _state.SetLocalModel(localModelId);
+        var cpuModeChanged = _state.UseCpuOnly != settings.UseCpuOnly;
+        var localModelChanged = _state.SetLocalModel(settings.LocalModelId);
 
-        AutoOffloadVram = autoOffloadVram;
-        UseCpuOnly = useCpuOnly;
-        StartupEnabled = startupEnabled;
-        AutoPaste = autoPaste;
-        MinimizeToTray = minimizeToTray;
-        StartInTray = startInTray;
-        HotkeyEnabled = hotkeyEnabled;
-        HotkeyVirtualKeyCode = hotkeyVirtualKeyCode;
+        AutoOffloadVram = settings.AutoOffloadVram;
+        UseCpuOnly = settings.UseCpuOnly;
+        StartupEnabled = settings.StartupEnabled;
+        AutoPaste = settings.AutoPaste;
+        MinimizeToTray = settings.MinimizeToTray;
+        StartInTray = settings.StartInTray;
+        HotkeyEnabled = settings.HotkeyEnabled;
+        HotkeyVirtualKeyCode = settings.HotkeyVirtualKeyCode;
 
         if (cpuModeChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForCpuMode");
@@ -446,7 +420,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 }
             }
         );
-        HotkeyName = VkCodeToString(_hotkeyVirtualKeyCode);
+        HotkeyName = HotkeyCatalog.NameOf(_hotkeyVirtualKeyCode);
         RecordingManager.InfoText = $"Hotkey: {HotkeyName}";
     }
 
@@ -635,26 +609,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
             if (!string.IsNullOrWhiteSpace(text))
             {
-                var copied = TrySetClipboardText(text);
-                bool pasted = false;
-                string? pasteFailure = null;
-                if (copied && _autoPaste)
-                {
-                    var (aborted, pastedNow, failure) = await TryAutoPasteAsync(ct);
-                    if (aborted)
-                        return;
-                    pasted = pastedNow;
-                    pasteFailure = failure;
-                }
-                RecordingManager.SetSuccess(text);
-                if (!copied)
-                    RecordingManager.InfoText = "Transcribed, but clipboard was unavailable";
-                else if (pasted)
-                    RecordingManager.InfoText = "Copied and pasted";
-                else if (_autoPaste)
-                    RecordingManager.InfoText = $"Copied, but auto-paste failed ({pasteFailure})";
-                NotificationSound.Play();
-                await OffloadServerAfterSuccessAsync();
+                await ApplyTranscriptionSuccessAsync(text, ct);
             }
             else
             {
@@ -682,6 +637,36 @@ public class MainWindowViewModel : ViewModel, IDisposable
             Logger.Error($"[ProcessAudio] exception: {ex.Message}");
             ShowFailure(ex.Message);
         }
+    }
+
+    // A usable transcript: copy it, paste it when the user asked for
+    // auto-paste, then state exactly which of those steps happened, so the
+    // status line never claims a paste that failed.
+    async Task ApplyTranscriptionSuccessAsync(string text, CancellationToken ct)
+    {
+        var copied = TrySetClipboardText(text);
+        bool pasted = false;
+        string? pasteFailure = null;
+
+        if (copied && _autoPaste)
+        {
+            var (aborted, pastedNow, failure) = await TryAutoPasteAsync(ct);
+            if (aborted)
+                return;
+            pasted = pastedNow;
+            pasteFailure = failure;
+        }
+
+        RecordingManager.SetSuccess(text);
+        if (!copied)
+            RecordingManager.InfoText = "Transcribed, but clipboard was unavailable";
+        else if (pasted)
+            RecordingManager.InfoText = "Copied and pasted";
+        else if (_autoPaste)
+            RecordingManager.InfoText = $"Copied, but auto-paste failed ({pasteFailure})";
+
+        NotificationSound.Play();
+        await OffloadServerAfterSuccessAsync();
     }
 
     // Returns (aborted, pasted, failure): aborted means cancellation was

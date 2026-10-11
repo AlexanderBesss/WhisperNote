@@ -3,7 +3,6 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using WhisperNote.Services;
 using WhisperNote.ViewModels;
 
@@ -149,22 +148,9 @@ public partial class MainWindow : Window
 
     void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (FindVisualParent<Button>(e.OriginalSource as DependencyObject) != null)
+        if (VisualTree.FindAncestor<Button>(e.OriginalSource as DependencyObject) != null)
             return;
 
         DragMove();
-    }
-
-    static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
-    {
-        while (child != null)
-        {
-            if (child is T match)
-                return match;
-
-            child = VisualTreeHelper.GetParent(child);
-        }
-
-        return null;
     }
 }

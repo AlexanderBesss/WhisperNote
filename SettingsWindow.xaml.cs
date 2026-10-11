@@ -2,7 +2,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Media;
 using WhisperNote.Services;
 using WhisperNote.ViewModels;
 
@@ -68,20 +67,15 @@ public partial class SettingsWindow : Window
         if (Mouse.Captured is not null and not SettingsWindow)
             return;
 
+        // The source is not part of this window's visual tree: the click came
+        // from a popup's separate tree (e.g. a combo box dropdown), so it must
+        // not start a drag.
+        if (!VisualTree.IsWithin(e.OriginalSource as DependencyObject, this))
+            return;
+
         // Interactive controls (buttons, switches, tabs, combo boxes) keep
         // their clicks; everywhere else starts a drag.
-        var source = e.OriginalSource as DependencyObject;
-        while (source != null && source != this)
-        {
-            if (source is ButtonBase or ComboBoxItem or ComboBox or TextBox)
-                return;
-            source = VisualTreeHelper.GetParent(source);
-        }
-
-        // The walk stopped at null instead of at this window: the click came
-        // from a popup's separate visual tree (e.g. a combo box dropdown),
-        // not from this window's surface, so it must not start a drag.
-        if (source is null)
+        if (IsInteractiveSource(e.OriginalSource as DependencyObject))
             return;
 
         _dragStart = PointToScreen(e.GetPosition(this));
@@ -93,6 +87,15 @@ public partial class SettingsWindow : Window
         CaptureMouse();
         e.Handled = true;
     }
+
+    // A click that landed inside one of these controls belongs to the control,
+    // not to the drag. ComboBoxItem is checked separately from ComboBox
+    // because the open dropdown lives in its own visual tree.
+    static bool IsInteractiveSource(DependencyObject? source) =>
+        VisualTree.FindAncestor<ButtonBase>(source) != null ||
+        VisualTree.FindAncestor<ComboBoxItem>(source) != null ||
+        VisualTree.FindAncestor<ComboBox>(source) != null ||
+        VisualTree.FindAncestor<TextBox>(source) != null;
 
     protected override void OnMouseMove(MouseEventArgs e)
     {

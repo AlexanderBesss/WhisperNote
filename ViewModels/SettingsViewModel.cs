@@ -126,7 +126,7 @@ public sealed class SettingsViewModel : ViewModel
 
     public void Apply()
     {
-        _mainViewModel.ApplySettings(
+        _mainViewModel.ApplySettings(new SettingsSnapshot(
             AutoOffloadVram,
             UseCpuOnly,
             StartupEnabled,
@@ -135,32 +135,13 @@ public sealed class SettingsViewModel : ViewModel
             StartInTray,
             LocalModelId,
             HotkeyEnabled,
-            HotkeyVirtualKeyCode);
+            HotkeyVirtualKeyCode));
     }
 
-    static IReadOnlyList<HotkeyOption> CreateHotkeyOptions(int currentKeyCode)
-    {
-        var options = new List<HotkeyOption>
-        {
-            new(0xA3, "Right Ctrl"),
-            new(0xA2, "Left Ctrl"),
-            new(0xA5, "Right Alt"),
-            new(0xA4, "Left Alt"),
-            new(0x14, "Caps Lock"),
-            new(0xA0, "Left Shift"),
-            new(0xA1, "Right Shift"),
-            new(0x10, "Shift"),
-            new(0x11, "Ctrl"),
-            new(0x12, "Alt"),
-            new(0x5B, "Left Win"),
-            new(0x5C, "Right Win")
-        };
-
-        if (!options.Exists(option => option.VirtualKeyCode == currentKeyCode))
-            options.Add(new HotkeyOption(currentKeyCode, MainWindowViewModel.VkCodeToString(currentKeyCode)));
-
-        return options;
-    }
+    static IReadOnlyList<HotkeyOption> CreateHotkeyOptions(int currentKeyCode) =>
+        HotkeyCatalog.Options(currentKeyCode)
+            .Select(option => new HotkeyOption(option.Vk, option.Name))
+            .ToList();
 
     static IReadOnlyList<MicOption> CreateMicOptions(int currentDeviceNumber)
     {
@@ -180,6 +161,19 @@ public sealed class SettingsViewModel : ViewModel
         return options;
     }
 }
+
+// Everything the settings window can change, handed to the main view model as
+// one unit: nine positional arguments were easy to transpose silently.
+public sealed record SettingsSnapshot(
+    bool AutoOffloadVram,
+    bool UseCpuOnly,
+    bool StartupEnabled,
+    bool AutoPaste,
+    bool MinimizeToTray,
+    bool StartInTray,
+    string? LocalModelId,
+    bool HotkeyEnabled,
+    int HotkeyVirtualKeyCode);
 
 public sealed class HotkeyOption
 {

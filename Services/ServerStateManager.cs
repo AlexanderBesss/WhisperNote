@@ -167,8 +167,7 @@ public class ServerStateManager : ViewModel, IDisposable
             if (await _transcription.IsServerReady(ct))
                 return true;
             if (!_server.IsRunning)
-                throw new InvalidOperationException(
-                    "Server process exited during startup. Check logs.log for details.");
+                throw new InvalidOperationException(LlmServer.ServerStartupFailureMessage);
         }
         return false;
     }

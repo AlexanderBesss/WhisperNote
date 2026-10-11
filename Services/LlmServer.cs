@@ -21,6 +21,12 @@ public class LlmServer : IDisposable
     const int StartupPollIntervalMs = 250;
     const int RecentOutputLimit = 200;
 
+    // What the user sees when the process dies before it starts listening.
+    // Both the startup handshake and the caller's health-poll loop report the
+    // same verdict, so the wording lives in one place.
+    internal const string ServerStartupFailureMessage =
+        "Server process exited during startup. Check logs.log for details.";
+
     // Text llama.cpp prints when the selected device cannot run the compiled kernels.
     static readonly string[] UnsupportedDeviceMarkers =
     {
@@ -290,8 +296,7 @@ public class LlmServer : IDisposable
             Stop();
             if (IsUnsupportedDeviceError(output))
                 throw new BackendUnavailableException(FirstMatchingLine(output));
-            throw new InvalidOperationException(
-                "Server process exited during startup. Check logs.log for details.");
+            throw new InvalidOperationException(ServerStartupFailureMessage);
         }
     }
 
