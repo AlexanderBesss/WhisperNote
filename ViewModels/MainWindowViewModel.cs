@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -48,6 +49,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
         persist();
         if (infoText != null)
             RecordingManager.InfoText = infoText;
+        return true;
+    }
+
+    // Same for the free-text settings, which have no status line of their own.
+    bool SyncTextSetting(ref string field, string value, Action persist)
+    {
+        if (!SetProperty(ref field, value))
+            return false;
+        persist();
         return true;
     }
 
@@ -103,6 +113,182 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         get => _startInTray;
         set => SyncSetting(ref _startInTray, value, () => _state.StartInTray = value);
+    }
+
+    bool _grammarEnabled;
+    public bool GrammarEnabled
+    {
+        get => _grammarEnabled;
+        set
+        {
+            if (SyncSetting(ref _grammarEnabled, value,
+                    () => _state.GrammarCheckEnabled = value,
+                    value ? "Grammar check enabled" : "Grammar check disabled"))
+                RefreshGrammarService();
+        }
+    }
+
+    string _grammarApiHost = "";
+    public string GrammarApiHost
+    {
+        get => _grammarApiHost;
+        set
+        {
+            if (SyncTextSetting(ref _grammarApiHost, value, () => _state.GrammarApiEndpoint = value))
+                RefreshGrammarService();
+        }
+    }
+
+    string _grammarApiKey = "";
+    public string GrammarApiKey
+    {
+        get => _grammarApiKey;
+        set
+        {
+            if (SyncTextSetting(ref _grammarApiKey, value, () => _state.GrammarApiKey = value))
+                RefreshGrammarService();
+        }
+    }
+
+    // How much thinking the checker is allowed to spend, forwarded as
+    // "reasoning_effort". "" leaves the choice to the server.
+    string _grammarEffort = "";
+    public string GrammarEffort
+    {
+        get => _grammarEffort;
+        set
+        {
+            if (SyncTextSetting(ref _grammarEffort, value, () => _state.GrammarReasoningEffort = value))
+                RefreshGrammarService();
+        }
+    }
+
+    public IReadOnlyList<GrammarEffortOption> GrammarEffortOptions { get; } = GrammarCheckService.EffortOptions;
+
+    // Says what the proofreader is doing without opening the log: which model
+    // the API reported, or why it is being skipped.
+    string _grammarStatus = "";
+    public string GrammarStatus
+    {
+        get => _grammarStatus;
+        set => SetProperty(ref _grammarStatus, value);
+    }
+
+    GrammarCheckService? _grammar;
+    string? _grammarSignature;
+    bool _isProbingGrammar;
+
+    // Rebuilds the checker whenever host, key or effort change: the HttpClient,
+    // the discovered model and the probe cooldown all belong to one endpoint.
+    void RefreshGrammarService()
+    {
+        var signature = $"{_grammarApiHost}|{_grammarApiKey}|{_grammarEffort}";
+        if (_grammar == null || _grammarSignature != signature)
+        {
+            _grammar?.Dispose();
+            _grammar = null;
+            _grammarSignature = null;
+
+            if (!string.IsNullOrWhiteSpace(_grammarApiHost))
+            {
+                _grammar = new GrammarCheckService(_grammarApiHost, _grammarApiKey, _grammarEffort);
+                _grammarSignature = signature;
+            }
+        }
+
+        UpdateGrammarStatus();
+
+        if (_grammarEnabled && _grammar is { DetectedModel: null } && !_isProbingGrammar)
+            FireAndForget(ProbeGrammarAsync(), "GrammarProbe");
+    }
+
+    async Task ProbeGrammarAsync()
+    {
+        var service = _grammar;
+        if (service == null)
+            return;
+
+        _isProbingGrammar = true;
+        UpdateGrammarStatus();
+        try
+        {
+            await service.ProbeAsync();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            // A service replaced (and disposed) mid-probe surfaces here; the
+            // fresh instance already owns the status line by then.
+            Logger.Error($"[GrammarProbe] failed: {ex.Message}");
+        }
+        finally
+        {
+            _isProbingGrammar = false;
+            UpdateGrammarStatus();
+        }
+    }
+
+    // The Grammar tab dropped its status line to stay short, so the state now
+    // travels as a dot next to the switch; GrammarStatus keeps the full
+    // sentence for the dot's tooltip and the log.
+    enum GrammarState { Off, NoHost, Probing, Ready, Unchecked, Problem }
+    GrammarState _grammarState;
+
+    static SolidColorBrush FrozenBrush(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
+
+    static readonly Brush GrammarIdleBrush = FrozenBrush(Color.FromRgb(0x6A, 0x6A, 0x6A));
+    static readonly Brush GrammarReadyBrush = FrozenBrush(Color.FromRgb(0x3F, 0xAE, 0x65));
+    static readonly Brush GrammarProbingBrush = FrozenBrush(Color.FromRgb(0xC8, 0xA2, 0x4B));
+    static readonly Brush GrammarProblemBrush = FrozenBrush(Color.FromRgb(0xC9, 0x52, 0x5A));
+
+    public Brush GrammarStateBrush => _grammarState switch
+    {
+        GrammarState.Ready => GrammarReadyBrush,
+        GrammarState.Probing => GrammarProbingBrush,
+        GrammarState.Problem => GrammarProblemBrush,
+        _ => GrammarIdleBrush,
+    };
+
+    void UpdateGrammarStatus()
+    {
+        string text;
+        if (!_grammarEnabled)
+        {
+            _grammarState = GrammarState.Off;
+            text = "Grammar check off";
+        }
+        else if (_grammar == null)
+        {
+            _grammarState = GrammarState.NoHost;
+            text = "Set an API host to start checking";
+        }
+        else if (_isProbingGrammar)
+        {
+            _grammarState = GrammarState.Probing;
+            text = "Checking grammar API...";
+        }
+        else if (_grammar.DetectedModel != null)
+        {
+            _grammarState = GrammarState.Ready;
+            text = _grammar.DetectedModel == GrammarCheckService.FallbackModel
+                ? $"Grammar API ready ({GrammarCheckService.FallbackModel} model)"
+                : $"Grammar API ready (model: {_grammar.DetectedModel})";
+        }
+        else
+        {
+            _grammarState = _grammar.ProbeError == null ? GrammarState.Unchecked : GrammarState.Problem;
+            text = _grammar.ProbeError == null
+                ? "Grammar API not checked yet"
+                : $"Skipped: {_grammar.ProbeError}";
+        }
+
+        GrammarStatus = text;
+        OnPropertyChanged(nameof(GrammarStateBrush));
     }
 
     public string? LocalModelId => _state.LocalModelId;
@@ -261,6 +447,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _autoPaste = _state.AutoPaste;
         _minimizeToTray = _state.MinimizeToTray;
         _startInTray = _state.StartInTray;
+        _grammarEnabled = _state.GrammarCheckEnabled;
+        _grammarApiHost = _state.GrammarApiEndpoint;
+        _grammarApiKey = _state.GrammarApiKey;
+        _grammarEffort = _state.GrammarReasoningEffort;
+        RefreshGrammarService();
         SyncStartupEntry();
         _hotkeyEnabled = _state.HotkeyEnabled;
         _hotkeyVirtualKeyCode = _state.HotkeyVirtualKeyCode;
@@ -316,6 +507,12 @@ public class MainWindowViewModel : ViewModel, IDisposable
         StartInTray = settings.StartInTray;
         HotkeyEnabled = settings.HotkeyEnabled;
         HotkeyVirtualKeyCode = settings.HotkeyVirtualKeyCode;
+        // Host, key and effort first: enabling the check probes the endpoint,
+        // and that probe must not run against the previous settings.
+        GrammarApiHost = settings.GrammarApiHost;
+        GrammarApiKey = settings.GrammarApiKey;
+        GrammarEffort = settings.GrammarEffort;
+        GrammarEnabled = settings.GrammarEnabled;
 
         if (cpuModeChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForCpuMode");
@@ -609,7 +806,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
             if (!string.IsNullOrWhiteSpace(text))
             {
-                await ApplyTranscriptionSuccessAsync(text, ct);
+                var (final, grammarNote) = await ProofreadAsync(text, ct);
+                await ApplyTranscriptionSuccessAsync(final, ct, grammarNote);
             }
             else
             {
@@ -639,10 +837,50 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    // The optional second pass: hand the transcript to the configured chat
+    // model and paste what it returns instead. A missing, dead or confused
+    // proofreader must never cost the user their transcription, so every
+    // failure returns the original text plus a short note the info line shows
+    // next to "Copied and pasted".
+    async Task<(string text, string? grammarNote)> ProofreadAsync(string text, CancellationToken ct)
+    {
+        var service = _grammar;
+        if (!_grammarEnabled)
+            return (text, null);
+        if (service == null)
+            return (text, "no grammar API host set");
+
+        RecordingManager.InfoText = "Proofreading...";
+        try
+        {
+            var corrected = await service.CorrectAsync(text, ct);
+            if (!string.IsNullOrWhiteSpace(corrected))
+                return (corrected, null);
+
+            return (text, "grammar API unavailable");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            Logger.Error("[Grammar] request timed out; using the original text");
+            return (text, "grammar API answered too late");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[Grammar] failed: {ex.Message}");
+            return (text, "grammar check failed");
+        }
+    }
+
     // A usable transcript: copy it, paste it when the user asked for
     // auto-paste, then state exactly which of those steps happened, so the
-    // status line never claims a paste that failed.
-    async Task ApplyTranscriptionSuccessAsync(string text, CancellationToken ct)
+    // status line never claims a paste that failed. A skipped grammar pass is
+    // appended to that line: the text still arrived, and the user should know
+    // it went out unproofed.
+    async Task ApplyTranscriptionSuccessAsync(string text, CancellationToken ct, string? grammarNote = null)
     {
         var copied = TrySetClipboardText(text);
         bool pasted = false;
@@ -657,13 +895,16 @@ public class MainWindowViewModel : ViewModel, IDisposable
             pasteFailure = failure;
         }
 
+        var note = grammarNote == null ? "" : $" · {grammarNote}";
         RecordingManager.SetSuccess(text);
         if (!copied)
-            RecordingManager.InfoText = "Transcribed, but clipboard was unavailable";
+            RecordingManager.InfoText = "Transcribed, but clipboard was unavailable" + note;
         else if (pasted)
-            RecordingManager.InfoText = "Copied and pasted";
+            RecordingManager.InfoText = "Copied and pasted" + note;
         else if (_autoPaste)
-            RecordingManager.InfoText = $"Copied, but auto-paste failed ({pasteFailure})";
+            RecordingManager.InfoText = $"Copied, but auto-paste failed ({pasteFailure})" + note;
+        else if (note.Length > 0)
+            RecordingManager.InfoText = "Copied to clipboard" + note;
 
         NotificationSound.Play();
         await OffloadServerAfterSuccessAsync();
@@ -753,5 +994,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _keyboardHook?.Dispose();
         ServerManager.Dispose();
         RecordingManager.Dispose();
+        _grammar?.Dispose();
+        _grammar = null;
     }
 }

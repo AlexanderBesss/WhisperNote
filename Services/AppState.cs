@@ -66,6 +66,26 @@ public class AppState
         get => _settings.MicDeviceName;
         set { _settings.MicDeviceName = value; _settings.Save(); }
     }
+    public bool GrammarCheckEnabled
+    {
+        get => _settings.GrammarCheckEnabled;
+        set { _settings.GrammarCheckEnabled = value; _settings.Save(); }
+    }
+    public string GrammarApiEndpoint
+    {
+        get => _settings.GrammarApiEndpoint;
+        set { _settings.GrammarApiEndpoint = value; _settings.Save(); }
+    }
+    public string GrammarApiKey
+    {
+        get => _settings.GrammarApiKey;
+        set { _settings.GrammarApiKey = value; _settings.Save(); }
+    }
+    public string GrammarReasoningEffort
+    {
+        get => _settings.GrammarReasoningEffort;
+        set { _settings.GrammarReasoningEffort = value; _settings.Save(); }
+    }
 
     public AppState(AppSettings settings)
     {

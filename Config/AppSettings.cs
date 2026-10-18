@@ -36,6 +36,21 @@ public class AppSettings
     // numbers index a different device list and are dropped once on load.
     public bool MicDeviceNumberIsWasapi { get; set; }
 
+    // Opt-in second pass: the transcript is re-checked by a custom
+    // OpenAI-compatible chat endpoint. Off by default so nothing leaves the
+    // machine unasked; missing keys in older configs keep these defaults.
+    public bool GrammarCheckEnabled { get; set; }
+    // API root of the checker, e.g. "https://api.openai.com/v1" or
+    // "http://localhost:8082"; "/v1/models" and "/v1/chat/completions" are
+    // requested under it, and a bare "192.168.0.68:8080" is read as plain HTTP.
+    public string GrammarApiEndpoint { get; set; } = "";
+    // Stored in plain text, same as Providers[].ApiKey.
+    public string GrammarApiKey { get; set; } = "";
+    // How much thinking the checker is allowed: "minimal", "low", "medium" or
+    // "high", forwarded as the "reasoning_effort" chat parameter. Empty leaves
+    // it to the server, which is what a server without that support expects.
+    public string GrammarReasoningEffort { get; set; } = "";
+
     static string ConfigPath() => AppPaths.SettingsPath;
 
     public static AppSettings Load()

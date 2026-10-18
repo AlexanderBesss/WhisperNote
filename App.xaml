@@ -9,6 +9,7 @@
                 <ResourceDictionary Source="Styles/ToolTipStyle.xaml"/>
                 <ResourceDictionary Source="Styles/ButtonStyles.xaml"/>
                 <ResourceDictionary Source="Styles/ComboBoxStyle.xaml"/>
+                <ResourceDictionary Source="Styles/TextBoxStyle.xaml"/>
                 <ResourceDictionary Source="Styles/ScrollbarStyle.xaml"/>
                 <ResourceDictionary Source="Styles/ContextMenuStyle.xaml"/>
             </ResourceDictionary.MergedDictionaries>

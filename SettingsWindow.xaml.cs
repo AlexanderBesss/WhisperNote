@@ -18,22 +18,33 @@ public partial class SettingsWindow : Window
         _viewModel = new SettingsViewModel(mainViewModel);
         DataContext = _viewModel;
         PreviewKeyDown += SettingsWindow_PreviewKeyDown;
+        Closed += (_, _) => _viewModel.Detach();
     }
 
-    // Settings save on change, so closing never discards anything.
-    void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+    // Settings save on change, so closing never discards anything — except a
+    // text field still holding the keyboard, whose binding only commits when it
+    // loses focus. ClearFocus() flushes it before the window goes away.
+    void CloseButton_Click(object sender, RoutedEventArgs e) => CloseSettings();
+
+    void CloseSettings()
+    {
+        Keyboard.ClearFocus();
+        Close();
+    }
 
     void Tab_Checked(object sender, RoutedEventArgs e)
     {
         // Fires while InitializeComponent() builds the tab bar, before the
         // content panels exist.
-        if (PanelModel is null || PanelRecord is null || PanelOutput is null || PanelSystem is null)
+        if (PanelModel is null || PanelRecord is null || PanelOutput is null ||
+            PanelGrammar is null || PanelSystem is null)
             return;
 
         var tab = (string)((RadioButton)sender).Tag;
         PanelModel.Visibility = TabVisibility(tab == "model");
         PanelRecord.Visibility = TabVisibility(tab == "record");
         PanelOutput.Visibility = TabVisibility(tab == "output");
+        PanelGrammar.Visibility = TabVisibility(tab == "grammar");
         PanelSystem.Visibility = TabVisibility(tab == "system");
     }
 
@@ -46,7 +57,7 @@ public partial class SettingsWindow : Window
             return;
 
         e.Handled = true;
-        Close();
+        CloseSettings();
     }
 
     // Custom drag: DragMove() only moves this window and misbehaves inside

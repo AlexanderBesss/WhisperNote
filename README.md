@@ -7,7 +7,8 @@ Voice-to-text desktop app for Windows. Hold a key, speak, release — transcribe
 - **Hold-to-record** — Right Ctrl (default) to start/stop recording
 - **Auto-start server** — llama.cpp server starts on demand, stops after each request
 - **Local GGUF models** — llama.cpp runs the selected model entirely on this machine
-- **Grammar correction** — LLM cleans up speech into proper English
+- **Grammar correction** — the transcription prompt already turns speech into proper English
+- **Grammar check (optional)** — an extra pass over the transcript through your own LLM endpoint
 - **VRAM offload** — stop server after each request to free GPU memory
 - **Run on startup** — optional Windows auto-start
 - **System tray** — minimize to the notification area and keep the hotkey active
@@ -71,6 +72,29 @@ and are synced into `publish/` by `build.ps1`; `cuda12/update-cuda12.ps1` and
 ## Configuration
 
 Edit `whispernote.json` in the application folder to add providers, change the hotkey, or toggle auto-start.
+
+### Grammar check
+
+The **Grammar** tab adds an optional second pass: recording → transcript → your LLM rewrites it →
+the **corrected** text is what gets copied and pasted. Fill in the **API host** of any OpenAI-compatible
+server (`https://api.openai.com/v1`, `http://localhost:8082`, an Ollama or vLLM address) and, when the
+server needs one, the **API key**; there is no model field because WhisperNote reads the model the server
+reports for itself from `/v1/models` and shows it under the fields — that same request is how it knows
+whether the endpoint is reachable at all.
+
+The pass is attempted **once** per recording. A host that does not answer, a rejected key or a model that
+answers instead of correcting leaves the original transcript untouched and says so in the main window
+("Copied and pasted · grammar API unavailable"). In the Grammar tab the dot next to the switch carries the
+same state — grey idle, amber checking, green reachable, red skipped — and its tooltip spells out the
+reason. A failed probe is not retried for a minute, so an offline endpoint never stalls your dictation.
+The API key is stored in plain text in `whispernote.json`.
+
+**Thinking effort** decides how much the model may think before answering, forwarded as the standard
+`reasoning_effort` chat parameter: **Server default** sends no parameter at all (what an endpoint without
+that support expects), or **Off**, **Low**, **Medium**, **High** — `Off` sends `minimal`, the lowest value
+servers in this family accept. On a reasoning model this is the difference between roughly half a second
+and several seconds per correction, and proofreading rarely needs the extra thinking. An unrecognised
+value in `whispernote.json` is treated as "Server default".
 
 By default WhisperNote **starts hidden in the notification area** (toggle **Start in tray** in Settings).
 While a recording is active — hotkey-held or button-started — a small dark pill appears at the bottom of the
