@@ -869,7 +869,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     async Task ApplyTranscriptionSuccessAsync(string text, CancellationToken ct, string? grammarNote = null)
     {
-        var copied = TrySetClipboardText(text);
+        var copied = await TrySetClipboardTextAsync(text);
         bool pasted = false;
         string? pasteFailure = null;
 
@@ -935,17 +935,33 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    static bool TrySetClipboardText(string text)
+    const int ClipboardRetryAttempts = 5;
+    const int ClipboardRetryDelayMs = 100;
+    static readonly int ClipbrdECantOpen = unchecked((int)0x800401D0);
+
+    static async Task<bool> TrySetClipboardTextAsync(string text)
     {
-        try
+        // The clipboard is a system-wide lock held by whichever process opened it.
+        // CLIPBRD_E_CANT_OPEN means somebody (Ctrl+V in the target app, Win+V history,
+        // clipboard managers, RDP) is holding it right now; WPF tries once and gives up,
+        // so retry briefly as Microsoft's docs recommend. Other errors are not transient.
+        for (var attempt = 1; ; attempt++)
         {
-            Clipboard.SetText(text);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"Clipboard.SetText failed: {ex.Message}");
-            return false;
+            try
+            {
+                Clipboard.SetText(text);
+                return true;
+            }
+            catch (Exception ex) when (ex.HResult == ClipbrdECantOpen && attempt < ClipboardRetryAttempts)
+            {
+                Logger.Error($"Clipboard.SetText attempt {attempt} hit a locked clipboard ({ex.Message}); retrying");
+                await Task.Delay(ClipboardRetryDelayMs);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"Clipboard.SetText failed: {ex.Message}");
+                return false;
+            }
         }
     }
 
