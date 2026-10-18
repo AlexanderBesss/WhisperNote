@@ -145,14 +145,14 @@
             <Border Grid.Row="1" Background="#1E1E1E" BorderBrush="#353535"
                     BorderThickness="1" CornerRadius="9" Padding="3" Margin="0,0,0,10">
                 <UniformGrid Columns="5">
+                    <RadioButton x:Name="TabOutput" Style="{StaticResource PillTab}"
+                                 Content="General" GroupName="SettingsTabs" Tag="output"
+                                 IsChecked="True" Checked="Tab_Checked"/>
                     <RadioButton x:Name="TabModel" Style="{StaticResource PillTab}"
                                  Content="Model" GroupName="SettingsTabs" Tag="model"
-                                 IsChecked="True" Checked="Tab_Checked"/>
+                                 Checked="Tab_Checked"/>
                     <RadioButton x:Name="TabRecord" Style="{StaticResource PillTab}"
                                  Content="Hotkey" GroupName="SettingsTabs" Tag="record"
-                                 Checked="Tab_Checked"/>
-                    <RadioButton x:Name="TabOutput" Style="{StaticResource PillTab}"
-                                 Content="Engine" GroupName="SettingsTabs" Tag="output"
                                  Checked="Tab_Checked"/>
                     <RadioButton x:Name="TabGrammar" Style="{StaticResource PillTab}"
                                  Content="Grammar" GroupName="SettingsTabs" Tag="grammar"
@@ -164,7 +164,8 @@
             </Border>
 
             <Grid Grid.Row="2" VerticalAlignment="Center">
-                <Border x:Name="PanelModel" Style="{StaticResource SettingsCard}">
+                <Border x:Name="PanelModel" Style="{StaticResource SettingsCard}"
+                        Visibility="Collapsed">
                     <StackPanel>
                         <TextBlock Text="Local transcription model" Style="{StaticResource FieldLabel}"/>
                         <ComboBox ItemsSource="{Binding LocalModelOptions}"
@@ -207,8 +208,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="PanelOutput" Style="{StaticResource SettingsCard}"
-                        Visibility="Collapsed">
+                <Border x:Name="PanelOutput" Style="{StaticResource SettingsCard}">
                     <StackPanel>
                         <Grid Style="{StaticResource SettingRow}">
                             <Grid.ColumnDefinitions>
