@@ -56,6 +56,10 @@ public class RecordingStateManager : ViewModel
 
     public int ChannelCount => _recorder.ChannelCount;
 
+    // The mic the last capture actually opened, so a failure message can name
+    // the device that produced the silence.
+    public string? MicrophoneName => _recorder.LastDeviceName;
+
     // -1 means "system default"; forwarded to the recorder for the next StartRecording.
     public void SetMicDevice(int deviceNumber, string? deviceName)
     {

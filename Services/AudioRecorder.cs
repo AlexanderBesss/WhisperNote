@@ -65,6 +65,12 @@ public class AudioRecorder : IDisposable
         set => SetDevicePreference(ref _preferredDeviceName, value);
     }
 
+    // The mic the last capture actually opened. Naming it in a failure message
+    // is what makes a bad recording diagnosable: the default endpoint changes
+    // by itself when a headset is unplugged, and the device Windows picks next
+    // often hears the room far worse.
+    public string? LastDeviceName { get; private set; }
+
     // Both preferred-device setters share the same pattern: ignore unchanged
     // values, otherwise remember the new one and mark the capture stale so the
     // next EnsureCapture rebuilds against it.
@@ -219,6 +225,7 @@ public class AudioRecorder : IDisposable
         _captureDirty = false;
 
         _device = SelectDevice();
+        LastDeviceName = _device.FriendlyName;
         Logger.Info($"Using mic: \"{_device.FriendlyName}\"");
         _capture = new WasapiCapture(_device);
         _inputFormat = _capture.WaveFormat;
@@ -321,6 +328,10 @@ public class AudioRecorder : IDisposable
             return;
         _captureDiedException = e.Exception;
         _captureDied = true;
+        // A client whose audio engine died (0x88890004 after the default
+        // endpoint changed) can never produce samples again, so it must not be
+        // handed to the next recording.
+        _captureDirty = true;
         Logger.Error($"Capture died unexpectedly: {e.Exception.Message}");
     }
 

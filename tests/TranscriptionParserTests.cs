@@ -83,4 +83,41 @@ public class TranscriptionParserTests
         Assert.Null(TranscriptionParser.SalvageUnformatted("not json"));
         Assert.Null(TranscriptionParser.SalvageUnformatted(null));
     }
+
+    [Fact]
+    public void SalvageRefusesAChatStyleAnswerInAnotherScript()
+    {
+        Assert.Null(TranscriptionParser.SalvageUnformatted("""{"text":"language Chinese. 啊哈哈！"}"""));
+    }
+
+    [Fact]
+    public void FailureNamesWhyTheAnswerWasRejected()
+    {
+        // "Nothing happened" needs a different message for a recording that
+        // holds no speech, an answer in another language, and a model that
+        // broke its own output format.
+        Assert.Equal(AsrFailure.NoSpeech, Classify("""{"text":"language None<asr_text>"}"""));
+        Assert.Equal(AsrFailure.NoSpeech, Classify("""{"text":"language English<asr_text>"}"""));
+        Assert.Equal(AsrFailure.ForeignLanguage, Classify("""{"text":"language Chinese<asr_text>啊哈哈！</asr_text>"}"""));
+        Assert.Equal(AsrFailure.Malformed, Classify("""{"text":"language English. Sure, here you go."}"""));
+        Assert.Equal(AsrFailure.None, Classify("""{"text":"language English<asr_text>Run the scan.</asr_text>"}"""));
+    }
+
+    static AsrFailure Classify(string raw)
+    {
+        TranscriptionParser.Parse(raw, dedicatedAsr: true, out var failure);
+        return failure;
+    }
+
+    [Fact]
+    public void LatinTranscriptsSurviveTheScriptGuard()
+    {
+        // Accents and symbols are not another language; only an answer built of
+        // non-Latin letters is.
+        var text = TranscriptionParser.Parse(
+            """{"text":"language English<asr_text>Café résumé → done.</asr_text>"}""",
+            dedicatedAsr: true);
+
+        Assert.Equal("Café résumé → done.", text);
+    }
 }

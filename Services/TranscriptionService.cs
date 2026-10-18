@@ -37,6 +37,18 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
     const int TruncateMaxLen = 300;
     const int HealthCheckTimeoutSeconds = 2;
     const int HttpTimeoutMinutes = 5;
+    // Qwen3-ASR picks the language itself, and for a hum, a throat-clear or a
+    // clipped syllable it picks Chinese: measured on this machine, a low-level
+    // vocalisation answered "language Chinese<asr_text>啊哈哈！". llama.cpp
+    // forwards the `language` field, and the same audio with en answered
+    // "Ahaha." instead. The whole app dictates and cleans up in English.
+    const string AsrLanguage = "en";
+
+    // Surfaced to the UI after a failed transcription so the message can name
+    // the reason (no speech heard / wrong language / format drift) instead of
+    // blaming the model for all three. Written by Transcribe, read after it.
+    public AsrFailure LastFailure { get; private set; }
+        = AsrFailure.None;
 
     // Surfaced in the UI when a request stalls, so a timeout is not mistaken
     // for the user's own cancellation.
@@ -90,6 +102,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
         var wavBytes = WavBuilder.Build(pcm);
         var modelName = _provider.Model;
+        LastFailure = AsrFailure.None;
 
         var durationSec = pcm.Length / (double)(AppConfig.SampleRate * 1 * AppConfig.BitsPerSample / 8);
         Logger.Info($"Model: {modelName}, WAV: {wavBytes.Length} bytes, duration: {durationSec:F2}s");
@@ -114,7 +127,13 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         // trained on, so omit the prompt for them and let the server default win.
         var dedicatedAsr = LocalModels.IsDedicatedAsr(modelName);
         if (!dedicatedAsr)
+        {
             content.Add(new StringContent(SystemPrompt), "prompt");
+        }
+        else
+        {
+            content.Add(new StringContent(AsrLanguage), "language");
+        }
 
         content.Add(new StringContent(dedicatedAsr ? DedicatedAsrTemperature : TranscriptionTemperature), "temperature");
         content.Add(new StringContent(AppConfig.MaxTokens.ToString()), "max_tokens");
@@ -127,6 +146,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         byte[] wavBytes, string modelName, bool dedicatedAsr, CancellationToken ct)
     {
         string? lastRaw = null;
+        var lastFailure = AsrFailure.Malformed;
 
         for (int attempt = 1; attempt <= MaxTranscriptAttempts; attempt++)
         {
@@ -146,9 +166,26 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
                 EnsureSuccess(response, raw);
 
-                var text = TranscriptionParser.Parse(raw, dedicatedAsr);
+                var text = TranscriptionParser.Parse(raw, dedicatedAsr, out var failure);
                 if (!string.IsNullOrWhiteSpace(text))
+                {
+                    LastFailure = AsrFailure.None;
                     return text;
+                }
+
+                lastFailure = failure;
+
+                // The model heard the recording and said there is no speech in
+                // it, or answered in a language the user is not dictating in:
+                // decoding is greedy, so the two retries that used to follow
+                // posted the same bytes and got the same answer 250 ms later.
+                if (failure is AsrFailure.NoSpeech
+                    or AsrFailure.ForeignLanguage)
+                {
+                    Logger.Info($"Attempt {attempt}: {DescribeFailure(failure)}; not retrying");
+                    LastFailure = failure;
+                    return null;
+                }
 
                 if (attempt < MaxTranscriptAttempts)
                 {
@@ -160,13 +197,24 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
                 // Every attempt failed to produce a formatted transcript: keep a
                 // chat-style answer if the model gave one, instead of reporting
                 // "no speech" for audio that clearly contained speech.
-                return TranscriptionParser.SalvageUnformatted(raw);
+                var salvaged = TranscriptionParser.SalvageUnformatted(raw);
+                LastFailure = salvaged == null ? failure : AsrFailure.None;
+                return salvaged;
             }
         }
 
         // Only reachable when every attempt was rejected before a parse decision.
-        return TranscriptionParser.SalvageUnformatted(lastRaw);
+        var fallback = TranscriptionParser.SalvageUnformatted(lastRaw);
+        LastFailure = fallback == null ? lastFailure : AsrFailure.None;
+        return fallback;
     }
+
+    static string DescribeFailure(AsrFailure failure) => failure switch
+    {
+        AsrFailure.NoSpeech => "the model heard no speech",
+        AsrFailure.ForeignLanguage => "the model answered in a non-Latin script",
+        _ => "unusable answer format"
+    };
 
     // Posts the form and reads the body; both the initial attempt and the
     // retry share this path.

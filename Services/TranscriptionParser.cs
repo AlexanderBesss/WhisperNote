@@ -7,6 +7,18 @@ using System.Text.RegularExpressions;
 
 namespace WhisperNote.Services;
 
+// Why an ASR answer was thrown away. The model can hear the recording and
+// still refuse to transcribe it ("language None"), answer in a script the user
+// is not dictating in, or drift out of its output format; these need different
+// words in the UI and different retry decisions.
+public enum AsrFailure
+{
+    None,
+    NoSpeech,
+    ForeignLanguage,
+    Malformed
+}
+
 static class TranscriptionParser
 {
     const string AsrTextTag = "<asr_text>";
@@ -20,11 +32,17 @@ static class TranscriptionParser
     // output format is "language X<asr_text>...</asr_text>". A response without
     // the <asr_text> section (e.g. just "language None") means the model failed
     // to transcribe, so it must not be pasted as if it were text.
-    public static string? Parse(string? raw, bool dedicatedAsr = false)
+    public static string? Parse(string? raw, bool dedicatedAsr = false) =>
+        Parse(raw, dedicatedAsr, out _);
+
+    public static string? Parse(string? raw, bool dedicatedAsr, out AsrFailure failure)
     {
+        failure = AsrFailure.None;
+
         if (string.IsNullOrWhiteSpace(raw))
         {
             Logger.Error("Empty response from server");
+            failure = AsrFailure.Malformed;
             return null;
         }
 
@@ -35,27 +53,48 @@ static class TranscriptionParser
 
             if (dedicatedAsr && (text == null || !text.Contains(AsrTextTag, StringComparison.Ordinal)))
             {
-                Logger.Warn($"ASR model returned no <asr_text> section: {text}");
+                // Either the model explicitly reported "language None", or it
+                // answered with nothing at all: both say the recording holds no
+                // speech, and greedy decoding repeats that on every retry.
+                failure = string.IsNullOrWhiteSpace(text) || DeclaresNoSpeech(text)
+                    ? AsrFailure.NoSpeech
+                    : AsrFailure.Malformed;
+                Logger.Warn(failure == AsrFailure.NoSpeech
+                    ? $"ASR model heard no speech in the recording: {text}"
+                    : $"ASR model returned no <asr_text> section: {text}");
                 return null;
             }
 
             text = CleanAsrOutput(text);
 
-            // Dedicated ASR models transcribe numbers as words and cannot be
-            // steered by the transcription prompt, so normalize them here.
-            if (dedicatedAsr && text != null)
-                text = NumberNormalizer.Normalize(text);
-
+            // A bare "language English<asr_text>" is the model saying it heard
+            // nothing; the answer is deterministic at temperature 0, so
+            // re-sending the same audio cannot help.
             if (string.IsNullOrWhiteSpace(text))
             {
                 Logger.Info("Server returned empty text");
+                failure = dedicatedAsr ? AsrFailure.NoSpeech : AsrFailure.Malformed;
                 return null;
             }
+
+            if (dedicatedAsr && IsForeignScript(text))
+            {
+                failure = AsrFailure.ForeignLanguage;
+                Logger.Warn($"Discarding an answer in a non-Latin script: {text}");
+                return null;
+            }
+
+            // Dedicated ASR models transcribe numbers as words and cannot be
+            // steered by the transcription prompt, so normalize them here.
+            if (dedicatedAsr)
+                text = NumberNormalizer.Normalize(text);
+
             return RemoveRepetitions(text);
         }
         catch (Exception ex)
         {
             Logger.Error($"JSON parse error: {ex.Message}");
+            failure = AsrFailure.Malformed;
             return null;
         }
     }
@@ -105,6 +144,12 @@ static class TranscriptionParser
             if (string.IsNullOrWhiteSpace(text))
                 return null;
 
+            if (IsForeignScript(text))
+            {
+                Logger.Warn($"Discarding an unformatted non-Latin answer: {text}");
+                return null;
+            }
+
             Logger.Warn($"Recovering an unformatted ASR answer: {text}");
             return RemoveRepetitions(text);
         }
@@ -113,6 +158,34 @@ static class TranscriptionParser
             Logger.Error($"JSON parse error while salvaging: {ex.Message}");
             return null;
         }
+    }
+
+    // "language None" is Qwen3-ASR's own way of reporting that the recording
+    // holds no speech: hums, clicks and room tone all answer with it (measured
+    // against the running server), so the retries that used to follow were
+    // three identical requests buying nothing.
+    static bool DeclaresNoSpeech(string? text) =>
+        text != null && Regex.IsMatch(text, @"^\s*language\s+(none|no speech)\b", RegexOptions.IgnoreCase);
+
+    // A dedicated ASR model answers in whatever language it guesses, and it
+    // guesses wrong on audio that is not clean speech: a 1.4 s low-level
+    // vocalisation came back as "language Chinese<asr_text>啊哈哈！" and was
+    // pasted into the user's document. Requests now pin language=en, so an
+    // answer built mostly of non-Latin letters is still the model guessing.
+    internal static bool IsForeignScript(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return false;
+
+        int latin = 0, other = 0;
+        foreach (var c in text)
+        {
+            if (!char.IsLetter(c))
+                continue;
+            if (c < 0x0300) latin++; else other++;
+        }
+
+        return other > 0 && (latin == 0 || other > latin);
     }
 
     static string? CleanAsrOutput(string? text)

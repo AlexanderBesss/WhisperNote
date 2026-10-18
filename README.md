@@ -96,6 +96,24 @@ servers in this family accept. On a reasoning model this is the difference betwe
 and several seconds per correction, and proofreading rarely needs the extra thinking. An unrecognised
 value in `whispernote.json` is treated as "Server default".
 
+### When a recording produces nothing
+
+A dedicated ASR model decides for itself whether the audio contains speech, and for a hum, a click or a
+half-word it does not stay silent: probed on this machine, a low-level vocalisation came back as
+`language Chinese<asr_text>啊哈哈！`. Transcription requests therefore pin `language=en`, and an answer
+built of non-Latin letters is dropped rather than pasted into your document.
+
+The three ways a recording can still produce nothing each get their own message in the window — **"Did not
+hear speech through “Mic name” — speak up or move closer"** (the mic heard a hum, room tone or nothing),
+**"The model answered in another language — nothing was pasted"** and **"Model returned no transcription —
+try again"** — instead of the pill quietly returning to idle. A very short tap on the hotkey is answered
+immediately ("hold the key while speaking"), and an answer of "no speech" is not re-sent three times:
+decoding is greedy, so repeating the same audio only repeats the same answer.
+
+Audio is only rejected before the model when the capture is genuinely dead (peak under 80). Quiet speech
+peaks at 250–400 and transcribes word for word, so the older 500-peak gate that discarded usable
+recordings is gone.
+
 By default WhisperNote **starts hidden in the notification area** (toggle **Start in tray** in Settings).
 While a recording is active — hotkey-held or button-started — a small dark pill appears at the bottom of the
 screen with a pulsing red dot and "Recording…"; it hides automatically when the recording stops. The pill

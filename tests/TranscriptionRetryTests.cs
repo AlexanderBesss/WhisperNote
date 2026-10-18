@@ -69,16 +69,59 @@ public class TranscriptionRetryTests
         Assert.Equal(2, handler.RequestBodies.Count);
     }
 
+    // Probing the running model with silence, a hum, a click and room noise
+    // always answers "language None" or an empty <asr_text>, and decoding is
+    // greedy: the three identical requests the old code fired 250 ms apart
+    // (19 such triples in one day of logs) could only repeat that answer.
     [Fact]
-    public async Task EmptyAnswerResendsTheSameAudio()
+    public async Task EmptyAnswerIsNotResentBecauseTheModelHeardNoSpeech()
     {
-        var handler = new StubHandler("""{"text":""}""", Formatted);
+        var handler = new StubHandler("""{"text":""}""");
         using var service = new TranscriptionService(LocalProvider(), handler);
 
         var text = await service.Transcribe(new byte[3200]);
 
-        Assert.Equal("Apply small fixes.", text);
-        Assert.Equal(2, handler.RequestBodies.Count);
+        Assert.Null(text);
+        Assert.Single(handler.RequestBodies);
+        Assert.Equal(AsrFailure.NoSpeech, service.LastFailure);
+    }
+
+    [Fact]
+    public async Task ExplicitNoSpeechAnswerIsNotResent()
+    {
+        var handler = new StubHandler("""{"text":"language None<asr_text>"}""");
+        using var service = new TranscriptionService(LocalProvider(), handler);
+
+        Assert.Null(await service.Transcribe(new byte[3200]));
+
+        Assert.Single(handler.RequestBodies);
+        Assert.Equal(AsrFailure.NoSpeech, service.LastFailure);
+    }
+
+    // Measured against the running model: a 1.4 s low-level vocalisation
+    // answered "language Chinese<asr_text>啊哈哈！", which used to be pasted
+    // into the user's document.
+    [Fact]
+    public async Task AnswerInAnotherScriptIsDroppedInsteadOfPasted()
+    {
+        var handler = new StubHandler("""{"text":"language Chinese<asr_text>啊哈哈！</asr_text>"}""");
+        using var service = new TranscriptionService(LocalProvider(), handler);
+
+        Assert.Null(await service.Transcribe(new byte[3200]));
+
+        Assert.Single(handler.RequestBodies);
+        Assert.Equal(AsrFailure.ForeignLanguage, service.LastFailure);
+    }
+
+    [Fact]
+    public async Task DedicatedAsrRequestPinsTheSpokenLanguage()
+    {
+        var handler = new StubHandler(Formatted);
+        using var service = new TranscriptionService(LocalProvider(), handler);
+
+        await service.Transcribe(new byte[3200]);
+
+        Assert.Equal("en", FormValue(handler.RequestBodies[0], "language"));
     }
 
     [Fact]
@@ -101,7 +144,8 @@ public class TranscriptionRetryTests
         using var service = new TranscriptionService(LocalProvider(), handler);
 
         Assert.Null(await service.Transcribe(new byte[3200]));
-        Assert.Equal(3, handler.RequestBodies.Count);
+        Assert.Equal(AsrFailure.NoSpeech, service.LastFailure);
+        Assert.Single(handler.RequestBodies);
     }
 
     [Fact]

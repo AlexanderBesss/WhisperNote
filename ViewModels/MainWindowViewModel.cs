@@ -701,8 +701,12 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             Logger.Error($"[{context}] exception: {ex.Message}");
             RecordingManager.Reset();
-            if (!string.IsNullOrEmpty(failureInfo))
-                RecordingManager.InfoText = failureInfo;
+            // The recorder states the actual cause ("capture device
+            // disconnected"); the caller-supplied fallback only says which
+            // operation failed, which leaves the user guessing.
+            var info = !string.IsNullOrWhiteSpace(ex.Message) ? ex.Message : failureInfo;
+            if (!string.IsNullOrEmpty(info))
+                RecordingManager.InfoText = info;
         }
         finally
         {
@@ -723,23 +727,41 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
+    // A tap on the hold-to-talk key: the log shows recordings of 0.1-0.3 s
+    // (the pill flashes and nothing ever appears). Below this the audio cannot
+    // contain a word, so it is answered on the spot instead of costing a model
+    // round trip and three retries.
+    const double MinUsefulRecordingSeconds = 0.25;
+
+    // Named in failure messages: the default endpoint moves by itself when a
+    // headset is unplugged, and "check the mic" is only actionable once the
+    // message says which mic was used.
+    string MicLabel => RecordingManager.MicrophoneName is { Length: > 0 } name
+        ? $"\u201c{name}\u201d"
+        : "the selected mic";
+
     async Task ProcessAudio(byte[] pcm)
     {
         if (pcm.Length == 0)
         {
             Logger.Warn("Verdict: the capture produced no audio at all");
-            ShowFailure("Microphone captured nothing — check the mic or pick another one");
+            ShowFailure($"Microphone captured nothing — check {MicLabel}");
+            return;
+        }
+
+        var durationSec = pcm.Length / (double)(AppConfig.SampleRate * AppConfig.BitsPerSample / 8);
+        if (durationSec < MinUsefulRecordingSeconds)
+        {
+            Logger.Warn($"Verdict: recording too short ({durationSec:F2}s)");
+            ShowFailure("Recording was too short — hold the key while speaking");
             return;
         }
 
         var maxAmplitude = AudioProcessor.GetMaxAmplitude(pcm);
-        if (maxAmplitude < AudioProcessor.SilenceThreshold)
+        if (maxAmplitude < AudioProcessor.SilentPeakFloor)
         {
-            // Near-silence must not reach the model: Qwen3-ASR invents a
-            // sentence for it (measured: amplitude 1 -> "The two men were in a
-            // hurry.") and the app pastes that into the user's document.
-            Logger.Warn($"Verdict: recording is silent (max amplitude {maxAmplitude})");
-            ShowFailure("No clear audio captured — speak closer to the mic");
+            Logger.Warn($"Verdict: no signal from {MicLabel} (peak {maxAmplitude})");
+            ShowFailure($"Microphone got no signal — check {MicLabel}");
             return;
         }
 
@@ -812,10 +834,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
             else
             {
                 // The audio was real and the request succeeded, but the model
-                // still gave nothing usable after the retries. Say which stage
-                // failed instead of silently dropping back to Ready, which
+                // still gave nothing usable. Say which stage failed and what
+                // it heard, instead of silently dropping back to Ready, which
                 // looks exactly like a lost request.
-                ShowFailure("Model returned no transcription — try again");
+                ShowFailure(DescribeTranscriptionFailure(ServerManager.LastTranscriptionFailure));
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -836,6 +858,20 @@ public class MainWindowViewModel : ViewModel, IDisposable
             ShowFailure(ex.Message);
         }
     }
+
+    // "Nothing happened" has three different causes once the model is the one
+    // deciding whether there was speech: the recording held no speech (mic
+    // problem), the model answered in a language the user is not dictating in
+    // (model problem), or it broke its output format (transient). Each needs
+    // its own sentence, otherwise every failure reads as a lost request.
+    string DescribeTranscriptionFailure(AsrFailure failure) => failure switch
+    {
+        AsrFailure.NoSpeech =>
+            $"Did not hear speech through {MicLabel} — speak up or move closer",
+        AsrFailure.ForeignLanguage =>
+            "The model answered in another language — nothing was pasted",
+        _ => "Model returned no transcription — try again"
+    };
 
     // The optional second pass: hand the transcript to the configured chat
     // model and paste what it returns instead. A missing, dead or confused
