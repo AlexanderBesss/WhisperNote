@@ -106,7 +106,8 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName is nameof(ServerStateManager.Status)
             or nameof(RecordingStateManager.IsRecording)
-            or nameof(RecordingStateManager.IsProcessing))
+            or nameof(RecordingStateManager.IsProcessing)
+            or nameof(RecordingStateManager.QueuedCount))
             UpdateTrayState();
     }
 
@@ -132,10 +133,14 @@ public partial class MainWindow : Window
             _overlay.HideRecording();
     }
 
-    string TrayTooltip() =>
-        _viewModel.RecordingManager.IsRecording
-            ? "WhisperNote · Recording"
-            : $"WhisperNote · {_viewModel.ServerManager.Status.Message}";
+    string TrayTooltip()
+    {
+        var recording = _viewModel.RecordingManager;
+        var waiting = recording.QueuedCount > 0 ? $" · {recording.QueuedCount} waiting" : "";
+        return recording.IsRecording
+            ? $"WhisperNote · Recording{waiting}"
+            : $"WhisperNote · {_viewModel.ServerManager.Status.Message}{waiting}";
+    }
 
     void Window_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {

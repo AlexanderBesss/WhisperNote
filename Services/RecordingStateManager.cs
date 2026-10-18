@@ -4,34 +4,44 @@ using WhisperNote.ViewModels;
 
 namespace WhisperNote.Services;
 
-public enum RecordingState
+public enum RecordingResult
 {
-    Idle,
-    Recording,
-    Processing,
+    None,
     Success,
     Error
 }
 
+// What the pill and the overlay show. Recording and processing are independent:
+// the user can already be recording the next clip while the previous one is
+// being transcribed, so both are true at the same time and both icons light up.
 public class RecordingStateManager : ViewModel
 {
     readonly AudioRecorder _recorder;
 
-    RecordingState _state = RecordingState.Idle;
-    public RecordingState State
-    {
-        get => _state;
-        private set
-        {
-            SetProperty(ref _state, value);
-            OnPropertyChanged(nameof(IsRecording));
-            OnPropertyChanged(nameof(IsProcessing));
-        }
-    }
+    bool _isCapturing;
+    bool _queueBusy;
+    int _queuedCount;
+    int _queueOutstanding;
 
-    public bool IsRecording => State == RecordingState.Recording;
-    public bool IsProcessing => State == RecordingState.Processing;
-    public bool CanStart => State is RecordingState.Idle or RecordingState.Success or RecordingState.Error;
+    string _hotkeyName = "";
+    bool _captureFromHotkey;
+
+    RecordingResult _result = RecordingResult.None;
+    string _resultText = "";
+
+    public bool IsRecording => _isCapturing;
+
+    // True while a job is running or a job is still waiting in the queue.
+    public bool IsProcessing => _queueBusy;
+
+    public int QueuedCount => _queuedCount;
+
+    // A new clip may be recorded while the previous ones are still processing;
+    // only a running capture or a full queue blocks it.
+    public bool CanStartRecording =>
+        !_isCapturing && _queueOutstanding < TranscriptionQueue.Capacity;
+
+    public RecordingResult Result => _result;
 
     string _statusText = "Ready";
     public string StatusText
@@ -72,111 +82,135 @@ public class RecordingStateManager : ViewModel
 
     public async Task StartRecording(bool isHotkey = false, string? hotkeyName = null)
     {
-        if (!CanStart)
-            throw new InvalidOperationException($"Cannot start recording in state {_state}");
+        if (!CanStartRecording)
+            throw new InvalidOperationException(
+                _isCapturing ? "Already recording" : "The processing queue is full");
 
         Logger.Info(isHotkey
             ? $"Recording requested by hotkey{(string.IsNullOrEmpty(hotkeyName) ? "" : $" ({hotkeyName})")}"
             : "Recording requested from the window");
 
-        await _recorder.StartAsync();
-        TransitionTo(RecordingState.Recording, isHotkey, hotkeyName: hotkeyName);
+        _captureFromHotkey = isHotkey;
+        _hotkeyName = hotkeyName ?? "";
+
+        // Set before the hardware start so a second press during the 350-650 ms
+        // mic wake is ignored instead of double-starting the capture.
+        SetCapturing(true);
+        try
+        {
+            await _recorder.StartAsync();
+        }
+        catch
+        {
+            SetCapturing(false);
+            throw;
+        }
     }
 
     public Task WarmUpMic() => _recorder.WarmUpAsync();
 
     public async Task<byte[]> StopRecording()
     {
-        if (State != RecordingState.Recording)
+        if (!_isCapturing)
             return Array.Empty<byte>();
 
-        var pcm = await _recorder.StopAsync();
-        TransitionTo(RecordingState.Processing);
-        return pcm;
+        try
+        {
+            return await _recorder.StopAsync();
+        }
+        finally
+        {
+            SetCapturing(false);
+        }
     }
 
-    public bool SetSuccess(string text)
+    // Mirrors the queue's counters so the pill/overlay can count down what is left.
+    public void SetQueueState(int waitingCount, int outstandingCount)
     {
-        if (State != RecordingState.Processing)
-            return false;
-
-        TransitionTo(RecordingState.Success, text: text);
-        return true;
+        _queuedCount = waitingCount;
+        _queueBusy = outstandingCount > 0;
+        _queueOutstanding = outstandingCount;
+        RaiseState();
     }
 
-    public bool SetError(string message)
+    public void ReportSuccess(string text)
     {
-        if (State != RecordingState.Processing)
-            return false;
-
-        TransitionTo(RecordingState.Error, errorMsg: message);
-        return true;
+        _result = RecordingResult.Success;
+        _resultText = text;
+        InfoText = "Copied to clipboard";
+        RaiseState();
     }
 
-    public bool Cancel()
+    public void ReportError(string message)
     {
-        if (State != RecordingState.Processing)
-            return false;
-
-        TransitionTo(RecordingState.Idle);
-        return true;
+        _result = RecordingResult.Error;
+        InfoText = message;
+        RaiseState();
     }
 
     public void Reset()
     {
-        TransitionTo(RecordingState.Idle);
+        _result = RecordingResult.None;
+        _resultText = "";
+        InfoText = "";
+        RaiseState();
     }
 
-    void TransitionTo(RecordingState next, bool isHotkey = false, string? text = null, string? errorMsg = null, string? hotkeyName = null)
+    // Internal so the display model can be driven in tests without a microphone.
+    internal void SetCapturing(bool value)
     {
-        var valid = (State, next) switch
+        if (_isCapturing == value)
+            return;
+
+        _isCapturing = value;
+        if (value)
+            InfoText = _captureFromHotkey
+                ? $"Release {(_hotkeyName.Length > 0 ? _hotkeyName : "hotkey")} to stop"
+                : "Press button to stop";
+
+        RaiseState();
+    }
+
+    void RaiseState()
+    {
+        RefreshStatus();
+        OnPropertyChanged(nameof(IsRecording));
+        OnPropertyChanged(nameof(IsProcessing));
+        OnPropertyChanged(nameof(QueuedCount));
+        OnPropertyChanged(nameof(CanStartRecording));
+        OnPropertyChanged(nameof(Result));
+    }
+
+    void RefreshStatus()
+    {
+        // The newest thing the user is doing wins the single pill line; the
+        // overlay shows both icons, so it never needs to hide one of them.
+        var waiting = _queuedCount > 0 ? $" · {_queuedCount} waiting" : "";
+
+        if (_isCapturing)
         {
-            (RecordingState.Idle, RecordingState.Recording) => true,
-            (RecordingState.Recording, RecordingState.Idle) => true,
-            (RecordingState.Recording, RecordingState.Processing) => true,
-            (RecordingState.Processing, RecordingState.Success) => true,
-            (RecordingState.Processing, RecordingState.Error) => true,
-            (RecordingState.Processing, RecordingState.Idle) => true,
-            (RecordingState.Success, RecordingState.Idle) => true,
-            (RecordingState.Success, RecordingState.Recording) => true,
-            (RecordingState.Error, RecordingState.Idle) => true,
-            (RecordingState.Error, RecordingState.Recording) => true,
-            (RecordingState.Idle, RecordingState.Idle) => true,
-            _ => false
-        };
-
-        if (!valid)
-            throw new InvalidOperationException($"Invalid transition: {State} → {next}");
-
-        State = next;
-
-        switch (next)
+            StatusText = "Recording…" + waiting;
+            StatusTextKind = "Orange";
+        }
+        else if (_queueBusy)
         {
-            case RecordingState.Idle:
-                StatusText = "Ready";
-                StatusTextKind = "Gray";
-                InfoText = "";
-                break;
-            case RecordingState.Recording:
-                StatusText = "Recording...";
-                StatusTextKind = "Orange";
-                InfoText = isHotkey ? $"Release {hotkeyName ?? "hotkey"} to stop" : "Press button to stop";
-                break;
-            case RecordingState.Processing:
-                StatusText = "Processing...";
-                StatusTextKind = "LightBlue";
-                InfoText = "Waiting for server...";
-                break;
-            case RecordingState.Success:
-                StatusText = text ?? "";
-                StatusTextKind = "Green";
-                InfoText = "Copied to clipboard";
-                break;
-            case RecordingState.Error:
-                StatusText = "Error";
-                StatusTextKind = "Red";
-                InfoText = errorMsg ?? "";
-                break;
+            StatusText = "Processing…" + waiting;
+            StatusTextKind = "LightBlue";
+        }
+        else if (_result == RecordingResult.Error)
+        {
+            StatusText = "Error";
+            StatusTextKind = "Red";
+        }
+        else if (_result == RecordingResult.Success)
+        {
+            StatusText = _resultText;
+            StatusTextKind = "Green";
+        }
+        else
+        {
+            StatusText = "Ready";
+            StatusTextKind = "Gray";
         }
     }
 

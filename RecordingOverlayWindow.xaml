@@ -35,7 +35,7 @@
                     </EventTrigger>
                 </Ellipse.Triggers>
             </Ellipse>
-            <Grid Width="16" Height="16" VerticalAlignment="Center"
+            <Grid Width="16" Height="16" Margin="8,0,0,0" VerticalAlignment="Center"
                   Visibility="{Binding IsProcessing, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <Path Stroke="#ADD8E6" StrokeThickness="2.5"
                       StrokeStartLineCap="Round" StrokeEndLineCap="Round"
@@ -58,12 +58,10 @@
                 </Path>
             </Grid>
             <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="Recording…" FontSize="14" FontWeight="SemiBold"
-                           Foreground="#F0F0F0"
-                           Visibility="{Binding IsRecording, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                <TextBlock Text="Processing…" FontSize="14" FontWeight="SemiBold"
-                           Foreground="#F0F0F0"
-                           Visibility="{Binding IsProcessing, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                <!-- One status line: recording and processing can be true at the same
+                     time, and both words shown as two lines would overflow the pill. -->
+                <TextBlock Text="{Binding StatusText}" FontSize="14" FontWeight="SemiBold"
+                           Foreground="#F0F0F0" TextTrimming="CharacterEllipsis" MaxWidth="270"/>
                 <TextBlock Text="{Binding InfoText}" FontSize="11" Foreground="#9A9A9A"
                            Margin="0,2,0,0" TextTrimming="CharacterEllipsis" MaxWidth="270"/>
             </StackPanel>

@@ -19,8 +19,17 @@ public class MainWindowViewModel : ViewModel, IDisposable
     GlobalKeyboardHook? _keyboardHook;
     bool _hotkeyPressed;
     bool _pendingHotkeyStop;
-    readonly SemaphoreSlim _recordOperationLock = new(1, 1);
-    CancellationTokenSource? _transcriptionCts;
+
+    // True from a hotkey press until that press's capture is actually running.
+    // Only a release inside that window may be remembered as a pending stop, so
+    // a second quick press cannot stop the clip that is already being captured.
+    bool _captureStarting;
+    readonly SemaphoreSlim _captureLock = new(1, 1);
+    readonly TranscriptionQueue _queue;
+
+    // A press that lands while the previous capture is still stopping/resampling
+    // waits for the mic instead of being dropped.
+    static readonly TimeSpan CaptureWaitTimeout = TimeSpan.FromSeconds(5);
 
     bool _isHighlighted;
     bool _isFocused;
@@ -377,6 +386,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _state = state;
         ServerManager = new ServerStateManager(state);
         RecordingManager = new RecordingStateManager();
+        _queue = new TranscriptionQueue(ProcessQueuedJobAsync);
+        _queue.Changed += (_, _) =>
+            RecordingManager.SetQueueState(_queue.WaitingCount, _queue.OutstandingCount);
         WireRecordingEvents();
         SeedSettingsFromState();
         RecordingManager.SetMicDevice(_micDeviceNumber, _micDeviceName);
@@ -412,7 +424,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
             if (e.PropertyName == nameof(RecordingStateManager.IsRecording) ||
                 e.PropertyName == nameof(RecordingStateManager.IsProcessing))
                 OnPropertyChanged(nameof(WindowOpacity));
-            if (RecordingManager.State == RecordingState.Success)
+            if (e.PropertyName == nameof(RecordingStateManager.Result) &&
+                RecordingManager.Result == RecordingResult.Success)
             {
                 SetHighlighted(true);
                 _highlightTimer.Stop();
@@ -567,17 +580,22 @@ public class MainWindowViewModel : ViewModel, IDisposable
             _hotkeyVirtualKeyCode,
             async () =>
             {
-                if (RecordingManager.CanStart)
+                if (RecordingManager.CanStartRecording)
                 {
                     _hotkeyPressed = true;
                     _pendingHotkeyStop = false;
+                    _captureStarting = true;
                     FireAndForget(StartHoldRecord(true), "StartHoldRecord");
                 }
                 else
                 {
-                    Logger.Info($"Hotkey press ignored while {RecordingManager.State}");
-                    if (RecordingManager.IsProcessing)
-                        RecordingManager.InfoText = "Still finishing the previous recording...";
+                    // Normal while the previous clip is still being transcribed:
+                    // the user simply waits for the mic to free up and presses again.
+                    Logger.Info(RecordingManager.IsRecording
+                        ? "Hotkey press ignored: the microphone is still capturing"
+                        : "Hotkey press ignored: the processing queue is full");
+                    if (!RecordingManager.IsRecording)
+                        RecordingManager.InfoText = "Queue is full — wait for the queued recordings";
                 }
                 await Task.CompletedTask;
             },
@@ -586,7 +604,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 _hotkeyPressed = false;
                 if (RecordingManager.IsRecording)
                 {
-                    await StopHoldRecord(queueIfBusy: true);
+                    // The pending-stop fallback only applies while this press's
+                    // capture is still coming up; see _captureStarting.
+                    await StopHoldRecord(queueIfBusy: _captureStarting);
                 }
             }
         );
@@ -603,9 +623,19 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     public async Task StartHoldRecord(bool isHotkey = true)
     {
-        await RunRecordingOperation(
-            () => StartHoldRecordCore(isHotkey),
-            "StartHoldRecord");
+        // A press that arrives while the previous capture is still stopping or
+        // resampling waits for the mic instead of being dropped.
+        try
+        {
+            await RunRecordingOperation(
+                () => StartHoldRecordCore(isHotkey),
+                "StartHoldRecord",
+                waitForMic: true);
+        }
+        finally
+        {
+            _captureStarting = false;
+        }
     }
 
     async Task StartHoldRecordCore(bool isHotkey)
@@ -622,51 +652,76 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (isHotkey && (!_hotkeyPressed || _pendingHotkeyStop) && RecordingManager.IsRecording)
         {
             _pendingHotkeyStop = false;
-            await StopAndProcessCore();
+            await StopAndEnqueueCore();
         }
     }
 
     public async Task StopHoldRecord(bool queueIfBusy = false)
     {
         await RunRecordingOperation(
-            StopAndProcessCore,
+            StopAndEnqueueCore,
             "StopHoldRecord",
             queueHotkeyStop: queueIfBusy,
             failureInfo: "Failed to stop recording");
     }
 
-    async Task StopAndProcessCore()
+    // Releasing the hotkey only hands the clip to the queue; the transcription of
+    // this clip and of every clip recorded after it runs one at a time, in order.
+    async Task StopAndEnqueueCore()
     {
         var pcm = await RecordingManager.StopRecording();
-        await ProcessAudio(pcm);
+        // Read the mic format at stop time: the device can be reopened or
+        // re-selected before this job gets its turn.
+        var channels = RecordingManager.ChannelCount;
+
+        if (!ValidateRecording(pcm))
+            return;
+
+        if (!_queue.TryEnqueue(new QueuedAudio(pcm, channels)))
+        {
+            Logger.Warn("Recording dropped: the processing queue is full");
+            ShowFailure("Too many recordings waiting — let them finish first");
+        }
     }
 
     async Task RunRecordingOperation(
         Func<Task> operation,
         string context,
+        bool waitForMic = false,
         bool queueHotkeyStop = false,
         string? failureInfo = null)
     {
-        if (!await _recordOperationLock.WaitAsync(0))
+        var acquired = waitForMic
+            ? await _captureLock.WaitAsync(CaptureWaitTimeout)
+            : await _captureLock.WaitAsync(0);
+
+        if (!acquired)
         {
             if (queueHotkeyStop)
                 _pendingHotkeyStop = true;
             else
             {
-                Logger.Info($"[{context}] ignored: still busy with the previous recording");
-                if (RecordingManager.IsProcessing)
-                    RecordingManager.InfoText = "Still finishing the previous recording...";
+                Logger.Info($"[{context}] ignored: the microphone is still busy");
+                RecordingManager.InfoText = "Microphone is still busy — try again";
             }
             return;
         }
 
         try
         {
+            // Two quick presses can both pass the hotkey gate; the one that had
+            // to wait for the mic must not double-start the capture.
+            if (waitForMic && !RecordingManager.CanStartRecording)
+            {
+                Logger.Info($"[{context}] ignored: the capture already started");
+                return;
+            }
+
             await operation();
         }
         catch (OperationCanceledException)
         {
-            _ = RecordingManager.Cancel();
+            RecordingManager.Reset();
         }
         catch (Exception ex)
         {
@@ -680,7 +735,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
         finally
         {
-            _recordOperationLock.Release();
+            _captureLock.Release();
         }
     }
 
@@ -698,14 +753,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         return line.Length <= 120 ? line : line[..120].TrimEnd() + "...";
     }
 
-    void ShowFailure(string message)
-    {
-        if (!RecordingManager.SetError(message))
-        {
-            RecordingManager.Reset();
-            RecordingManager.InfoText = message;
-        }
-    }
+    void ShowFailure(string message) => RecordingManager.ReportError(message);
 
     const double MinUsefulRecordingSeconds = 0.25;
 
@@ -713,13 +761,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
         ? $"\u201c{name}\u201d"
         : "the selected mic";
 
-    async Task ProcessAudio(byte[] pcm)
+    // Checked the moment the clip is captured, so a bad take reports at once
+    // instead of after the recordings queued in front of it.
+    bool ValidateRecording(byte[] pcm)
     {
         if (pcm.Length == 0)
         {
             Logger.Warn("Verdict: the capture produced no audio at all");
             ShowFailure($"Microphone captured nothing — check {MicLabel}");
-            return;
+            return false;
         }
 
         var durationSec = pcm.Length / (double)(AppConfig.SampleRate * AppConfig.BitsPerSample / 8);
@@ -727,7 +777,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             Logger.Warn($"Verdict: recording too short ({durationSec:F2}s)");
             ShowFailure("Recording was too short — hold the key while speaking");
-            return;
+            return false;
         }
 
         var maxAmplitude = AudioProcessor.GetMaxAmplitude(pcm);
@@ -735,14 +785,16 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             Logger.Warn($"Verdict: no signal from {MicLabel} (peak {maxAmplitude})");
             ShowFailure($"Microphone got no signal — check {MicLabel}");
-            return;
+            return false;
         }
 
-        _transcriptionCts?.Cancel();
-        _transcriptionCts?.Dispose();
-        _transcriptionCts = new CancellationTokenSource();
-        var ct = _transcriptionCts.Token;
+        Logger.Info($"Captured {durationSec:F1} s (peak {maxAmplitude}); queued for processing");
+        return true;
+    }
 
+    // Runs one clip at a time, in recording order, on the queue's worker.
+    async Task ProcessQueuedJobAsync(QueuedAudio job, CancellationToken ct)
+    {
         var provider = _state.ActiveProvider;
         if (provider != null && provider.IsLocal && !await ServerManager.IsServerReady())
         {
@@ -759,7 +811,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 return;
         }
 
-        await TranscribeAndHandleResultAsync(pcm, ct);
+        await TranscribeAndHandleResultAsync(job.Pcm, job.Channels, ct);
+
+        // Offload only when nothing is waiting behind this job (this job still
+        // counts as running, so Busy would always be true here). Dropping the
+        // model between two queued clips would cost a server restart per message.
+        if (_queue.WaitingCount == 0)
+            await OffloadServerAfterSuccessAsync();
     }
 
     async Task<bool> EnsureServerStartedAsync()
@@ -785,17 +843,17 @@ public class MainWindowViewModel : ViewModel, IDisposable
             ? $"{message} ({ModelDownloader.FormatBytes(downloaded)}/{ModelDownloader.FormatBytes(total)})"
             : message;
 
-    async Task TranscribeAndHandleResultAsync(byte[] pcm, CancellationToken ct)
+    async Task TranscribeAndHandleResultAsync(byte[] pcm, int channels, CancellationToken ct)
     {
         RecordingManager.InfoText = "Sending to LLM...";
 
         try
         {
-            var text = await ServerManager.TranscribeAsync(pcm, RecordingManager.ChannelCount, ct);
+            var text = await ServerManager.TranscribeAsync(pcm, channels, ct);
 
             if (ct.IsCancellationRequested)
             {
-                _ = RecordingManager.Cancel();
+                RecordingManager.Reset();
                 return;
             }
 
@@ -816,7 +874,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
         catch (OperationCanceledException)
         {
-            _ = RecordingManager.Cancel();
+            RecordingManager.Reset();
         }
         catch (Exception ex)
         {
@@ -883,7 +941,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
 
         var note = grammarNote == null ? "" : $" · {grammarNote}";
-        RecordingManager.SetSuccess(text);
+        RecordingManager.ReportSuccess(text);
         if (!copied)
             RecordingManager.InfoText = "Transcribed, but clipboard was unavailable" + note;
         else if (pasted)
@@ -894,7 +952,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
             RecordingManager.InfoText = "Copied to clipboard" + note;
 
         NotificationSound.Play();
-        await OffloadServerAfterSuccessAsync();
     }
 
     async Task<(bool aborted, bool pasted, string? failure)> TryAutoPasteAsync(CancellationToken ct)
@@ -903,7 +960,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         await Task.Delay(100);
         if (ct.IsCancellationRequested)
         {
-            _ = RecordingManager.Cancel();
+            RecordingManager.Reset();
             return (true, false, null);
         }
 
@@ -985,10 +1042,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     public void Dispose()
     {
-        _transcriptionCts?.Cancel();
-        _transcriptionCts?.Dispose();
+        // Cancels the running job and drops the queued ones, so nothing below is
+        // touched by a job after it has been disposed.
+        _queue.Dispose();
         _highlightTimer.Stop();
-        _recordOperationLock.Dispose();
+        _captureLock.Dispose();
         _keyboardHook?.Dispose();
         ServerManager.Dispose();
         RecordingManager.Dispose();
