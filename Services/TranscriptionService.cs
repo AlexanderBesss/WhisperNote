@@ -44,6 +44,12 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
     // "Ahaha." instead. The whole app dictates and cleans up in English.
     const string AsrLanguage = "en";
 
+    // Set once a server says it does not understand the "language" form field:
+    // llama.cpp handles that field per audio model, so a dedicated ASR model
+    // added later could answer every request with a 400. Dropping the field
+    // costs the language pin but keeps the model usable at all.
+    bool _serverRejectsLanguageField;
+
     // Surfaced to the UI after a failed transcription so the message can name
     // the reason (no speech heard / wrong language / format drift) instead of
     // blaming the model for all three. Written by Transcribe, read after it.
@@ -130,7 +136,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         {
             content.Add(new StringContent(SystemPrompt), "prompt");
         }
-        else
+        else if (!_serverRejectsLanguageField)
         {
             content.Add(new StringContent(AsrLanguage), "language");
         }
@@ -162,6 +168,21 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
                     Logger.Info("Server rejected the audio file; retrying after 3s...");
                     await Task.Delay(RetryDelayMs, ct);
                     continue;
+                }
+
+                // A server build that does not know the language field answers
+                // 400 to every request with that model. Drop the field once and
+                // resend, instead of failing this recording and every later one.
+                if (!response.IsSuccessStatusCode && dedicatedAsr && !_serverRejectsLanguageField
+                    && RejectsLanguageField(raw))
+                {
+                    _serverRejectsLanguageField = true;
+                    Logger.Warn("Server rejected the language field; sending the audio without it");
+                    if (attempt < MaxTranscriptAttempts)
+                    {
+                        await Task.Delay(EmptyResultRetryDelayMs, ct);
+                        continue;
+                    }
                 }
 
                 EnsureSuccess(response, raw);
@@ -252,6 +273,15 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
     static bool ShouldRetryAudioLoad(HttpResponseMessage response, string body) =>
         (int)response.StatusCode == 400 && body.Contains("Failed to load image or audio file");
+
+    // Deliberately narrow: the body has to name the language field and call it
+    // invalid, unknown or unsupported. A rejected audio file keeps its own path
+    // above, and a 401/404 is a configuration problem the user must see.
+    static bool RejectsLanguageField(string body) =>
+        body.Contains("language", StringComparison.OrdinalIgnoreCase) &&
+        (body.Contains("invalid parameter", StringComparison.OrdinalIgnoreCase) ||
+         body.Contains("unknown", StringComparison.OrdinalIgnoreCase) ||
+         body.Contains("unsupported", StringComparison.OrdinalIgnoreCase));
 
     static string Truncate(string s) =>
         s.Length <= TruncateMaxLen ? s : s.Substring(0, TruncateMaxLen);

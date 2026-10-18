@@ -120,4 +120,35 @@ public class TranscriptionParserTests
 
         Assert.Equal("Café résumé → done.", text);
     }
+
+    [Fact]
+    public void OneStrayForeignCharacterDistrustsTheWholeAnswer()
+    {
+        // With the ASR language pinned to English, any non-Latin letter is the
+        // model guessing; the old majority vote let both of these through.
+        Assert.Equal(AsrFailure.ForeignLanguage,
+            Classify("""{"text":"language English<asr_text>Run the scan мир now.</asr_text>"}"""));
+        Assert.Equal(AsrFailure.ForeignLanguage,
+            Classify("""{"text":"language English<asr_text>𠀀 done</asr_text>"}"""));
+    }
+
+    [Fact]
+    public void VietnameseLatinAndEmojiPassTheScriptGuard()
+    {
+        // Latin Extended Additional carries Vietnamese tone marks, which the old
+        // range check counted as another language. Emoji are symbols, not letters.
+        Assert.Equal("Đi Hà Nội rồi.", TranscriptionParser.Parse(
+            """{"text":"language English<asr_text>Đi Hà Nội rồi.</asr_text>"}""", dedicatedAsr: true));
+        Assert.Equal("Ok 👍.", TranscriptionParser.Parse(
+            """{"text":"language English<asr_text>Ok 👍</asr_text>"}""", dedicatedAsr: true));
+    }
+
+    [Fact]
+    public void DeclaredNoSpeechIsRefusedEvenWhenTheModelAnswersAfterIt()
+    {
+        // "language None" is the model's own verdict on the recording, so text
+        // after it is invented; the tag being present used to make it pasteable.
+        Assert.Equal(AsrFailure.NoSpeech,
+            Classify("""{"text":"language None<asr_text>Thank you.</asr_text>"}"""));
+    }
 }

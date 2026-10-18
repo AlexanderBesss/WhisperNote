@@ -77,6 +77,13 @@ public class RecordingStateManager : ViewModel
         if (!CanStart)
             throw new InvalidOperationException($"Cannot start recording in state {_state}");
 
+        // Which gesture opened the mic. A sub-second recording is a slip of the
+        // hotkey far more often than a click on the window, and the "too short"
+        // verdict reads completely differently once the log says how it started.
+        Logger.Info(isHotkey
+            ? $"Recording requested by hotkey{(string.IsNullOrEmpty(hotkeyName) ? "" : $" ({hotkeyName})")}"
+            : "Recording requested from the window");
+
         await _recorder.StartAsync();
         TransitionTo(RecordingState.Recording, isHotkey, hotkeyName: hotkeyName);
     }

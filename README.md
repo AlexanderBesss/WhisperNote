@@ -114,6 +114,23 @@ Audio is only rejected before the model when the capture is genuinely dead (peak
 peaks at 250–400 and transcribes word for word, so the older 500-peak gate that discarded usable
 recordings is gone.
 
+Every recording logs **which device it came from** and how long that capture had been alive, and when the
+Windows default mic has moved elsewhere while WhisperNote kept recording the device it had opened, the log
+says so on the recording it affected — that drift is the usual reason a recording arrives full of audio the
+model hears nothing in. A capture whose audio engine dies mid-recording (`0x88890004`, a device invalidated
+under us) logs the bytes it discards and is rebuilt before the next press. A server build that does not
+understand the `language` field drops it after the first refusal instead of failing every recording.
+
+**Numbers** become digits in two stages. A dedicated ASR model transcribes verbatim, so WhisperNote's own
+number pass converts what it can parse with certainty (`twenty five dollars` → `$25`, `three point five` → `3.5`)
+and deliberately leaves idioms in words (`one of them`, `a hundred times`). When the grammar check is on, the
+proofreader then handles the ambiguous cases a rule cannot judge — `five thirty tomorrow` → `5:30 tomorrow`,
+`one thousand dollars` → `$1,000` — while keeping everyday counts and set phrases in words (`two bananas`,
+`one more day`, `Chapter One`) and leaving digits that are already there exactly as they are (`$1,000`,
+`12/05/2026`, `+1 555 0100`). The transcript is sent to it between `---` markers, labelled as data, because a
+bare message let the model delete a dictated sentence it mistook for an instruction. Measured on a local
+reasoning model at effort Off: 0.7–1.3 s per recording.
+
 By default WhisperNote **starts hidden in the notification area** (toggle **Start in tray** in Settings).
 While a recording is active — hotkey-held or button-started — a small dark pill appears at the bottom of the
 screen with a pulsing red dot and "Recording…"; it hides automatically when the recording stops. The pill

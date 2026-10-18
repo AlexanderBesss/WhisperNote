@@ -703,8 +703,12 @@ public class MainWindowViewModel : ViewModel, IDisposable
             RecordingManager.Reset();
             // The recorder states the actual cause ("capture device
             // disconnected"); the caller-supplied fallback only says which
-            // operation failed, which leaves the user guessing.
-            var info = !string.IsNullOrWhiteSpace(ex.Message) ? ex.Message : failureInfo;
+            // operation failed, which leaves the user guessing. The pill is one
+            // line, so it keeps the readable part of a COM failure and the log
+            // keeps all of it.
+            var info = ShortenForPill(ex.Message);
+            if (string.IsNullOrWhiteSpace(info))
+                info = failureInfo;
             if (!string.IsNullOrEmpty(info))
                 RecordingManager.InfoText = info;
         }
@@ -712,6 +716,23 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             _recordOperationLock.Release();
         }
+    }
+
+    // NAudio and Media Foundation end their messages with
+    // "(Exception from HRESULT: 0x88890004)" and run to several sentences; that
+    // reads as noise on the status line.
+    static string ShortenForPill(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return "";
+
+        var clean = message;
+        var noise = clean.IndexOf("(Exception from HRESULT:", StringComparison.OrdinalIgnoreCase);
+        if (noise > 0)
+            clean = clean[..noise];
+
+        var line = clean.Split('\n')[0].Trim();
+        return line.Length <= 120 ? line : line[..120].TrimEnd() + "...";
     }
 
     // Names the failing stage so a lost "no response" is never ambiguous: an

@@ -37,7 +37,11 @@ public class AudioRecorder : IDisposable
     MMDevice? _device;
     WaveFormat? _inputFormat;
     MemoryStream? _rawStream;
-    bool _captureDirty;
+    DateTime _captureOpenedAtUtc;
+    // Written from NAudio's capture thread (OnCaptureDied) and from the Settings
+    // setters, read under _stateLock: volatile so a client whose audio engine
+    // died is never reused just because the write had not become visible yet.
+    volatile bool _captureDirty;
     // Set by the permanent RecordingStopped handler when NAudio's capture
     // thread dies on its own (device disconnect, stale client after resume).
     volatile bool _captureDied;
@@ -225,10 +229,13 @@ public class AudioRecorder : IDisposable
         _captureDirty = false;
 
         _device = SelectDevice();
-        LastDeviceName = _device.FriendlyName;
         Logger.Info($"Using mic: \"{_device.FriendlyName}\"");
         _capture = new WasapiCapture(_device);
         _inputFormat = _capture.WaveFormat;
+        // Named only once the capture really exists: a constructor that throws
+        // must not leave the UI blaming a mic that was never opened.
+        LastDeviceName = _device.FriendlyName;
+        _captureOpenedAtUtc = DateTime.UtcNow;
         _capture.DataAvailable += OnDataAvailable;
         // Permanent handler: NAudio reports a dying capture (device
         // disconnect, stale client) only through RecordingStopped, and only
@@ -350,15 +357,18 @@ public class AudioRecorder : IDisposable
             // burn the full timeout. Rebuild for the next recording.
             var diedException = _captureDiedException
                 ?? new InvalidOperationException("Capture device stopped unexpectedly");
+            var partial = RawBufferLength();
             ReleaseCapture();
             ResetBuffer();
             IsRecording = false;
+            Logger.Warn($"Discarded {partial} bytes captured before the device died");
             throw new InvalidOperationException("Recording failed: capture device disconnected", diedException);
         }
 
         var stopException = await StopCaptureAsync(_capture);
         IsRecording = false;
         var pcm = await Task.Run(ConvertToTargetFormat);
+        LogDefaultEndpointDrift();
 
         if (stopException != null)
         {
@@ -402,7 +412,7 @@ public class AudioRecorder : IDisposable
         lock (_bufferLock)
         {
             var rawLength = _rawStream?.Length ?? 0;
-            Logger.Info($"Recording stopped, raw: {rawLength} bytes");
+            Logger.Info($"Recording stopped, raw: {rawLength} bytes{CaptureContext()}");
 
             try
             {
@@ -429,6 +439,56 @@ public class AudioRecorder : IDisposable
                 _rawStream?.Dispose();
                 _rawStream = null;
             }
+        }
+    }
+
+    // Which device this recording came from and how long that capture had been
+    // alive. "Using mic:" is logged only when the warm capture is rebuilt, so
+    // without this the log cannot prove which device produced a given recording.
+    string CaptureContext()
+    {
+        if (_device == null)
+            return " (no capture device)";
+
+        var alive = (DateTime.UtcNow - _captureOpenedAtUtc).TotalSeconds;
+        return $" from \"{_device.FriendlyName}\", capture alive {alive:F1} s";
+    }
+
+    long RawBufferLength()
+    {
+        lock (_bufferLock)
+            return _rawStream?.Length ?? 0;
+    }
+
+    // The system default endpoint moves by itself (a headset unplugged, a
+    // virtual mic installed) while the warm capture keeps recording the device
+    // it opened: that is the usual reason a recording arrives full of audio that
+    // the model hears nothing in. Checked when the recording stops, so the
+    // hotkey path never pays for enumerating devices. Only worth saying while the
+    // user is following the system default rather than a named mic.
+    void LogDefaultEndpointDrift()
+    {
+        var device = _device;
+        if (device == null || PreferredDeviceNumber >= 0 || !string.IsNullOrEmpty(PreferredDeviceName))
+            return;
+
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            using var current = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Multimedia);
+
+            // NAudio's MMDevice exposes no endpoint id to compare, so the name
+            // the user sees in Settings is what is comparable here.
+            var bound = device.FriendlyName?.Trim();
+            var nowDefault = current.FriendlyName?.Trim();
+            if (string.Equals(bound, nowDefault, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            Logger.Warn($"Default mic is now \"{nowDefault}\"; this recording came from \"{bound}\"");
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"Default mic could not be read: {ex.Message}");
         }
     }
 

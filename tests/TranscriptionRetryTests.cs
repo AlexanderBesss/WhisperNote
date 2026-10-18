@@ -124,6 +124,64 @@ public class TranscriptionRetryTests
         Assert.Equal("en", FormValue(handler.RequestBodies[0], "language"));
     }
 
+    // The mirror of the test above: the language field belongs to dedicated ASR
+    // models only. A chat-style model still gets the transcription prompt, and
+    // must not be told what language to speak.
+    [Fact]
+    public async Task GenericModelFormSendsThePromptInsteadOfALanguage()
+    {
+        var provider = LocalProvider();
+        provider.Model = "qwen2.5-7b-instruct-q4_k_m.gguf";
+        var handler = new StubHandler("""{"text":"Understood."}""");
+        using var service = new TranscriptionService(provider, handler);
+
+        Assert.Equal("Understood.", await service.Transcribe(new byte[3200]));
+
+        Assert.Null(FormValue(handler.RequestBodies[0], "language"));
+        Assert.NotNull(FormValue(handler.RequestBodies[0], "prompt"));
+    }
+
+    // llama.cpp handles the language field per audio model, so a model whose
+    // build does not know it would answer 400 to every single recording. The
+    // field is dropped after the first such answer instead.
+    [Fact]
+    public async Task LanguageFieldIsDroppedWhenTheServerRejectsIt()
+    {
+        var handler = new StatusStub(
+            (HttpStatusCode.BadRequest, """{"error":{"message":"Invalid parameter: language"}}"""),
+            (HttpStatusCode.OK, Formatted));
+        using var service = new TranscriptionService(LocalProvider(), handler);
+
+        var text = await service.Transcribe(new byte[3200]);
+
+        Assert.Equal("Apply small fixes.", text);
+        Assert.Equal(2, handler.RequestBodies.Count);
+        Assert.Equal("en", FormValue(handler.RequestBodies[0], "language"));
+        Assert.Null(FormValue(handler.RequestBodies[1], "language"));
+    }
+
+    sealed class StatusStub : HttpMessageHandler
+    {
+        readonly Queue<(HttpStatusCode Status, string Body)> _replies = new();
+
+        public List<string> RequestBodies { get; } = new();
+
+        public StatusStub(params (HttpStatusCode Status, string Body)[] replies)
+        {
+            foreach (var reply in replies)
+                _replies.Enqueue(reply);
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            RequestBodies.Add(await request.Content!.ReadAsStringAsync(ct));
+            var (status, body) = _replies.Count > 1
+                ? _replies.Dequeue()
+                : (HttpStatusCode.OK, Formatted);
+            return new HttpResponseMessage(status) { Content = new StringContent(body) };
+        }
+    }
+
     [Fact]
     public async Task ChatStyleAnswerIsSalvagedOnceRetriesAreExhausted()
     {

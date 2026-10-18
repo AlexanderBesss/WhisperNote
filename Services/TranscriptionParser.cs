@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -51,21 +52,34 @@ static class TranscriptionParser
             using var doc = JsonDocument.Parse(raw);
             var text = ExtractText(doc);
 
+            // "language None" is the model's own verdict that the recording held
+            // no speech. It is read before CleanAsrOutput cuts the tag, so an
+            // answer that declares no speech and then answers anyway is refused
+            // instead of pasting whatever the model invented after the words.
+            var declaresNoSpeech = DeclaresNoSpeech(text);
+
             if (dedicatedAsr && (text == null || !text.Contains(AsrTextTag, StringComparison.Ordinal)))
             {
                 // Either the model explicitly reported "language None", or it
                 // answered with nothing at all: both say the recording holds no
                 // speech, and greedy decoding repeats that on every retry.
-                failure = string.IsNullOrWhiteSpace(text) || DeclaresNoSpeech(text)
+                failure = string.IsNullOrWhiteSpace(text) || declaresNoSpeech
                     ? AsrFailure.NoSpeech
                     : AsrFailure.Malformed;
                 Logger.Warn(failure == AsrFailure.NoSpeech
-                    ? $"ASR model heard no speech in the recording: {text}"
-                    : $"ASR model returned no <asr_text> section: {text}");
+                    ? $"ASR model heard no speech in the recording: {Truncate(text)}"
+                    : $"ASR model returned no <asr_text> section: {Truncate(text)}");
                 return null;
             }
 
             text = CleanAsrOutput(text);
+
+            if (dedicatedAsr && declaresNoSpeech)
+            {
+                failure = AsrFailure.NoSpeech;
+                Logger.Warn($"ASR model declared no speech and then answered: {Truncate(text)}");
+                return null;
+            }
 
             // A bare "language English<asr_text>" is the model saying it heard
             // nothing; the answer is deterministic at temperature 0, so
@@ -80,7 +94,7 @@ static class TranscriptionParser
             if (dedicatedAsr && IsForeignScript(text))
             {
                 failure = AsrFailure.ForeignLanguage;
-                Logger.Warn($"Discarding an answer in a non-Latin script: {text}");
+                Logger.Warn($"Discarding an answer in a non-Latin script: {Truncate(text)}");
                 return null;
             }
 
@@ -146,11 +160,11 @@ static class TranscriptionParser
 
             if (IsForeignScript(text))
             {
-                Logger.Warn($"Discarding an unformatted non-Latin answer: {text}");
+                Logger.Warn($"Discarding an unformatted non-Latin answer: {Truncate(text)}");
                 return null;
             }
 
-            Logger.Warn($"Recovering an unformatted ASR answer: {text}");
+            Logger.Warn($"Recovering an unformatted ASR answer: {Truncate(text)}");
             return RemoveRepetitions(text);
         }
         catch (Exception ex)
@@ -170,23 +184,55 @@ static class TranscriptionParser
     // A dedicated ASR model answers in whatever language it guesses, and it
     // guesses wrong on audio that is not clean speech: a 1.4 s low-level
     // vocalisation came back as "language Chinese<asr_text>啊哈哈！" and was
-    // pasted into the user's document. Requests now pin language=en, so an
-    // answer built mostly of non-Latin letters is still the model guessing.
+    // pasted into the user's document. Requests now pin language=en, so any
+    // letter outside Latin is a hallucination rather than a transcription, and
+    // a majority vote let a single stray CJK character inside an English answer
+    // through.
     internal static bool IsForeignScript(string? text)
     {
         if (string.IsNullOrEmpty(text))
             return false;
 
-        int latin = 0, other = 0;
-        foreach (var c in text)
+        for (var i = 0; i < text.Length; i++)
         {
+            var c = text[i];
+
+            if (char.IsHighSurrogate(c))
+            {
+                // Astral planes are where the rest of CJK lives. Emoji and other
+                // symbols an answer might carry are not letters, so they pass.
+                if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    if (IsLetterCategory(CharUnicodeInfo.GetUnicodeCategory(char.ConvertToUtf32(c, text[i + 1]))))
+                        return true;
+                    i++;
+                }
+                continue;
+            }
+
             if (!char.IsLetter(c))
                 continue;
-            if (c < 0x0300) latin++; else other++;
+
+            // Latin: the Latin-1 accents, Extended A/B (č, ł) and Extended
+            // Additional, which carries Vietnamese tone marks.
+            if (c <= 0x024F || (c >= 0x1E00 && c <= 0x1EFF))
+                continue;
+
+            return true;
         }
 
-        return other > 0 && (latin == 0 || other > latin);
+        return false;
     }
+
+    static bool IsLetterCategory(UnicodeCategory category) =>
+        category is UnicodeCategory.UppercaseLetter or UnicodeCategory.LowercaseLetter or
+            UnicodeCategory.TitlecaseLetter or UnicodeCategory.ModifierLetter or
+            UnicodeCategory.OtherLetter;
+
+    // A discarded answer is dictation and therefore private: log only as much of
+    // it as explains the failure.
+    static string Truncate(string? text) =>
+        string.IsNullOrEmpty(text) ? "(nothing)" : text.Length <= 200 ? text : text[..200] + "...";
 
     static string? CleanAsrOutput(string? text)
     {
