@@ -17,7 +17,6 @@
         PreviewMouseLeftButtonDown="Window_MouseLeftButtonDown">
 
     <Window.Resources>
-        <!-- iOS-style sliding switch: pill track with a thumb that slides right. -->
         <Style x:Key="SwitchToggle" TargetType="ToggleButton">
             <Setter Property="Width" Value="38"/>
             <Setter Property="Height" Value="21"/>
@@ -53,7 +52,6 @@
             </Setter>
         </Style>
 
-        <!-- Pill tab in the segmented tab bar. -->
         <Style x:Key="PillTab" TargetType="RadioButton">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -87,7 +85,6 @@
             </Setter>
         </Style>
 
-        <!-- Content card shared by all tabs. -->
         <Style x:Key="SettingsCard" TargetType="Border">
             <Setter Property="Background" Value="#CC222222"/>
             <Setter Property="BorderBrush" Value="#3A3A3A"/>
@@ -96,7 +93,6 @@
             <Setter Property="Padding" Value="12,10"/>
         </Style>
 
-        <!-- One-line setting row: name on the left, control on the right. -->
         <Style x:Key="SettingRow" TargetType="Grid">
             <Setter Property="Margin" Value="0,0,0,8"/>
         </Style>
@@ -114,10 +110,7 @@
         </Style>
     </Window.Resources>
 
-    <!-- Same visual language as the recording pill: translucent dark fill and
-         thin outline. No drop shadow here: on the layered transparent window it
-         composited as a dark square behind the rounded corners. The 1px bottom
-         margin keeps the outline off the window's clipped last pixel row. -->
+    <!-- No drop shadow: on this layered window it composites as a dark square; 1px bottom margin keeps the outline off the clipped last pixel row. -->
     <Border Background="#E61A1A1A" CornerRadius="16" Padding="12,8,12,12" Margin="0,0,0,1"
             BorderBrush="#3A3A3A" BorderThickness="1">
         <Grid>
@@ -127,7 +120,6 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- Header -->
             <Grid Grid.Row="0" Margin="0,0,0,6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -150,7 +142,6 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Segmented tab bar -->
             <Border Grid.Row="1" Background="#1E1E1E" BorderBrush="#353535"
                     BorderThickness="1" CornerRadius="9" Padding="3" Margin="0,0,0,10">
                 <UniformGrid Columns="5">
@@ -172,9 +163,7 @@
                 </UniformGrid>
             </Border>
 
-            <!-- Tab content -->
             <Grid Grid.Row="2" VerticalAlignment="Center">
-                <!-- Model -->
                 <Border x:Name="PanelModel" Style="{StaticResource SettingsCard}">
                     <StackPanel>
                         <TextBlock Text="Local transcription model" Style="{StaticResource FieldLabel}"/>
@@ -193,7 +182,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Record -->
                 <Border x:Name="PanelRecord" Style="{StaticResource SettingsCard}"
                         Visibility="Collapsed">
                     <StackPanel>
@@ -219,7 +207,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Output -->
                 <Border x:Name="PanelOutput" Style="{StaticResource SettingsCard}"
                         Visibility="Collapsed">
                     <StackPanel>
@@ -261,7 +248,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Grammar -->
                 <Border x:Name="PanelGrammar" Style="{StaticResource SettingsCard}"
                         Visibility="Collapsed">
                     <StackPanel>
@@ -272,10 +258,6 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Grammar check" Style="{StaticResource SettingRowName}"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <!-- The checker's state without a status line of
-                                     its own: grey idle, amber checking, green
-                                     reachable, red skipped. Its tooltip is the
-                                     sentence this dot replaces. -->
                                 <Ellipse Width="7" Height="7" Fill="{Binding GrammarStateBrush}"
                                          Margin="0,0,8,0"
                                          ToolTip="{Binding GrammarStatus}"/>
@@ -286,9 +268,6 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- Label and control share one row: the hint inside each
-                             box already says what belongs there, so a label above
-                             it would only make this tab taller. -->
                         <Grid Margin="0,0,0,5">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="66"/>
@@ -315,9 +294,6 @@
                                      ToolTip="Sent as a Bearer token; saved in whispernote.json"/>
                         </Grid>
 
-                        <!-- How much the model may think before answering: sent
-                             as "reasoning_effort". The list comes from the
-                             service, so every option here is a value it accepts. -->
                         <Grid Margin="0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="66"/>
@@ -335,7 +311,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- System -->
                 <Border x:Name="PanelSystem" Style="{StaticResource SettingsCard}"
                         Visibility="Collapsed">
                     <StackPanel>

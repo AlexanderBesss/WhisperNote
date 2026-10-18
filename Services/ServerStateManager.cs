@@ -243,8 +243,7 @@ public class ServerStateManager : ViewModel, IDisposable
     public async Task<string?> TranscribeAsync(byte[] pcm, int channels, CancellationToken ct) =>
         await WithOperationLockAsync(() => _transcription.Transcribe(pcm, channels, ct: ct), ct);
 
-    // Why the last TranscribeAsync returned nothing; read right after it to
-    // tell "the model heard no speech" from "the model broke the format".
+    // Read right after TranscribeAsync; it explains why that call returned nothing.
     public AsrFailure LastTranscriptionFailure => _transcription.LastFailure;
 
     public Task<bool> IsServerReady(CancellationToken ct = default) =>

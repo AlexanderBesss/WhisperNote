@@ -10,14 +10,6 @@ using System.Threading.Tasks;
 
 namespace WhisperNote.Services;
 
-/// <summary>
-/// Fetches the llama.cpp server binaries on first use so the build stays
-/// offline and each machine downloads only what its hardware needs: the CUDA 13
-/// build for Turing and newer, CUDA 12.4 for Maxwell/Pascal/Volta, Vulkan for
-/// AMD and Intel GPUs, the OpenVINO build for Intel NPUs and the plain CPU
-/// build when CPU mode is selected. Binaries land in the app directory under
-/// the same folder layout the rest of the app already resolves.
-/// </summary>
 public static class BackendDownloader
 {
     const string ReleasesApiUrl = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=15";
@@ -25,8 +17,7 @@ public static class BackendDownloader
 
     sealed record BackendSpec(string Directory, string Label, string[] AssetPatterns);
 
-    // Asset patterns mirror the official llama.cpp Windows release zips; the
-    // legacy CUDA flavor also ships the CUDA 12.4 runtime DLLs separately.
+    // Patterns must match official llama.cpp Windows release zip asset names.
     static readonly Dictionary<HardwareBackend, BackendSpec> Specs = new()
     {
         [HardwareBackend.NvidiaCuda] = new("llama", "CUDA 13 backend",
@@ -41,16 +32,10 @@ public static class BackendDownloader
             new[] { @"^llama-.*-bin-win-cpu-x64\.zip$" }),
     };
 
-    /// <summary>True when the backend's llama-server.exe is already installed.</summary>
     public static bool IsInstalled(HardwareBackend backend) =>
         Specs.TryGetValue(backend, out var spec) &&
         File.Exists(Path.Combine(AppPaths.BaseDirectory, spec.Directory, "llama-server.exe"));
 
-    /// <summary>
-    /// Downloads and installs the backend when missing. Returns false when the
-    /// backend is unknown or the download failed; the caller's fallback chain
-    /// then decides what to run instead.
-    /// </summary>
     public static async Task<bool> EnsureAsync(
         HardwareBackend backend,
         Action<string, long, long> progress,
@@ -103,10 +88,7 @@ public static class BackendDownloader
         return SelectAssets(json, spec.AssetPatterns);
     }
 
-    /// <summary>
-    /// Picks the newest release whose assets cover every pattern. GitHub lists
-    /// releases newest first, including the preview builds the app targets.
-    /// </summary>
+    /// <summary>GitHub lists releases newest-first, so the first full-pattern match is the newest.</summary>
     internal static List<(string Name, string Url)>? SelectAssets(string releasesJson, string[] patterns)
     {
         using var document = JsonDocument.Parse(releasesJson);
@@ -190,10 +172,7 @@ public static class BackendDownloader
         ZipFile.ExtractToDirectory(zipPath, extractDir);
     }
 
-    /// <summary>
-    /// The release zips wrap everything in a single top-level folder; descend
-    /// into it so the binaries land directly in the backend directory.
-    /// </summary>
+    /// <summary>Release zips wrap everything in one top-level folder; descend into it.</summary>
     static string ResolveZipRoot(string extractDir)
     {
         var directories = Directory.GetDirectories(extractDir);

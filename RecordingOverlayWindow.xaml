@@ -14,17 +14,13 @@
         AllowsTransparency="True"
         ShowActivated="False">
 
-    <!-- Bottom-center pill shown while recording and processing; matches the app's
-         dark design. Click-through and non-activating so dictation focus never
-         leaves the target app. The margin gives the drop shadow room inside the
-         window bounds, keeping the rounded corners free of square shadow edges. -->
+    <!-- The 20-unit margin gives the DropShadowEffect room; without it the shadow clips square at the window bounds. -->
     <Border Background="#E61A1A1A" CornerRadius="16" Padding="18,10" Margin="20"
             BorderBrush="#3A3A3A" BorderThickness="1">
         <Border.Effect>
             <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.55"/>
         </Border.Effect>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-            <!-- Recording: pulsing red dot. -->
             <Ellipse Width="14" Height="14" Fill="#E5484D" VerticalAlignment="Center"
                      Visibility="{Binding IsRecording, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <Ellipse.Triggers>
@@ -39,7 +35,6 @@
                     </EventTrigger>
                 </Ellipse.Triggers>
             </Ellipse>
-            <!-- Processing: spinning blue arc, same accent as the status text. -->
             <Grid Width="16" Height="16" VerticalAlignment="Center"
                   Visibility="{Binding IsProcessing, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <Path Stroke="#ADD8E6" StrokeThickness="2.5"

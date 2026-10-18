@@ -1,7 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Thin scrollbar thumb -->
     <Style x:Key="ThumbStyle" TargetType="Thumb">
         <Setter Property="Template">
             <Setter.Value>
@@ -24,7 +23,6 @@
         </Setter>
     </Style>
 
-    <!-- Transparent repeat button for track -->
     <Style x:Key="RepeatButtonStyle" TargetType="RepeatButton">
         <Setter Property="Template">
             <Setter.Value>
@@ -35,7 +33,6 @@
         </Setter>
     </Style>
 
-    <!-- Vertical scrollbar -->
     <Style x:Key="VerticalScrollBarStyle" TargetType="ScrollBar">
         <Setter Property="Width" Value="8"/>
         <Setter Property="Background" Value="Transparent"/>
@@ -72,7 +69,6 @@
         </Setter>
     </Style>
 
-    <!-- Horizontal scrollbar (hidden for settings) -->
     <Style x:Key="HorizontalScrollBarStyle" TargetType="ScrollBar">
         <Setter Property="Height" Value="0"/>
         <Setter Property="Visibility" Value="Collapsed"/>
@@ -85,7 +81,6 @@
         </Setter>
     </Style>
 
-    <!-- Styled ScrollViewer -->
     <Style x:Key="StyledScrollViewer" TargetType="ScrollViewer">
         <Setter Property="Template">
             <Setter.Value>

@@ -5,11 +5,6 @@ using System.Windows.Interop;
 
 namespace WhisperNote;
 
-/// <summary>
-/// Borderless always-on-top pill that appears at the bottom of the screen while
-/// recording and hides when recording stops. It never takes focus and clicks pass
-/// through, so the app being dictated into keeps the caret.
-/// </summary>
 public partial class RecordingOverlayWindow : Window
 {
     const int GWL_EXSTYLE = -20;
@@ -19,8 +14,7 @@ public partial class RecordingOverlayWindow : Window
 
     const int MONITOR_DEFAULTTONEAREST = 2;
 
-    // The window has a 20-unit transparent margin around the pill (shadow room),
-    // so the visible pill sits 20 units above the window's bottom edge.
+    // BottomMargin includes the 20-unit transparent margin of the pill Border (XAML).
     const double BottomMargin = 52;
 
     [DllImport("user32.dll")]
@@ -76,14 +70,11 @@ public partial class RecordingOverlayWindow : Window
 
     public void HideRecording() => Hide();
 
-    // Bottom-center of the monitor holding the window being dictated into.
     void Reposition()
     {
         var work = ForegroundMonitorWorkArea();
         var left = work.X + (work.Width - Width) / 2;
         var top = work.Y + work.Height - Height - BottomMargin;
-        // Clamp inside the work area so mixed-DPI rounding can never push the
-        // pill off-screen on a secondary monitor.
         Left = Math.Min(Math.Max(left, work.X), work.X + work.Width - Width);
         Top = Math.Min(Math.Max(top, work.Y), work.Y + work.Height - Height);
     }
@@ -95,9 +86,7 @@ public partial class RecordingOverlayWindow : Window
         if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info))
             return SystemParameters.WorkArea;
 
-        // rcWork is in physical pixels; convert with *that monitor's* DPI.
-        // The old code used the system DPI for every monitor, which misplaces
-        // the pill (up to fully off-screen) on mixed-DPI multi-monitor setups.
+        // rcWork is in physical pixels; must be divided by *that monitor's* DPI.
         var scale = EffectiveMonitorScale(monitor);
 
         return new Rect(
@@ -117,7 +106,6 @@ public partial class RecordingOverlayWindow : Window
         }
         catch (DllNotFoundException)
         {
-            // Pre-Windows 8.1: fall through to the system DPI below.
         }
 
         try
@@ -128,7 +116,6 @@ public partial class RecordingOverlayWindow : Window
         }
         catch (Exception)
         {
-            // Very old Windows: fall through to 1.0.
         }
 
         return 1.0;

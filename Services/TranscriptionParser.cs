@@ -8,10 +8,6 @@ using System.Text.RegularExpressions;
 
 namespace WhisperNote.Services;
 
-// Why an ASR answer was thrown away. The model can hear the recording and
-// still refuse to transcribe it ("language None"), answer in a script the user
-// is not dictating in, or drift out of its output format; these need different
-// words in the UI and different retry decisions.
 public enum AsrFailure
 {
     None,
@@ -24,15 +20,9 @@ static class TranscriptionParser
 {
     const string AsrTextTag = "<asr_text>";
 
-    // Qwen3-ASR opens every answer with "language <Name>"; when it answers in
-    // chat style the language name is followed by the transcript itself.
     static readonly Regex LanguagePrefix =
         new(@"^\s*language\s+[A-Za-z][A-Za-z'-]*\s*[.,:!]?\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // dedicatedAsr: the model is a purpose-built ASR model (Qwen3-ASR) whose
-    // output format is "language X<asr_text>...</asr_text>". A response without
-    // the <asr_text> section (e.g. just "language None") means the model failed
-    // to transcribe, so it must not be pasted as if it were text.
     public static string? Parse(string? raw, bool dedicatedAsr = false) =>
         Parse(raw, dedicatedAsr, out _);
 
@@ -52,17 +42,10 @@ static class TranscriptionParser
             using var doc = JsonDocument.Parse(raw);
             var text = ExtractText(doc);
 
-            // "language None" is the model's own verdict that the recording held
-            // no speech. It is read before CleanAsrOutput cuts the tag, so an
-            // answer that declares no speech and then answers anyway is refused
-            // instead of pasting whatever the model invented after the words.
             var declaresNoSpeech = DeclaresNoSpeech(text);
 
             if (dedicatedAsr && (text == null || !text.Contains(AsrTextTag, StringComparison.Ordinal)))
             {
-                // Either the model explicitly reported "language None", or it
-                // answered with nothing at all: both say the recording holds no
-                // speech, and greedy decoding repeats that on every retry.
                 failure = string.IsNullOrWhiteSpace(text) || declaresNoSpeech
                     ? AsrFailure.NoSpeech
                     : AsrFailure.Malformed;
@@ -81,9 +64,7 @@ static class TranscriptionParser
                 return null;
             }
 
-            // A bare "language English<asr_text>" is the model saying it heard
-            // nothing; the answer is deterministic at temperature 0, so
-            // re-sending the same audio cannot help.
+            // Decoding is temperature 0: the same audio answers identically, so re-sending cannot help.
             if (string.IsNullOrWhiteSpace(text))
             {
                 Logger.Info("Server returned empty text");
@@ -98,8 +79,6 @@ static class TranscriptionParser
                 return null;
             }
 
-            // Dedicated ASR models transcribe numbers as words and cannot be
-            // steered by the transcription prompt, so normalize them here.
             if (dedicatedAsr)
                 text = NumberNormalizer.Normalize(text);
 
@@ -113,8 +92,6 @@ static class TranscriptionParser
         }
     }
 
-    // llama.cpp answers the audio endpoint with {"text": ...}; the OpenAI-style
-    // {"choices": [...]} shape is kept for remote providers.
     static string? ExtractText(JsonDocument doc)
     {
         string? text = null;
@@ -137,11 +114,7 @@ static class TranscriptionParser
         return text;
     }
 
-    // Last-resort recovery for a dedicated ASR model that answered in chat
-    // style ("language English. Yeah, apply small fixes.") instead of its
-    // trained "language X<asr_text>..." format. The words are a correct
-    // transcript; discarding them makes a good recording look like a lost
-    // request, so it is used once the retries have already failed.
+    // Call only after all parse attempts have failed; unformatted answers are the model's own chat drift.
     public static string? SalvageUnformatted(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -174,20 +147,10 @@ static class TranscriptionParser
         }
     }
 
-    // "language None" is Qwen3-ASR's own way of reporting that the recording
-    // holds no speech: hums, clicks and room tone all answer with it (measured
-    // against the running server), so the retries that used to follow were
-    // three identical requests buying nothing.
     static bool DeclaresNoSpeech(string? text) =>
         text != null && Regex.IsMatch(text, @"^\s*language\s+(none|no speech)\b", RegexOptions.IgnoreCase);
 
-    // A dedicated ASR model answers in whatever language it guesses, and it
-    // guesses wrong on audio that is not clean speech: a 1.4 s low-level
-    // vocalisation came back as "language Chinese<asr_text>啊哈哈！" and was
-    // pasted into the user's document. Requests now pin language=en, so any
-    // letter outside Latin is a hallucination rather than a transcription, and
-    // a majority vote let a single stray CJK character inside an English answer
-    // through.
+    // Requests pin language=en, so any non-Latin letter in an answer is a hallucination.
     internal static bool IsForeignScript(string? text)
     {
         if (string.IsNullOrEmpty(text))
@@ -199,8 +162,7 @@ static class TranscriptionParser
 
             if (char.IsHighSurrogate(c))
             {
-                // Astral planes are where the rest of CJK lives. Emoji and other
-                // symbols an answer might carry are not letters, so they pass.
+                // Surrogate pairs cover astral CJK; non-letter symbols there pass.
                 if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
                 {
                     if (IsLetterCategory(CharUnicodeInfo.GetUnicodeCategory(char.ConvertToUtf32(c, text[i + 1]))))
@@ -213,8 +175,6 @@ static class TranscriptionParser
             if (!char.IsLetter(c))
                 continue;
 
-            // Latin: the Latin-1 accents, Extended A/B (č, ł) and Extended
-            // Additional, which carries Vietnamese tone marks.
             if (c <= 0x024F || (c >= 0x1E00 && c <= 0x1EFF))
                 continue;
 
@@ -229,8 +189,6 @@ static class TranscriptionParser
             UnicodeCategory.TitlecaseLetter or UnicodeCategory.ModifierLetter or
             UnicodeCategory.OtherLetter;
 
-    // A discarded answer is dictation and therefore private: log only as much of
-    // it as explains the failure.
     static string Truncate(string? text) =>
         string.IsNullOrEmpty(text) ? "(nothing)" : text.Length <= 200 ? text : text[..200] + "...";
 

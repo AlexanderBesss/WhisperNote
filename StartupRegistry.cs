@@ -9,7 +9,7 @@ static class StartupRegistry
 {
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string AppName = "WhisperNote";
-    // Passed when Windows launches the app at sign-in so it starts hidden in the tray.
+    // Launch argument: start hidden to the tray at sign-in.
     public const string StartupArg = "--startup";
 
     public static bool IsEnabled()
@@ -20,8 +20,6 @@ static class StartupRegistry
             var value = key?.GetValue(AppName) as string;
             if (string.IsNullOrWhiteSpace(value))
                 return false;
-            // A stale entry pointing at another copy (old dev bin, moved folder)
-            // must not count: it would neither start this exe nor be ours to adopt.
             return PointsAtCurrentExe(value);
         }
         catch (Exception ex)
@@ -61,7 +59,7 @@ static class StartupRegistry
     {
         var current = Environment.ProcessPath;
         if (string.IsNullOrEmpty(current))
-            return true; // Cannot compare: fall back to the legacy existence check.
+            return true;
         var registeredPath = ExtractExePath(registeredValue);
         if (string.IsNullOrEmpty(registeredPath))
             return false;
@@ -93,7 +91,7 @@ static class StartupRegistry
                 return value.Substring(1, end - 1);
             return "";
         }
-        // Unquoted legacy value: the exe path is the first whitespace-delimited token.
+        // Legacy unquoted values: exe path is the first token.
         var space = value.IndexOf(' ');
         return space < 0 ? value : value.Substring(0, space);
     }

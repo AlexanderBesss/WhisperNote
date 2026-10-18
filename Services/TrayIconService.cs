@@ -12,12 +12,6 @@ using WinForms = System.Windows.Forms;
 
 namespace WhisperNote.Services;
 
-/// <summary>
-/// Shell notification-area icon for WhisperNote. Clicking the icon (or picking
-/// Open in its menu) restores the main window; Exit shuts the app down.
-/// The ring is red while idle, blinks while the mic is listening and turns
-/// green while a request is being processed, matching the recording overlay.
-/// </summary>
 public sealed class TrayIconService : IDisposable
 {
     // Shell tooltips are truncated past 63 characters.
@@ -25,10 +19,8 @@ public sealed class TrayIconService : IDisposable
     const string ActiveIconResourceName = "WhisperNote.TrayIcon.ico";
     const string IdleIconResourceName = "WhisperNote.TrayIconIdle.ico";
 
-    // Recording blink, matching the overlay's pulsing dot: opacity fades
-    // linearly from 1.0 to 0.2 over 0.7 s and back, forever.
     const int BlinkStepMs = 50;
-    const int BlinkHalfCycleSteps = 14; // 14 x 50 ms = 0.7 s
+    const int BlinkHalfCycleSteps = 14;
     const double BlinkMinOpacity = 0.2;
 
     readonly WinForms.NotifyIcon _notifyIcon;
@@ -56,9 +48,6 @@ public sealed class TrayIconService : IDisposable
         };
         _notifyIcon.MouseUp += (_, e) =>
         {
-            // Left click restores the window; a double-click simply restores
-            // twice, which the idempotent restore handles. Right click opens
-            // the menu.
             if (e.Button == WinForms.MouseButtons.Left)
                 RestoreRequested?.Invoke(this, EventArgs.Empty);
             else if (e.Button == WinForms.MouseButtons.Right)
@@ -79,10 +68,6 @@ public sealed class TrayIconService : IDisposable
         _menu.IsOpen = true;
     }
 
-    /// <summary>
-    /// WPF context menu so the tray menu matches the app's dark rounded design
-    /// instead of the default WinForms look.
-    /// </summary>
     ContextMenu BuildMenu()
     {
         var resources = Application.Current.Resources;
@@ -113,10 +98,6 @@ public sealed class TrayIconService : IDisposable
     internal Icon ActiveIcon => _activeIcon;
     internal Icon IdleIcon => _idleIcon;
 
-    /// <summary>
-    /// Red ring while idle, blinking red ring while recording (same timings as
-    /// the overlay's pulsing dot), green ring while processing.
-    /// </summary>
     public void SetState(bool recording, bool processing)
     {
         if (recording)
@@ -136,7 +117,6 @@ public sealed class TrayIconService : IDisposable
             BuildBlinkFrames();
         if (_blinkFrames.Count == 0)
         {
-            // Frame generation failed; fall back to the steady red ring.
             _notifyIcon.Icon = _idleIcon;
             return;
         }
@@ -153,11 +133,6 @@ public sealed class TrayIconService : IDisposable
         _blinking = false;
     }
 
-    /// <summary>
-    /// Renders the idle icon's red ring at a series of opacities tracing the
-    /// overlay's 1.0 -> 0.2 -> 1.0 fade, one frame per timer step. Only the red
-    /// ring pixels fade, so the white mic stays readable like the overlay's dot.
-    /// </summary>
     void BuildBlinkFrames()
     {
         try
@@ -192,8 +167,7 @@ public sealed class TrayIconService : IDisposable
             try
             {
                 using var icon = Icon.FromHandle(handle);
-                // Clone so the frame owns a private copy; the temporary
-                // GDI handle can then be released.
+                // Icon.FromHandle borrows the GDI handle; clone the icon before DestroyIcon frees it.
                 _blinkFrames.Add((Icon)icon.Clone());
             }
             finally
@@ -209,9 +183,6 @@ public sealed class TrayIconService : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     static extern bool DestroyIcon(IntPtr handle);
 
-    /// <summary>
-    /// The same artwork as a WPF image, for the window and taskbar icon.
-    /// </summary>
     public static ImageSource? LoadWindowImage()
     {
         try
@@ -231,7 +202,6 @@ public sealed class TrayIconService : IDisposable
         }
     }
 
-    /// <summary>Gives a window the app icon for its title bar and taskbar button.</summary>
     public static void ApplyWindowIcon(System.Windows.Window window)
     {
         var image = LoadWindowImage();

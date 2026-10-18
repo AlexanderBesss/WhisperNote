@@ -28,8 +28,7 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
 
-        // Created here rather than on Loaded so the tray exists even when the window
-        // starts hidden in the notification area.
+        // Not on Loaded: Loaded never fires while the window starts hidden.
         CreateTrayIcon();
     }
 
@@ -42,8 +41,6 @@ public partial class MainWindow : Window
         settingsWindow.ShowDialog();
     }
 
-    // The title-bar close button only hides the window; the app keeps running
-    // in the tray, same as the old minimize-to-tray button.
     void CloseButton_Click(object sender, RoutedEventArgs e) => MinimizeToTray();
 
     public void MinimizeToTray() => Hide();
@@ -94,8 +91,7 @@ public partial class MainWindow : Window
 
     void MainWindow_Closed(object? sender, EventArgs e)
     {
-        // ShutdownMode is OnExplicitShutdown (tray app with hidden starts), so a
-        // real exit must shut the dispatcher down explicitly.
+        // ShutdownMode=OnExplicitShutdown (App.xaml): a real exit needs an explicit dispatcher shutdown.
         var shouldExit = _exitRequested || !_viewModel.MinimizeToTray;
         _tray?.Dispose();
         _tray = null;
@@ -114,8 +110,6 @@ public partial class MainWindow : Window
             UpdateTrayState();
     }
 
-    // Red ring when nobody is speaking, blinking red while recording (like the
-    // overlay dot), green while the request is being processed.
     void UpdateTrayState()
     {
         if (_tray == null)
@@ -127,9 +121,6 @@ public partial class MainWindow : Window
         UpdateOverlayState();
     }
 
-    // The pill stays up through recording and processing, and only hides once
-    // the request is fully done, so a hotkey- or button-started recording never
-    // looks finished while the LLM is still working.
     void UpdateOverlayState()
     {
         if (_overlay == null)

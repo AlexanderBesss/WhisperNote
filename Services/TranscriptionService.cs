@@ -22,42 +22,21 @@ public class TranscriptionService : IDisposable
 
 Output ONLY the corrected transcription. No explanations, no quotes, no extra text.";
     const string TranscriptionTemperature = "0.3";
-    // Dedicated ASR models are trained to emit their "language X<asr_text>..."
-    // answer under greedy decoding. llama.cpp honours a request-level
-    // temperature (a non-numeric value is rejected with 400 "invalid stof
-    // argument"), so sending 0.3 here would override the server's --temp 0 and
-    // push the model into chat-style answers the parser rejects.
+    // Must be 0: llama.cpp honours request temperature, and any other value overrides the server's --temp 0 and breaks the ASR output format.
     const string DedicatedAsrTemperature = "0";
     const int RetryDelayMs = 3000;
     const int EmptyResultRetryDelayMs = 250;
-    // Qwen3-ASR format drift and one-token answers are transient: re-sending the
-    // same audio usually produces a well-formed answer, so the recording is not
-    // thrown away on the first unusable response.
     const int MaxTranscriptAttempts = 3;
     const int TruncateMaxLen = 300;
     const int HealthCheckTimeoutSeconds = 2;
     const int HttpTimeoutMinutes = 5;
-    // Qwen3-ASR picks the language itself, and for a hum, a throat-clear or a
-    // clipped syllable it picks Chinese: measured on this machine, a low-level
-    // vocalisation answered "language Chinese<asr_text>啊哈哈！". llama.cpp
-    // forwards the `language` field, and the same audio with en answered
-    // "Ahaha." instead. The whole app dictates and cleans up in English.
     const string AsrLanguage = "en";
 
-    // Set once a server says it does not understand the "language" form field:
-    // llama.cpp handles that field per audio model, so a dedicated ASR model
-    // added later could answer every request with a 400. Dropping the field
-    // costs the language pin but keeps the model usable at all.
     bool _serverRejectsLanguageField;
 
-    // Surfaced to the UI after a failed transcription so the message can name
-    // the reason (no speech heard / wrong language / format drift) instead of
-    // blaming the model for all three. Written by Transcribe, read after it.
     public AsrFailure LastFailure { get; private set; }
         = AsrFailure.None;
 
-    // Surfaced in the UI when a request stalls, so a timeout is not mistaken
-    // for the user's own cancellation.
     public static string TimeoutDescription => $"{HttpTimeoutMinutes} minutes";
 
     readonly HttpClient _http;
@@ -126,11 +105,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         content.Add(fileContent, "file", "audio.wav");
         content.Add(new StringContent(modelName), "model");
 
-        // llama.cpp's /v1/audio/transcriptions replaces its built-in
-        // "Transcribe audio to text" instruction with any non-empty prompt.
-        // Dedicated ASR models (Qwen3-ASR) only produce a proper
-        // "language X<asr_text>..." output for the instruction they were
-        // trained on, so omit the prompt for them and let the server default win.
+        // Prompt replaces llama.cpp's trained instruction; omit it for dedicated ASR or its output format breaks.
         var dedicatedAsr = LocalModels.IsDedicatedAsr(modelName);
         if (!dedicatedAsr)
         {
@@ -170,9 +145,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
                     continue;
                 }
 
-                // A server build that does not know the language field answers
-                // 400 to every request with that model. Drop the field once and
-                // resend, instead of failing this recording and every later one.
                 if (!response.IsSuccessStatusCode && dedicatedAsr && !_serverRejectsLanguageField
                     && RejectsLanguageField(raw))
                 {
@@ -196,10 +168,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
 
                 lastFailure = failure;
 
-                // The model heard the recording and said there is no speech in
-                // it, or answered in a language the user is not dictating in:
-                // decoding is greedy, so the two retries that used to follow
-                // posted the same bytes and got the same answer 250 ms later.
                 if (failure is AsrFailure.NoSpeech
                     or AsrFailure.ForeignLanguage)
                 {
@@ -215,16 +183,12 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
                     continue;
                 }
 
-                // Every attempt failed to produce a formatted transcript: keep a
-                // chat-style answer if the model gave one, instead of reporting
-                // "no speech" for audio that clearly contained speech.
                 var salvaged = TranscriptionParser.SalvageUnformatted(raw);
                 LastFailure = salvaged == null ? failure : AsrFailure.None;
                 return salvaged;
             }
         }
 
-        // Only reachable when every attempt was rejected before a parse decision.
         var fallback = TranscriptionParser.SalvageUnformatted(lastRaw);
         LastFailure = fallback == null ? lastFailure : AsrFailure.None;
         return fallback;
@@ -237,8 +201,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         _ => "unusable answer format"
     };
 
-    // Posts the form and reads the body; both the initial attempt and the
-    // retry share this path.
     async Task<(HttpResponseMessage response, string raw)> PostTranscriptionAsync(
         MultipartFormDataContent content, CancellationToken ct)
     {
@@ -248,9 +210,7 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
         return (response, raw);
     }
 
-    // .NET stalls ~2 s probing IPv6 [::1] before falling back to IPv4 when the
-    // host is "localhost", while llama.cpp only listens on the IPv4 loopback.
-    // Pinning the loopback address removes that stall from every request.
+    // Pin 127.0.0.1: .NET stalls ~2 s probing IPv6 [::1], and llama.cpp listens on IPv4 only.
     internal static Uri BuildEndpointUri(string endpoint, string path)
     {
         var uri = new Uri(endpoint.TrimEnd('/') + path, UriKind.Absolute);
@@ -274,9 +234,6 @@ Output ONLY the corrected transcription. No explanations, no quotes, no extra te
     static bool ShouldRetryAudioLoad(HttpResponseMessage response, string body) =>
         (int)response.StatusCode == 400 && body.Contains("Failed to load image or audio file");
 
-    // Deliberately narrow: the body has to name the language field and call it
-    // invalid, unknown or unsupported. A rejected audio file keeps its own path
-    // above, and a 401/404 is a configuration problem the user must see.
     static bool RejectsLanguageField(string body) =>
         body.Contains("language", StringComparison.OrdinalIgnoreCase) &&
         (body.Contains("invalid parameter", StringComparison.OrdinalIgnoreCase) ||

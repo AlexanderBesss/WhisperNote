@@ -5,13 +5,7 @@ using System.Management;
 
 namespace WhisperNote.Services;
 
-/// <summary>
-/// Kernel-level anti-cheat drivers (FACEIT, Vanguard, EAC, BattlEye) block
-/// synthesized keystrokes system-wide while active. No SendInput/keybd_event
-/// flag can get through that; the only fix is closing the blocker. Detect the
-/// common ones so a paste failure can name the culprit instead of looking like
-/// an app bug.
-/// </summary>
+// Kernel anti-cheat drivers block SendInput/keybd_event system-wide; no injection flag bypasses this.
 static class InputBlockerDetector
 {
     static readonly (string Match, string Label)[] KnownBlockers =

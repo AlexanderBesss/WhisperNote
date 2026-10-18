@@ -21,9 +21,7 @@ public partial class SettingsWindow : Window
         Closed += (_, _) => _viewModel.Detach();
     }
 
-    // Settings save on change, so closing never discards anything — except a
-    // text field still holding the keyboard, whose binding only commits when it
-    // loses focus. ClearFocus() flushes it before the window goes away.
+    // WPF commits a focused TextBox only on focus loss; ClearFocus() flushes it before Close.
     void CloseButton_Click(object sender, RoutedEventArgs e) => CloseSettings();
 
     void CloseSettings()
@@ -34,8 +32,7 @@ public partial class SettingsWindow : Window
 
     void Tab_Checked(object sender, RoutedEventArgs e)
     {
-        // Fires while InitializeComponent() builds the tab bar, before the
-        // content panels exist.
+        // IsChecked="True" fires this during InitializeComponent(), before the panel fields exist.
         if (PanelModel is null || PanelRecord is null || PanelOutput is null ||
             PanelGrammar is null || PanelSystem is null)
             return;
@@ -60,9 +57,6 @@ public partial class SettingsWindow : Window
         CloseSettings();
     }
 
-    // Custom drag: DragMove() only moves this window and misbehaves inside
-    // preview events, so track the mouse manually and move the owner (main
-    // window) along with the settings window.
     bool _dragging;
     Point _dragStart;
     double _startLeft, _startTop;
@@ -73,19 +67,14 @@ public partial class SettingsWindow : Window
         if (e.ButtonState != MouseButtonState.Pressed)
             return;
 
-        // A combo box dropdown holds the mouse while it is open; its clicks
-        // belong to the dropdown, never to the drag logic.
+        // An open combo box dropdown holds mouse capture; without this its clicks would start a drag.
         if (Mouse.Captured is not null and not SettingsWindow)
             return;
 
-        // The source is not part of this window's visual tree: the click came
-        // from a popup's separate tree (e.g. a combo box dropdown), so it must
-        // not start a drag.
+        // A click from a popup's separate visual tree (e.g. a dropdown) must not start a drag.
         if (!VisualTree.IsWithin(e.OriginalSource as DependencyObject, this))
             return;
 
-        // Interactive controls (buttons, switches, tabs, combo boxes) keep
-        // their clicks; everywhere else starts a drag.
         if (IsInteractiveSource(e.OriginalSource as DependencyObject))
             return;
 
@@ -99,9 +88,7 @@ public partial class SettingsWindow : Window
         e.Handled = true;
     }
 
-    // A click that landed inside one of these controls belongs to the control,
-    // not to the drag. ComboBoxItem is checked separately from ComboBox
-    // because the open dropdown lives in its own visual tree.
+    // The open dropdown lives in its own visual tree, so ComboBoxItem needs its own ancestor check.
     static bool IsInteractiveSource(DependencyObject? source) =>
         VisualTree.FindAncestor<ButtonBase>(source) != null ||
         VisualTree.FindAncestor<ComboBoxItem>(source) != null ||
@@ -141,8 +128,7 @@ public partial class SettingsWindow : Window
     {
         base.OnLostMouseCapture(e);
 
-        // A closing dropdown can steal capture back before the button-up
-        // arrives; without this the window would keep following the mouse.
+        // A closing dropdown can steal capture before button-up; without this the drag never ends.
         _dragging = false;
     }
 }

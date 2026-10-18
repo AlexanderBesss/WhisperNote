@@ -7,13 +7,6 @@ using System.Text.RegularExpressions;
 
 namespace WhisperNote.Services;
 
-// Converts spoken English numbers ("twenty five", "three point five",
-// "forty dollars") into digits ("25", "3.5", "$40"). Dedicated ASR models
-// (Qwen3-ASR) transcribe verbatim and cannot follow the transcription
-// prompt, so their parsed output is normalized here. The pass is
-// deliberately conservative: anything that is not a well-formed number
-// phrase, or that matches a known idiom guard ("one of them", "no one"),
-// is left as words.
 static class NumberNormalizer
 {
     static readonly Dictionary<string, long> Ones = new(StringComparer.OrdinalIgnoreCase)
@@ -52,7 +45,6 @@ static class NumberNormalizer
         ["pound"] = "£", ["pounds"] = "£",
     };
 
-    // A standalone "one" in these contexts is an idiom or pronoun, not a quantity.
     static readonly HashSet<string> OnePrevGuards = new(StringComparer.OrdinalIgnoreCase)
     {
         "no", "the", "every", "any", "this", "that", "which", "by",
@@ -114,9 +106,6 @@ static class NumberNormalizer
 
     static bool IsAnd(string word) => word.Equals("and", StringComparison.OrdinalIgnoreCase);
 
-    // Splits a matched run into words and trims conjunction "and" from its
-    // edges ("six and bring" -> run "six"; "and one hundred" -> run "one
-    // hundred"). Internal "and" stays ("one hundred and five" -> 105).
     static bool TryLocateRun(Match match, out int runIndex, out int runLength, out string[] words)
     {
         var value = match.Value;
@@ -142,9 +131,6 @@ static class NumberNormalizer
         return words.Length > 0;
     }
 
-    // Returns the digit replacement for one number run and how many characters
-    // of the input it consumes (more than the run when a currency word
-    // follows). A null replacement keeps the original words.
     static string? BuildReplacement(string text, int runIndex, int runLength, string[] words, out int consumed)
     {
         consumed = runLength;
@@ -155,9 +141,6 @@ static class NumberNormalizer
         string? formatted = FormatNumber(words);
         if (formatted == null && FollowedByCurrencyWord(text, runIndex, runLength))
         {
-            // Spoken money amounts often drop "hundred": "three sixty-five
-            // dollars" means $365. The elision is only unambiguous in front of
-            // a currency word, so "five thirty" on its own still stays words.
             formatted = FormatNumber(words, elidedHundreds: true);
         }
         if (formatted == null)
@@ -166,8 +149,6 @@ static class NumberNormalizer
         return TryFormatCurrency(text, runIndex, runLength, formatted, ref consumed) ?? formatted;
     }
 
-    // Matches the next word after `text` and reports whether it is a currency
-    // word, yielding its symbol and match position when it is.
     static bool TryGetNextCurrencySymbol(string text, out string? symbol, out int symbolIndex, out int symbolLength)
     {
         var next = NextWord.Match(text);
@@ -204,8 +185,6 @@ static class NumberNormalizer
             if (next.Success && OneNextGuards.Contains(next.Groups[1].Value)) return true;
         }
 
-        // "thanks a million", "a hundred times": keep the scale word when the
-        // indefinite article precedes it.
         if (Scales.ContainsKey(word) && prev.Success &&
             (prev.Groups[1].Value.Equals("a", StringComparison.OrdinalIgnoreCase) ||
              prev.Groups[1].Value.Equals("an", StringComparison.OrdinalIgnoreCase)))
@@ -214,8 +193,6 @@ static class NumberNormalizer
         return false;
     }
 
-    // "forty dollars" -> "$40", "forty dollars and fifty cents" -> "$40.50".
-    // The currency word (and cents tail) is absorbed into the replacement.
     static string? TryFormatCurrency(string text, int runIndex, int runLength, string formatted, ref int consumed)
     {
         var after = text.Substring(runIndex + runLength);
@@ -224,7 +201,6 @@ static class NumberNormalizer
 
         consumed = runLength + symbolIndex + symbolLength;
 
-        // "forty dollars and fifty cents" -> "$40.50"
         var value = formatted;
         var cents = CentsTail.Match(text.Substring(runIndex + consumed));
         if (cents.Success)
@@ -269,11 +245,6 @@ static class NumberNormalizer
 
     enum State { Start, Ones, Tens, Hundred, Scale, And }
 
-    // Standard spoken-number grammar: ones/tens accumulate, "hundred" scales
-    // the current chunk, "thousand"+ closes a chunk into the total. Rejects
-    // ambiguous sequences ("one two", "five thirty") and a trailing "and" so
-    // those runs stay words. With elidedHundreds, a ones word directly before
-    // a tens word scales it like a dropped "hundred" ("three sixty five" -> 365).
     static long? ParseIntegerWords(string[] words, bool elidedHundreds = false)
     {
         if (words.Length == 0)
@@ -299,7 +270,6 @@ static class NumberNormalizer
                 {
                     if (!elidedHundreds)
                         return null;
-                    // "three sixty five" = three hundred sixty five.
                     current *= 100;
                 }
                 current += ten;

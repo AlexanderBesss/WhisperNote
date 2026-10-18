@@ -4,13 +4,7 @@ namespace WhisperNote.Services;
 
 static class AudioProcessor
 {
-    // Only a level this low proves the capture itself is dead (muted or missing
-    // endpoint, buffer never filled). It is deliberately a floor and not a
-    // "silence" verdict: measured against the running model, real speech
-    // recorded at peak 250 and 400 is transcribed perfectly, while a 500 peak
-    // gate threw recordings away (log: "recording is silent (max amplitude
-    // 485)"). Whether the audio contains speech is decided by the ASR model,
-    // which answers "language None" for hums, clicks and room tone.
+    // Floor proving a dead capture only — the ASR model, not a peak gate, decides whether audio is speech.
     public const int SilentPeakFloor = 80;
 
     public static byte[] DownmixToMono(byte[] pcm, int channels)
@@ -41,9 +35,6 @@ static class AudioProcessor
         return max;
     }
 
-    // Average energy, not the loudest sample: a single click peaks like speech
-    // but has a low RMS, which is what makes the two numbers readable together
-    // in the log when a recording goes wrong.
     public static double GetRmsAmplitude(byte[] pcm)
     {
         if (pcm.Length < 2) return 0;

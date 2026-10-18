@@ -56,11 +56,9 @@ public class RecordingStateManager : ViewModel
 
     public int ChannelCount => _recorder.ChannelCount;
 
-    // The mic the last capture actually opened, so a failure message can name
-    // the device that produced the silence.
     public string? MicrophoneName => _recorder.LastDeviceName;
 
-    // -1 means "system default"; forwarded to the recorder for the next StartRecording.
+    // -1 = system default mic.
     public void SetMicDevice(int deviceNumber, string? deviceName)
     {
         _recorder.PreferredDeviceNumber = deviceNumber;
@@ -77,9 +75,6 @@ public class RecordingStateManager : ViewModel
         if (!CanStart)
             throw new InvalidOperationException($"Cannot start recording in state {_state}");
 
-        // Which gesture opened the mic. A sub-second recording is a slip of the
-        // hotkey far more often than a click on the window, and the "too short"
-        // verdict reads completely differently once the log says how it started.
         Logger.Info(isHotkey
             ? $"Recording requested by hotkey{(string.IsNullOrEmpty(hotkeyName) ? "" : $" ({hotkeyName})")}"
             : "Recording requested from the window");
@@ -88,8 +83,6 @@ public class RecordingStateManager : ViewModel
         TransitionTo(RecordingState.Recording, isHotkey, hotkeyName: hotkeyName);
     }
 
-    // Pays the mic wake-up cost once at app start so the first hotkey press
-    // is as fast as every later one.
     public Task WarmUpMic() => _recorder.WarmUpAsync();
 
     public async Task<byte[]> StopRecording()

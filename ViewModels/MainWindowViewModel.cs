@@ -40,8 +40,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         OnPropertyChanged(nameof(WindowOpacity));
     }
 
-    // Shared setter for the persisted settings toggles: fire PropertyChanged,
-    // persist to AppState, then surface the effect in the status line.
     bool SyncSetting(ref bool field, bool value, Action persist, string? infoText = null)
     {
         if (!SetProperty(ref field, value))
@@ -52,7 +50,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         return true;
     }
 
-    // Same for the free-text settings, which have no status line of their own.
     bool SyncTextSetting(ref string field, string value, Action persist)
     {
         if (!SetProperty(ref field, value))
@@ -150,8 +147,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    // How much thinking the checker is allowed to spend, forwarded as
-    // "reasoning_effort". "" leaves the choice to the server.
     string _grammarEffort = "";
     public string GrammarEffort
     {
@@ -165,8 +160,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     public IReadOnlyList<GrammarEffortOption> GrammarEffortOptions { get; } = GrammarCheckService.EffortOptions;
 
-    // Says what the proofreader is doing without opening the log: which model
-    // the API reported, or why it is being skipped.
     string _grammarStatus = "";
     public string GrammarStatus
     {
@@ -178,8 +171,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
     string? _grammarSignature;
     bool _isProbingGrammar;
 
-    // Rebuilds the checker whenever host, key or effort change: the HttpClient,
-    // the discovered model and the probe cooldown all belong to one endpoint.
     void RefreshGrammarService()
     {
         var signature = $"{_grammarApiHost}|{_grammarApiKey}|{_grammarEffort}";
@@ -217,8 +208,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            // A service replaced (and disposed) mid-probe surfaces here; the
-            // fresh instance already owns the status line by then.
             Logger.Error($"[GrammarProbe] failed: {ex.Message}");
         }
         finally
@@ -228,9 +217,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    // The Grammar tab dropped its status line to stay short, so the state now
-    // travels as a dot next to the switch; GrammarStatus keeps the full
-    // sentence for the dot's tooltip and the log.
     enum GrammarState { Off, NoHost, Probing, Ready, Unchecked, Problem }
     GrammarState _grammarState;
 
@@ -311,8 +297,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     void UpdateHardwareMode()
     {
-        // Once the server is up, report the backend it actually runs on: the startup
-        // fallback chain may have demoted a GPU the preferred build cannot drive.
         var backend = ServerManager.IsServerRunning ? ServerManager.Backend : App.DetectedBackend;
         HardwareMode = _useCpuOnly ? "CPU" : backend switch
         {
@@ -375,7 +359,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _micDeviceName = deviceName;
         _state.MicDeviceNumber = deviceNumber;
         _state.MicDeviceName = deviceName;
-        // Picked up by the next recording; no restart needed.
         RecordingManager.SetMicDevice(deviceNumber, deviceName);
     }
 
@@ -414,7 +397,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     void WireRecordingEvents()
     {
-        // The startup fallback chain may settle on another backend than the detected one.
         ServerManager.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ServerManager.Status))
@@ -470,9 +452,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
         else if (_startupEnabled && !StartupRegistry.IsEnabled())
         {
-            // Settings ask for autostart but the Run entry is missing or points
-            // elsewhere (moved folder, registry cleaner): recreate it so the
-            // toggle reflects reality and the app actually starts with Windows.
             Logger.Warn("Startup entry missing or stale; recreating it");
             StartupRegistry.SetEnabled(true);
         }
@@ -482,8 +461,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         if (_micDeviceNumber < 0 || !string.IsNullOrEmpty(_micDeviceName))
             return;
-        // Anchor the saved number to its current name so a later device
-        // reshuffle can be survived by name matching.
         foreach (var (number, name) in AudioRecorder.GetInputDevices())
         {
             if (number != _micDeviceNumber)
@@ -507,8 +484,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         StartInTray = settings.StartInTray;
         HotkeyEnabled = settings.HotkeyEnabled;
         HotkeyVirtualKeyCode = settings.HotkeyVirtualKeyCode;
-        // Host, key and effort first: enabling the check probes the endpoint,
-        // and that probe must not run against the previous settings.
+        // Order matters: the enable toggle probes the currently set endpoint.
         GrammarApiHost = settings.GrammarApiHost;
         GrammarApiKey = settings.GrammarApiKey;
         GrammarEffort = settings.GrammarEffort;
@@ -517,8 +493,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (cpuModeChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForCpuMode");
 
-        // The running server still holds the previous model; stop it so the next
-        // transcription restarts with the selected one (downloading it if needed).
         if (localModelChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForModelChange");
     }
@@ -601,7 +575,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 }
                 else
                 {
-                    // A press that changes nothing looks like a dead app.
                     Logger.Info($"Hotkey press ignored while {RecordingManager.State}");
                     if (RecordingManager.IsProcessing)
                         RecordingManager.InfoText = "Still finishing the previous recording...";
@@ -680,8 +653,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 _pendingHotkeyStop = true;
             else
             {
-                // Dropping a press without a word is indistinguishable from the
-                // app having stopped responding, so say what is actually busy.
                 Logger.Info($"[{context}] ignored: still busy with the previous recording");
                 if (RecordingManager.IsProcessing)
                     RecordingManager.InfoText = "Still finishing the previous recording...";
@@ -701,11 +672,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             Logger.Error($"[{context}] exception: {ex.Message}");
             RecordingManager.Reset();
-            // The recorder states the actual cause ("capture device
-            // disconnected"); the caller-supplied fallback only says which
-            // operation failed, which leaves the user guessing. The pill is one
-            // line, so it keeps the readable part of a COM failure and the log
-            // keeps all of it.
             var info = ShortenForPill(ex.Message);
             if (string.IsNullOrWhiteSpace(info))
                 info = failureInfo;
@@ -718,9 +684,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    // NAudio and Media Foundation end their messages with
-    // "(Exception from HRESULT: 0x88890004)" and run to several sentences; that
-    // reads as noise on the status line.
     static string ShortenForPill(string? message)
     {
         if (string.IsNullOrWhiteSpace(message))
@@ -735,10 +698,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         return line.Length <= 120 ? line : line[..120].TrimEnd() + "...";
     }
 
-    // Names the failing stage so a lost "no response" is never ambiguous: an
-    // empty or silent buffer is a capture problem, an empty model answer is a
-    // model one. Falls back to Idle + info line when the state machine has
-    // already left Processing, so the user always sees why nothing happened.
     void ShowFailure(string message)
     {
         if (!RecordingManager.SetError(message))
@@ -748,15 +707,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    // A tap on the hold-to-talk key: the log shows recordings of 0.1-0.3 s
-    // (the pill flashes and nothing ever appears). Below this the audio cannot
-    // contain a word, so it is answered on the spot instead of costing a model
-    // round trip and three retries.
     const double MinUsefulRecordingSeconds = 0.25;
 
-    // Named in failure messages: the default endpoint moves by itself when a
-    // headset is unplugged, and "check the mic" is only actionable once the
-    // message says which mic was used.
     string MicLabel => RecordingManager.MicrophoneName is { Length: > 0 } name
         ? $"\u201c{name}\u201d"
         : "the selected mic";
@@ -854,18 +806,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
             }
             else
             {
-                // The audio was real and the request succeeded, but the model
-                // still gave nothing usable. Say which stage failed and what
-                // it heard, instead of silently dropping back to Ready, which
-                // looks exactly like a lost request.
                 ShowFailure(DescribeTranscriptionFailure(ServerManager.LastTranscriptionFailure));
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            // HttpClient throws TaskCanceledException on its own timeout; that
-            // is not the user cancelling, and swallowing it as a cancel leaves
-            // the UI on "Ready" with no explanation.
             Logger.Error($"[ProcessAudio] transcription request timed out after {TranscriptionService.TimeoutDescription}");
             ShowFailure($"Model did not respond in {TranscriptionService.TimeoutDescription} — try again");
         }
@@ -880,11 +825,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    // "Nothing happened" has three different causes once the model is the one
-    // deciding whether there was speech: the recording held no speech (mic
-    // problem), the model answered in a language the user is not dictating in
-    // (model problem), or it broke its output format (transient). Each needs
-    // its own sentence, otherwise every failure reads as a lost request.
     string DescribeTranscriptionFailure(AsrFailure failure) => failure switch
     {
         AsrFailure.NoSpeech =>
@@ -894,11 +834,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _ => "Model returned no transcription — try again"
     };
 
-    // The optional second pass: hand the transcript to the configured chat
-    // model and paste what it returns instead. A missing, dead or confused
-    // proofreader must never cost the user their transcription, so every
-    // failure returns the original text plus a short note the info line shows
-    // next to "Copied and pasted".
     async Task<(string text, string? grammarNote)> ProofreadAsync(string text, CancellationToken ct)
     {
         var service = _grammar;
@@ -932,11 +867,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
     }
 
-    // A usable transcript: copy it, paste it when the user asked for
-    // auto-paste, then state exactly which of those steps happened, so the
-    // status line never claims a paste that failed. A skipped grammar pass is
-    // appended to that line: the text still arrived, and the user should know
-    // it went out unproofed.
     async Task ApplyTranscriptionSuccessAsync(string text, CancellationToken ct, string? grammarNote = null)
     {
         var copied = TrySetClipboardText(text);
@@ -967,12 +897,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
         await OffloadServerAfterSuccessAsync();
     }
 
-    // Returns (aborted, pasted, failure): aborted means cancellation was
-    // handled and the transcription result must be dropped entirely.
     async Task<(bool aborted, bool pasted, string? failure)> TryAutoPasteAsync(CancellationToken ct)
     {
-        // Let the clipboard settle and any hotkey key-up reach the
-        // system before synthesizing Ctrl+V.
+        // Wait for the clipboard to settle and key-up to land before Ctrl+V.
         await Task.Delay(100);
         if (ct.IsCancellationRequested)
         {
@@ -983,9 +910,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         var result = AutoPaster.SendCtrlV();
         if (!result.Success)
         {
-            // Transient failure (focus still moving between windows):
-            // one retry before reporting. A failed first attempt
-            // injected nothing, so a retry cannot double-paste.
+            // The failed first attempt injected nothing, so a retry cannot double-paste.
             await Task.Delay(250);
             if (!ct.IsCancellationRequested)
                 result = AutoPaster.SendCtrlV();

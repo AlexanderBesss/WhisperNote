@@ -63,9 +63,6 @@ public static class ModelDownloader
                 }
                 catch (IOException ex)
                 {
-                    // The destination can be locked by a stale server process or
-                    // antivirus scanning. Retry, then fail loudly instead of
-                    // reporting a download that was never put in place.
                     copyFailure = ex;
                     if (i < 5)
                         await Task.Delay(1000);
@@ -92,11 +89,6 @@ public static class ModelDownloader
         return client;
     }
 
-    /// <summary>
-    /// Shared by ModelDownloader and BackendDownloader: streams the response body
-    /// into the destination file, reporting progress at most once per second.
-    /// Returns the number of bytes written.
-    /// </summary>
     internal static async Task<long> CopyWithProgressAsync(
         Stream source, Stream destination,
         string message, long total,

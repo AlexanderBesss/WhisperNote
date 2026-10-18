@@ -10,27 +10,12 @@ using NAudio.Wave;
 
 namespace WhisperNote.Services;
 
-// WASAPI shared-mode capture. The capture object is created once and reused
-// across recordings: this machine's Intel SST mic array sleeps when idle and
-// costs 350-650 ms to wake inside AudioClient.Start, whether through MME or
-// WASAPI. A stopped-but-alive capture keeps the endpoint warm, so every
-// hotkey press after the first starts in ~0 ms (measured). WarmUpAsync pays
-// the cold-open cost once at app start.
-//
-// Capture delivers the device's mix format (usually 48 kHz float); it is
-// resampled to 16 kHz 16-bit mono when recording stops, so the transcription
-// pipeline receives exactly the same PCM as before.
-//
-// Trade-off of the warm capture: the allocated (stopped) audio client keeps
-// the endpoint claimed for the app's whole lifetime, so other applications
-// cannot open the mic in WASAPI exclusive mode while WhisperNote runs.
-// Accepted for the hot-start latency.
+// The capture is created once and kept alive between recordings: the Intel SST
+// mic costs 350-650 ms to wake, and the warm client blocks WASAPI exclusive mode.
 public class AudioRecorder : IDisposable
 {
     const int DisposeTimeoutMs = 2000;
     const int ConvertChunkBytes = 16 * 1024;
-    // How long to wait for the capture thread to reach Capturing (or to die)
-    // after StartRecording before assuming the device is healthy.
     const int StartConfirmTimeoutMs = 250;
 
     WasapiCapture? _capture;
@@ -38,12 +23,7 @@ public class AudioRecorder : IDisposable
     WaveFormat? _inputFormat;
     MemoryStream? _rawStream;
     DateTime _captureOpenedAtUtc;
-    // Written from NAudio's capture thread (OnCaptureDied) and from the Settings
-    // setters, read under _stateLock: volatile so a client whose audio engine
-    // died is never reused just because the write had not become visible yet.
     volatile bool _captureDirty;
-    // Set by the permanent RecordingStopped handler when NAudio's capture
-    // thread dies on its own (device disconnect, stale client after resume).
     volatile bool _captureDied;
     Exception? _captureDiedException;
     readonly SemaphoreSlim _stateLock = new(1, 1);
@@ -53,8 +33,6 @@ public class AudioRecorder : IDisposable
     public int ChannelCount { get; private set; } = 1;
 
     int _preferredDeviceNumber = -1;
-    // -1 means "system default"; any other value is an index into the active
-    // WASAPI capture endpoints, matching the list shown in Settings.
     public int PreferredDeviceNumber
     {
         get => _preferredDeviceNumber;
@@ -62,22 +40,14 @@ public class AudioRecorder : IDisposable
     }
 
     string? _preferredDeviceName;
-    // Preferred over the number: WASAPI indexes reshuffle when devices change.
     public string? PreferredDeviceName
     {
         get => _preferredDeviceName;
         set => SetDevicePreference(ref _preferredDeviceName, value);
     }
 
-    // The mic the last capture actually opened. Naming it in a failure message
-    // is what makes a bad recording diagnosable: the default endpoint changes
-    // by itself when a headset is unplugged, and the device Windows picks next
-    // often hears the room far worse.
     public string? LastDeviceName { get; private set; }
 
-    // Both preferred-device setters share the same pattern: ignore unchanged
-    // values, otherwise remember the new one and mark the capture stale so the
-    // next EnsureCapture rebuilds against it.
     void SetDevicePreference<T>(ref T field, T value)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
@@ -110,9 +80,6 @@ public class AudioRecorder : IDisposable
         });
     }
 
-    // Shared lock/try/finally scaffolding for the recording lifecycle methods.
-    // Dispose keeps its synchronous, timeout-bounded shape and does not use
-    // these helpers.
     async Task WithStateLockAsync(Func<Task> operation)
     {
         await _stateLock.WaitAsync();
@@ -150,8 +117,6 @@ public class AudioRecorder : IDisposable
         }
         catch (Exception ex)
         {
-            // A stale endpoint (sleep/resume, device re-enumeration) is the
-            // usual cause: rebuild the capture once and retry before giving up.
             Logger.Error($"Capture start failed ({ex.Message}); recreating the capture and retrying");
             ReleaseCapture();
             EnsureCapture();
@@ -167,19 +132,14 @@ public class AudioRecorder : IDisposable
         ConfirmCaptureStarted();
     }
 
-    // Clear any stale death report from the previous capture before (re)using
-    // the current one.
     void ResetCaptureDied()
     {
         _captureDied = false;
         _captureDiedException = null;
     }
 
-    // NAudio surfaces a dead audio client asynchronously: StartRecording
-    // returns normally and the capture thread dies right away, reporting the
-    // error only through RecordingStopped. Give the thread a moment to fail
-    // so the retry path can rebuild the capture instead of silently
-    // recording silence until the stop timeout expires.
+    // NAudio reports a capture that died right after StartRecording only through
+    // RecordingStopped, so wait briefly for that signal before recording silence.
     void ConfirmCaptureStarted()
     {
         var deadline = Environment.TickCount64 + StartConfirmTimeoutMs;
@@ -192,8 +152,6 @@ public class AudioRecorder : IDisposable
             throw new InvalidOperationException("Capture device failed to start", _captureDiedException);
     }
 
-    // Briefly starts and stops the reusable capture so the first hotkey press
-    // does not pay the device wake-up cost.
     public Task WarmUpAsync() => WithStateLockAsync(async () =>
     {
         if (IsRecording)
@@ -232,15 +190,9 @@ public class AudioRecorder : IDisposable
         Logger.Info($"Using mic: \"{_device.FriendlyName}\"");
         _capture = new WasapiCapture(_device);
         _inputFormat = _capture.WaveFormat;
-        // Named only once the capture really exists: a constructor that throws
-        // must not leave the UI blaming a mic that was never opened.
         LastDeviceName = _device.FriendlyName;
         _captureOpenedAtUtc = DateTime.UtcNow;
         _capture.DataAvailable += OnDataAvailable;
-        // Permanent handler: NAudio reports a dying capture (device
-        // disconnect, stale client) only through RecordingStopped, and only
-        // while a handler is attached at that moment. Normal stops carry no
-        // exception, so they pass through untouched.
         _capture.RecordingStopped += OnCaptureDied;
         ResetCaptureDied();
     }
@@ -324,7 +276,6 @@ public class AudioRecorder : IDisposable
     {
         lock (_bufferLock)
         {
-            // Null outside recordings (e.g. during warm-up): audio is discarded.
             _rawStream?.Write(e.Buffer, 0, e.BytesRecorded);
         }
     }
@@ -335,9 +286,6 @@ public class AudioRecorder : IDisposable
             return;
         _captureDiedException = e.Exception;
         _captureDied = true;
-        // A client whose audio engine died (0x88890004 after the default
-        // endpoint changed) can never produce samples again, so it must not be
-        // handed to the next recording.
         _captureDirty = true;
         Logger.Error($"Capture died unexpectedly: {e.Exception.Message}");
     }
@@ -352,9 +300,6 @@ public class AudioRecorder : IDisposable
 
         if (_captureDied)
         {
-            // The capture thread already reported a device failure and
-            // RecordingStopped has fired; waiting for it again would just
-            // burn the full timeout. Rebuild for the next recording.
             var diedException = _captureDiedException
                 ?? new InvalidOperationException("Capture device stopped unexpectedly");
             var partial = RawBufferLength();
@@ -372,7 +317,6 @@ public class AudioRecorder : IDisposable
 
         if (stopException != null)
         {
-            // Unknown capture state after a failed stop: rebuild next time.
             ReleaseCapture();
             throw new InvalidOperationException("Recording stop failed", stopException);
         }
@@ -380,8 +324,6 @@ public class AudioRecorder : IDisposable
         return pcm;
     });
 
-    // Stops the capture but keeps the object alive for the next recording;
-    // that is what keeps the mic endpoint warm.
     static async Task<Exception?> StopCaptureAsync(WasapiCapture capture)
     {
         var stopped = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -404,9 +346,6 @@ public class AudioRecorder : IDisposable
         }
     }
 
-    // Mix-format recording -> 16 kHz 16-bit mono PCM for the ASR pipeline:
-    // one whole-stream Media Foundation resample, which also remixes
-    // stereo to mono. Runs off the UI thread.
     byte[] ConvertToTargetFormat()
     {
         lock (_bufferLock)
@@ -442,9 +381,6 @@ public class AudioRecorder : IDisposable
         }
     }
 
-    // Which device this recording came from and how long that capture had been
-    // alive. "Using mic:" is logged only when the warm capture is rebuilt, so
-    // without this the log cannot prove which device produced a given recording.
     string CaptureContext()
     {
         if (_device == null)
@@ -460,12 +396,8 @@ public class AudioRecorder : IDisposable
             return _rawStream?.Length ?? 0;
     }
 
-    // The system default endpoint moves by itself (a headset unplugged, a
-    // virtual mic installed) while the warm capture keeps recording the device
-    // it opened: that is the usual reason a recording arrives full of audio that
-    // the model hears nothing in. Checked when the recording stops, so the
-    // hotkey path never pays for enumerating devices. Only worth saying while the
-    // user is following the system default rather than a named mic.
+    // The default endpoint can move on its own while the warm capture stays
+    // bound to the device it opened. Only meaningful while following the default.
     void LogDefaultEndpointDrift()
     {
         var device = _device;
@@ -477,8 +409,6 @@ public class AudioRecorder : IDisposable
             using var enumerator = new MMDeviceEnumerator();
             using var current = enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Multimedia);
 
-            // NAudio's MMDevice exposes no endpoint id to compare, so the name
-            // the user sees in Settings is what is comparable here.
             var bound = device.FriendlyName?.Trim();
             var nowDefault = current.FriendlyName?.Trim();
             if (string.Equals(bound, nowDefault, StringComparison.OrdinalIgnoreCase))
@@ -513,8 +443,6 @@ public class AudioRecorder : IDisposable
         {
             if (IsRecording)
             {
-                // A dead capture already raised RecordingStopped; waiting on it
-                // again would only burn the stop timeout during shutdown.
                 if (_capture != null && !_captureDied)
                 {
                     try

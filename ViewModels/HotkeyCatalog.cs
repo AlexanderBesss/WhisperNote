@@ -2,10 +2,6 @@ using System.Collections.Generic;
 
 namespace WhisperNote.ViewModels;
 
-// Single source of truth for the hotkey choices: the display name of every
-// virtual-key code and the list offered in Settings. The main window labels
-// the live hook and the settings combo box build its rows from the same
-// table, so the two can never drift apart.
 internal static class HotkeyCatalog
 {
     static readonly (int Vk, string Name)[] WellKnown =
@@ -34,8 +30,6 @@ internal static class HotkeyCatalog
         return $"VK_{vk:X}";
     }
 
-    // The configured key always gets a row, even when it matches no well-known
-    // code, so the combo box keeps the user's choice instead of resetting.
     public static List<(int Vk, string Name)> Options(int configuredVk)
     {
         var options = new List<(int Vk, string Name)>(WellKnown);

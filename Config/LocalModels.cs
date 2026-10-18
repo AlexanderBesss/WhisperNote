@@ -11,9 +11,7 @@ public sealed class LocalModelOption
     public string HfRepo { get; }
     public string? Mmproj { get; }
 
-    // True for purpose-built ASR models (Qwen3-ASR). They expect the server's
-    // built-in transcription instruction and greedy decoding, not a custom
-    // LLM-style prompt or chat sampling parameters.
+    // Dedicated ASR models require the server's built-in transcription instruction and greedy decoding, not custom prompts.
     public bool DedicatedAsr { get; }
 
     public LocalModelOption(string id, string name, string model, string hfRepo, string? mmproj, bool dedicatedAsr)
@@ -55,8 +53,6 @@ public static class LocalModels
     public static bool IsDedicatedAsr(string? model) =>
         FindByModel(model)?.DedicatedAsr == true;
 
-    // The explicit selection wins; otherwise fall back to matching the model
-    // file currently configured on the local provider (legacy or custom configs).
     public static LocalModelOption? Resolve(string? selectedId, string? currentModel) =>
         FindById(selectedId) ?? FindByModel(currentModel);
 }

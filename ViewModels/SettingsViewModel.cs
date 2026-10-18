@@ -90,9 +90,6 @@ public sealed class SettingsViewModel : ViewModel
             if (!SetProperty(ref _micDeviceNumber, value))
                 return;
 
-            // Apply right away: the mic choice takes effect on the next
-            // recording and must be persisted the moment it changes.
-            // "System default" (-1) has no name to remember.
             string? name = null;
             if (value >= 0)
                 name = MicOptions.FirstOrDefault(option => option.Number == value)?.Name;
@@ -106,9 +103,6 @@ public sealed class SettingsViewModel : ViewModel
         set => SetProperty(ref _grammarEnabled, value);
     }
 
-    // The host and key deliberately commit when the field loses focus (WPF's
-    // default TextBox trigger): every keystroke would otherwise persist the
-    // config and re-probe the endpoint.
     public string GrammarApiHost
     {
         get => _grammarApiHost;
@@ -121,8 +115,6 @@ public sealed class SettingsViewModel : ViewModel
         set => SetProperty(ref _grammarApiKey, value);
     }
 
-    // Which thinking effort to ask the server for. The list comes from the
-    // service itself, so the dropdown and the request cannot drift apart.
     public string GrammarEffort
     {
         get => _grammarEffort;
@@ -131,12 +123,8 @@ public sealed class SettingsViewModel : ViewModel
 
     public IReadOnlyList<GrammarEffortOption> GrammarEffortOptions { get; } = GrammarCheckService.EffortOptions;
 
-    // Mirrors what the main view model learned from the API: which model it
-    // reported, or why the pass is being skipped.
     public string GrammarStatus => _mainViewModel.GrammarStatus;
 
-    // The same state as that sentence, as the colour of the dot the tab shows
-    // next to the switch instead of a status line.
     public Brush GrammarStateBrush => _mainViewModel.GrammarStateBrush;
 
     public SettingsViewModel(MainWindowViewModel mainViewModel)
@@ -159,16 +147,8 @@ public sealed class SettingsViewModel : ViewModel
         _grammarApiKey = mainViewModel.GrammarApiKey;
         _grammarEffort = mainViewModel.GrammarEffort;
 
-        // The probe runs on its own (at startup, and whenever the host or key
-        // change), so the tab has to follow the main view model's status line.
         mainViewModel.PropertyChanged += MainViewModel_PropertyChanged;
 
-        // Save on change: every edit is pushed to the main view model right
-        // away, which persists it. The constructor filled the backing fields
-        // directly, so no event fires until the user actually changes something.
-        // The mic selection applies itself in its setter; re-applying the other
-        // values on top of it is harmless because the main setters are no-ops
-        // when the value did not change.
         PropertyChanged += (_, e) =>
         {
             if (e.PropertyName != nameof(MicDeviceNumber))
@@ -176,9 +156,6 @@ public sealed class SettingsViewModel : ViewModel
         };
     }
 
-    // The settings window is transient while the main view model lives for the
-    // whole session: drop the mirror subscription when the window closes so it
-    // is not kept alive.
     public void Detach() =>
         _mainViewModel.PropertyChanged -= MainViewModel_PropertyChanged;
 
@@ -224,8 +201,6 @@ public sealed class SettingsViewModel : ViewModel
         foreach (var (number, name) in AudioRecorder.GetInputDevices())
             options.Add(new MicOption(number, name));
 
-        // A saved device that is currently unplugged still needs a row, so the
-        // combo box keeps the user's choice instead of silently resetting.
         if (currentDeviceNumber >= 0 && !options.Exists(option => option.Number == currentDeviceNumber))
             options.Add(new MicOption(currentDeviceNumber, $"Device {currentDeviceNumber} (not connected)"));
 
@@ -233,8 +208,6 @@ public sealed class SettingsViewModel : ViewModel
     }
 }
 
-// Everything the settings window can change, handed to the main view model as
-// one unit: nine positional arguments were easy to transpose silently.
 public sealed record SettingsSnapshot(
     bool AutoOffloadVram,
     bool UseCpuOnly,
@@ -261,8 +234,6 @@ public sealed class HotkeyOption
         Name = name;
     }
 
-    // The custom ComboBox template shows the raw item, so ToString() is what
-    // ends up in the selection box and the dropdown rows.
     public override string ToString() => Name;
 }
 

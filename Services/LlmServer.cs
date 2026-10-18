@@ -14,20 +14,13 @@ public class LlmServer : IDisposable
     const int WaitForExitTimeoutMs = 10000;
     const int PortWaitTimeoutMs = 30000;
     const int PortWaitIntervalMs = 500;
-    // A GPU the bundled kernels were not compiled for aborts within seconds, so watch the
-    // first moments of the process: it lets the fallback chain pick another backend instead
-    // of reporting "server exited during startup".
     const int StartupHandshakeTimeoutMs = 20000;
     const int StartupPollIntervalMs = 250;
     const int RecentOutputLimit = 200;
 
-    // What the user sees when the process dies before it starts listening.
-    // Both the startup handshake and the caller's health-poll loop report the
-    // same verdict, so the wording lives in one place.
     internal const string ServerStartupFailureMessage =
         "Server process exited during startup. Check logs.log for details.";
 
-    // Text llama.cpp prints when the selected device cannot run the compiled kernels.
     static readonly string[] UnsupportedDeviceMarkers =
     {
         "no kernel image is available",
@@ -84,12 +77,6 @@ public class LlmServer : IDisposable
         }
     }
 
-    /// <summary>
-    /// Explicit ServerExe from the provider settings. Settings written by older versions
-    /// always pinned the CUDA 13 binary; on a machine where another backend was detected
-    /// that stale value would force the wrong exe and burn the first fallback attempt,
-    /// so it is ignored unless the CUDA 13 backend is the one actually detected.
-    /// </summary>
     string? ResolveExeOverride(string dir, string? serverExe)
     {
         if (string.IsNullOrEmpty(serverExe))
@@ -105,10 +92,6 @@ public class LlmServer : IDisposable
         return Path.Combine(dir, serverExe);
     }
 
-    /// <summary>
-    /// Server binary for a backend. An explicit provider override pins the detected
-    /// backend only, so a stale value cannot block the fallback chain from switching.
-    /// </summary>
     internal string ResolveServerExe(HardwareBackend backend) =>
         backend == _preferredBackend && _preferredExeOverride != null
             ? _preferredExeOverride
@@ -119,18 +102,12 @@ public class LlmServer : IDisposable
         HardwareBackend.Vulkan => AppConfig.VulkanServerExeRelative,
         HardwareBackend.NvidiaCudaLegacy => AppConfig.CudaLegacyServerExeRelative,
         HardwareBackend.IntelNpu => AppConfig.NpuServerExeRelative,
-        // CPU mode prefers the small CPU build downloaded at runtime and falls
-        // back to whatever CUDA build is installed (run with --device none).
         HardwareBackend.Cpu => File.Exists(Path.Combine(AppPaths.BaseDirectory, AppConfig.CpuServerExeRelative))
             ? AppConfig.CpuServerExeRelative
             : AppConfig.CudaServerExeRelative,
         _ => AppConfig.CudaServerExeRelative
     };
 
-    /// <summary>
-    /// Backends to try, best first. The CUDA 13 build cannot run pre-Turing NVIDIA GPUs,
-    /// Vulkan covers those plus AMD and Intel, and the CPU is the last resort.
-    /// </summary>
     internal HardwareBackend[] FallbackChain()
     {
         if (_useCpuOnly)
@@ -154,11 +131,6 @@ public class LlmServer : IDisposable
         };
     }
 
-    /// <summary>
-    /// Downloads the llama.cpp binaries for the backend this machine should
-    /// use when they are not installed yet, so a fresh install fetches only
-    /// what the hardware (or the CPU-only choice) actually needs.
-    /// </summary>
     public Task EnsureBackendAsync(Action<string, long, long> progress, CancellationToken ct = default)
     {
         if (!IsLocal)
@@ -300,9 +272,7 @@ public class LlmServer : IDisposable
         }
     }
 
-    // The OpenVINO NPU build needs its device-selection env vars and the OpenVINO
-    // runtime DLLs on the child's PATH; without the DLLs the server cannot find
-    // the NPU plugins.
+    // OpenVINO NPU build needs these env vars and the OpenVINO runtime DLLs on the child's PATH.
     void ConfigureNpuEnvironment(ProcessStartInfo startInfo)
     {
         startInfo.EnvironmentVariables["GGML_OPENVINO_DEVICE"] = "NPU";
@@ -317,11 +287,6 @@ public class LlmServer : IDisposable
         }
     }
 
-    /// <summary>
-    /// Watches the first moments of the process: it either starts listening, dies on an
-    /// unusable device, or stays slow (large model, PTX JIT) and is left to the caller's
-    /// health polling.
-    /// </summary>
     async Task<StartupOutcome> WaitForStartupOutcomeAsync(CancellationToken ct)
     {
         var elapsed = 0;
@@ -410,7 +375,6 @@ public class LlmServer : IDisposable
 
                 Logger.Info($"{prefix} {line}");
 
-                // Kept so a startup failure can be classified without re-reading the log file.
                 lock (_outputLock)
                 {
                     _recentOutput.Enqueue(line);
@@ -459,8 +423,6 @@ public class LlmServer : IDisposable
         return !IsPortInUse(AppConfig.ServerPort);
     }
 
-    // Cancels and disposes the current download CTS; callers then assign the
-    // next CTS (per download request) or null (on shutdown).
     void CancelAndDisposeDownloadCts()
     {
         _downloadCts?.Cancel();
@@ -515,14 +477,11 @@ public class LlmServer : IDisposable
         }
     }
 
-    // Dedicated ASR models (Qwen3-ASR) are decoded greedily; chat-style
-    // sampling parameters (min-p, repeat penalty, temperature) degrade their output.
+    // Dedicated ASR models decode greedily; chat-style sampling parameters degrade their output.
     string SamplingArgs() => LocalModels.IsDedicatedAsr(CurrentProvider?.Model)
         ? "--temp 0 "
         : $"--temp {AppConfig.Temperature} --top-p {AppConfig.TopP} --min-p {AppConfig.MinP} --repeat-penalty {AppConfig.RepeatPenalty} ";
 
-    // Header shared by every server-args variant: model path, optional
-    // multimodal projector, and the loopback endpoint.
     string ModelArgs(bool mmprojOffload)
     {
         var mmprojArg = _mmprojPath != null
@@ -554,13 +513,11 @@ public class LlmServer : IDisposable
     {
         return
             ModelArgs(mmprojOffload: false) +
-            // --device none keeps the CUDA backend from initializing at all; without it
-            // the CUDA build probes the GPU even with --gpu-layers 0 and aborts on GPUs
-            // the bundled kernels were not compiled for (e.g. "no kernel image").
+            // --device none is required: --gpu-layers 0 alone still probes the GPU and aborts on unsupported GPUs.
             "--device none " +
             "--gpu-layers 0 " +
             $"--ctx-size {AppConfig.ContextSize} " +
-            // Quantized KV cache requires flash attention, which is unreliable on CPU; use the f16 default instead.
+            // Quantized KV cache requires flash attention, unreliable on CPU; keep the f16 cache.
             "--flash-attn off " +
             $"--batch-size {AppConfig.BatchSize} --ubatch-size {AppConfig.UBatchSize} " +
             "--jinja " +
@@ -585,7 +542,6 @@ public class LlmServer : IDisposable
     public void Dispose() => Stop();
 }
 
-/// <summary>The selected llama.cpp backend has no kernels for the current device.</summary>
 sealed class BackendUnavailableException : Exception
 {
     public BackendUnavailableException(string message) : base(message) { }

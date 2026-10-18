@@ -11,11 +11,8 @@ namespace WhisperNote.Services;
 public enum HardwareBackend
 {
     Unknown,
-    /// <summary>CUDA 13 build: Turing (sm_75) and newer.</summary>
     NvidiaCuda,
-    /// <summary>CUDA 12.4 build: Maxwell, Pascal and Volta via PTX JIT.</summary>
     NvidiaCudaLegacy,
-    /// <summary>Vulkan build: NVIDIA Pascal, AMD and Intel GPUs.</summary>
     Vulkan,
     IntelNpu,
     Cpu
@@ -23,14 +20,11 @@ public enum HardwareBackend
 
 public static class HardwareDetector
 {
-    // NVIDIA removed Maxwell, Pascal and Volta from CUDA 13, so the CUDA 13 backend
-    // ships no kernels - not even PTX - for them and aborts at startup with
-    // "no kernel image is available for execution on the device". Turing is the floor.
+    // CUDA 13 ships no kernels (not even PTX) for pre-Turing GPUs; they abort with "no kernel image is available".
     const double Cuda13MinimumComputeCapability = 7.5;
 
     const int NvidiaSmiTimeoutMs = 5000;
 
-    // Only used when nvidia-smi is unavailable: Maxwell, Pascal and Volta product names.
     static readonly Regex LegacyNvidiaModel = new(
         @"\b(GTX\s*10\d{2}|GTX\s*9\d{2}|GTX\s*750|TITAN\s*X|Quadro\s*[PM]\d|Tesla\s*[PM]\d|Jetson\s*T[XM])\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -42,14 +36,10 @@ public static class HardwareDetector
             var gpus = GetGpuNames();
             if (gpus == null)
             {
-                // WMI unavailable: keep the historical default and let the startup
-                // fallback chain demote the server if the CUDA build cannot run.
                 Logger.Warn("WMI unavailable; assuming an NVIDIA CUDA GPU");
                 return HardwareBackend.NvidiaCuda;
             }
 
-            // Priority: Intel iGPU (Vulkan) first, then discrete NVIDIA,
-            // with the Intel NPU (OpenVINO) kept as the last-resort backup.
             if (gpus.Exists(name => name.Contains("Intel", StringComparison.OrdinalIgnoreCase)))
                 return HardwareBackend.Vulkan;
 
@@ -108,11 +98,6 @@ public static class HardwareDetector
         return names;
     }
 
-    /// <summary>
-    /// True when the machine's best NVIDIA GPU is older than Turing and therefore has no
-    /// kernels in the CUDA 13 build. nvidia-smi ships with the driver and reports the
-    /// authoritative compute capability; the name pattern is only a fallback.
-    /// </summary>
     static bool IsLegacyNvidia(string gpuName)
     {
         var capability = ReadHighestComputeCapability();
@@ -183,7 +168,6 @@ public static class HardwareDetector
     {
         try
         {
-            // Method 1: Check processor for Intel Core Ultra (has integrated NPU)
             using var cpuSearcher = new ManagementObjectSearcher("SELECT Name FROM Win32_Processor");
             foreach (ManagementObject cpu in cpuSearcher.Get())
             {
@@ -195,7 +179,6 @@ public static class HardwareDetector
                 }
             }
 
-            // Method 2: Check for NPU device in PnP entities
             using var searcher = new ManagementObjectSearcher(
                 "SELECT * FROM Win32_PnPEntity WHERE Description LIKE '%NPU%' OR ClassGuid = '{50129DC1-04D0-4ACB-9883-3EEA181B84D2}'");
 
@@ -213,7 +196,6 @@ public static class HardwareDetector
         }
         catch (COMException)
         {
-            // WMI not available
         }
 
         return false;

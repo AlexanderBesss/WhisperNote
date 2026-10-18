@@ -5,8 +5,6 @@ using System.Windows.Media;
 
 namespace WhisperNote.ViewModels;
 
-// The shared status palette; brushes are cached because Convert runs on every
-// status change and WPF renders from the same brush instance far better.
 static class StatusBrushes
 {
     public static readonly SolidColorBrush GrayBrush = new(Color.FromRgb(128, 128, 128));

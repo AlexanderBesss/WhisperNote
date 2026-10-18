@@ -32,9 +32,6 @@ public partial class App : Application
 
         try
         {
-            // Two instances would mean two tray icons, two global hotkey hooks and
-            // duplicate recordings/pastes fighting over the same llama server, so a
-            // second launch just asks the running one to show its window and exits.
             if (!AcquireSingleInstanceLock())
             {
                 Logger.Info("Another WhisperNote instance is already running; exiting");
@@ -54,11 +51,6 @@ public partial class App : Application
                 KillServer();
             };
 
-            // The main window is created here, after AppState exists. It used to be
-            // created from StartupUri, which races OnStartup under load (e.g. at
-            // Windows sign-in): the window could be constructed while AppState was
-            // still null, crashing the autostarted instance with a
-            // NullReferenceException in ServerStateManager.
             var autostart = IsAutostartLaunch(e.Args);
             if (autostart)
                 Logger.Info("Launched from Windows startup");
@@ -68,9 +60,6 @@ public partial class App : Application
             MainWindow = mainWindow;
             if (!startHidden)
                 mainWindow.Show();
-            // Hidden start: the window is never shown; the app keeps running in
-            // the tray (ShutdownMode is OnExplicitShutdown, so a hidden window
-            // does not end the process).
         }
         catch (Exception ex)
         {
@@ -130,7 +119,6 @@ public partial class App : Application
             }
             catch (ObjectDisposedException)
             {
-                // App is shutting down.
             }
         })
         {

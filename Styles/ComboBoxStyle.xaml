@@ -1,15 +1,9 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Style TargetType="ComboBox">
-        <!-- The box is painted from the control's own Brush properties so a
-           settings tab can give it the same fill and outline as the text
-           fields next to it; these are the values every tab used to hardcode. -->
         <Setter Property="Background" Value="#2A2A2A"/>
         <Setter Property="BorderBrush" Value="#444"/>
         <Setter Property="Foreground" Value="#CCC"/>
-        <!-- Dropdown rows need an explicit dark style: the default theme renders
-             them with dark text and a blue highlight, which clashes with the
-             dark popup background used below. -->
         <Setter Property="ItemContainerStyle">
             <Setter.Value>
                 <Style TargetType="ComboBoxItem">
@@ -20,8 +14,6 @@
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="ComboBoxItem">
-                                <!-- Rounded highlight so the first/last row's hover
-                                     does not poke past the popup's curved corners. -->
                                 <Border x:Name="ItemBg" Background="Transparent" CornerRadius="6"
                                         Padding="{TemplateBinding Padding}">
                                     <ContentPresenter/>
@@ -61,8 +53,7 @@
                                               HorizontalContentAlignment="Left"
                                               VerticalContentAlignment="Center">
                                     <ToggleButton.Template>
-                                        <!-- Padding (not Margin) keeps the whole button, including the
-                                             arrow strip, hit-testable so clicks on the arrow open the dropdown. -->
+                                        <!-- Padding, not Margin: keeps the arrow strip hit-testable so clicking it opens the dropdown. -->
                                         <ControlTemplate TargetType="ToggleButton">
                                             <Border Background="Transparent" Padding="8,0,26,0">
                                                 <ContentPresenter Content="{TemplateBinding Content}"
@@ -81,8 +72,6 @@
                         </Border>
                         <Popup Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}"
                                AllowsTransparency="True" Focusable="False">
-                            <!-- No MaxHeight/ScrollViewer: the popup sizes exactly to
-                                 the items, so no empty strip at the bottom. -->
                             <Border Background="#2A2A2A" BorderBrush="#444" BorderThickness="1"
                                     CornerRadius="8" Padding="4"
                                     MinWidth="{TemplateBinding ActualWidth}">
@@ -103,8 +92,6 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <!-- Combo placed in a row with a SettingsField text box: same fill, outline,
-         height and text size, so the two read as one group of controls. -->
     <Style x:Key="SettingsCombo" TargetType="ComboBox"
            BasedOn="{StaticResource {x:Type ComboBox}}">
         <Setter Property="Background" Value="#1E1E1E"/>
