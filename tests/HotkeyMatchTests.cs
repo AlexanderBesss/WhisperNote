@@ -11,6 +11,7 @@ public class HotkeyMatchTests
     [InlineData(0xA2, 0xA2, true)] // Left Ctrl
     [InlineData(0xA5, 0xA5, true)] // Right Alt
     [InlineData(0x14, 0x14, true)] // Caps Lock
+    [InlineData(0x09, 0x09, true)] // Tab
     // The low-level hook reports specific left/right codes, so a generic
     // Shift/Ctrl/Alt selection must fire for either side.
     [InlineData(0x11, 0xA2, true)] // Ctrl <- Left Ctrl
@@ -46,6 +47,7 @@ public class HotkeyMatchTests
     [InlineData(0xA0, false)] // Left Shift
     [InlineData(0xA1, false)] // Right Shift
     [InlineData(0x14, false)] // Caps Lock
+    [InlineData(0x09, false)] // Tab
     public void FocusStealingModifiers(int vkCode, bool expected)
     {
         Assert.Equal(expected, GlobalKeyboardHook.IsFocusStealingModifier(vkCode));
