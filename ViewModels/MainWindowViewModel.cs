@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -119,6 +120,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         get => _startInTray;
         set => SyncSetting(ref _startInTray, value, () => _state.StartInTray = value);
+    }
+
+    bool _selectionToolbarEnabled;
+    public bool SelectionToolbarEnabled
+    {
+        get => _selectionToolbarEnabled;
+        set => SyncSetting(ref _selectionToolbarEnabled, value,
+            () => _state.SelectionToolbarEnabled = value,
+            value ? "Selection toolbar enabled" : "Selection toolbar disabled");
     }
 
     bool _grammarEnabled;
@@ -324,22 +334,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         set => SetProperty(ref _modelMissing, value);
     }
 
-    bool _hotkeyEnabled;
-    public bool HotkeyEnabled
-    {
-        get => _hotkeyEnabled;
-        set
-        {
-            if (SyncSetting(ref _hotkeyEnabled, value, () => _state.HotkeyEnabled = value))
-            {
-                if (value)
-                    InstallHook();
-                else
-                    DisableHook();
-            }
-        }
-    }
-
     int _hotkeyVirtualKeyCode;
     public int HotkeyVirtualKeyCode
     {
@@ -349,8 +343,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
             if (SetProperty(ref _hotkeyVirtualKeyCode, value))
             {
                 _state.HotkeyVirtualKeyCode = value;
-                if (_hotkeyEnabled)
-                    InstallHook();
+                InstallHook();
             }
         }
     }
@@ -401,8 +394,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
             "ToggleServer"));
         DownloadModelCommand = new RelayCommand(_ => FireAndForget(DownloadModelAsync(), "DownloadModel"));
 
-        if (_hotkeyEnabled)
-            InstallHook();
+        InstallHook();
 
         FireAndForget(InitializeAsync(), "Initialize");
     }
@@ -442,13 +434,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _autoPaste = _state.AutoPaste;
         _minimizeToTray = _state.MinimizeToTray;
         _startInTray = _state.StartInTray;
+        _selectionToolbarEnabled = _state.SelectionToolbarEnabled;
         _grammarEnabled = _state.GrammarCheckEnabled;
         _grammarApiHost = _state.GrammarApiEndpoint;
         _grammarApiKey = _state.GrammarApiKey;
         _grammarEffort = _state.GrammarReasoningEffort;
         RefreshGrammarService();
         SyncStartupEntry();
-        _hotkeyEnabled = _state.HotkeyEnabled;
         _hotkeyVirtualKeyCode = _state.HotkeyVirtualKeyCode;
         _hotkeyName = HotkeyCatalog.NameOf(_state.HotkeyVirtualKeyCode);
         _micDeviceNumber = _state.MicDeviceNumber;
@@ -495,13 +487,14 @@ public class MainWindowViewModel : ViewModel, IDisposable
         AutoPaste = settings.AutoPaste;
         MinimizeToTray = settings.MinimizeToTray;
         StartInTray = settings.StartInTray;
-        HotkeyEnabled = settings.HotkeyEnabled;
         HotkeyVirtualKeyCode = settings.HotkeyVirtualKeyCode;
         // Order matters: the enable toggle probes the currently set endpoint.
         GrammarApiHost = settings.GrammarApiHost;
         GrammarApiKey = settings.GrammarApiKey;
         GrammarEffort = settings.GrammarEffort;
         GrammarEnabled = settings.GrammarEnabled;
+
+        SelectionToolbarEnabled = settings.SelectionToolbarEnabled;
 
         if (cpuModeChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForCpuMode");
@@ -614,15 +607,18 @@ public class MainWindowViewModel : ViewModel, IDisposable
         RecordingManager.InfoText = $"Hotkey: {HotkeyName}";
     }
 
-    void DisableHook()
-    {
-        _keyboardHook?.Dispose();
-        _keyboardHook = null;
-        RecordingManager.InfoText = "Hotkey disabled";
-    }
-
     public async Task StartHoldRecord(bool isHotkey = true)
     {
+        // The selection fix owns the clipboard for seconds (copy probe, corrected
+        // text, restore); starting dictation in that window would let its
+        // auto-paste interleave with the fix's Ctrl+V and corrupt the document.
+        if (_fixSelectionRunning)
+        {
+            Logger.Info("Dictation start ignored: a selection fix is running");
+            RecordingManager.InfoText = "Selection fix in progress — start dictation in a moment";
+            return;
+        }
+
         // A press that arrives while the previous capture is still stopping or
         // resampling waits for the mic instead of being dropped.
         try
@@ -927,6 +923,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     async Task ApplyTranscriptionSuccessAsync(string text, CancellationToken ct, string? grammarNote = null)
     {
+        // Never write the transcript to the clipboard while a selection fix is
+        // mid-flow; queue behind its clipboard window instead of racing it.
+        await WaitForSelectionFixIdleAsync();
         var copied = await TrySetClipboardTextAsync(text);
         bool pasted = false;
         string? pasteFailure = null;
@@ -976,6 +975,232 @@ public class MainWindowViewModel : ViewModel, IDisposable
         return (false, result.Success, result.Success ? null : result.ShortReason);
     }
 
+    // UI-thread-only flag; read cross-thread only via WaitForSelectionFixIdleAsync.
+    volatile bool _fixSelectionRunning;
+
+    // The user's clipboard snapshot that the fix replaced and has not restored
+    // yet. Kept here so app exit mid-flow can write it back synchronously.
+    string? _pendingClipboardRestore;
+
+    public void FlushPendingClipboardRestore()
+    {
+        var pending = _pendingClipboardRestore;
+        if (pending == null)
+            return;
+        _pendingClipboardRestore = null;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                Clipboard.SetText(pending);
+                return;
+            }
+            catch (COMException)
+            {
+                Thread.Sleep(80);
+            }
+        }
+        Logger.Error("Selection fix: could not restore the clipboard before exit");
+    }
+
+    async Task WaitForSelectionFixIdleAsync()
+    {
+        for (var i = 0; i < 60 && _fixSelectionRunning; i++)
+            await Task.Delay(100);
+    }
+
+    // Fixes the text the user selected in whatever app has focus: Ctrl+C through
+    // AutoPaster, the shared GrammarCheckService, then Ctrl+V over the selection.
+    // ProofreadAsync (transcript) is untouched; both flows share the same service.
+    // targetWindow is the window that held the selection; injected keys must land
+    // there, so focus is pulled back from WhisperNote's own popup when needed.
+    public async Task<bool> FixSelectedTextAsync(IntPtr targetWindow = default)
+    {
+        Logger.Info("Selection fix: requested");
+        if (SelectionFixer.IsBlocked(_fixSelectionRunning,
+                RecordingManager.IsRecording, RecordingManager.IsProcessing))
+        {
+            Logger.Info("Selection fix ignored: " +
+                (_fixSelectionRunning ? "another fix is running" :
+                 RecordingManager.IsRecording ? "recording is in progress" :
+                 "the transcription queue is busy"));
+            return false;
+        }
+
+        _fixSelectionRunning = true;
+        try
+        {
+            return await FixSelectedTextCoreAsync(targetWindow);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"[SelectionFix] failed: {ex.Message}");
+            ShowFixStatus("Selection fix", "Red", "fix failed, see the log");
+            return false;
+        }
+        finally
+        {
+            _pendingClipboardRestore = null;
+            _fixSelectionRunning = false;
+        }
+    }
+
+    async Task<bool> FixSelectedTextCoreAsync(IntPtr targetWindow)
+    {
+        var service = _grammar;
+        if (service == null)
+        {
+            Logger.Info("Selection fix skipped: no grammar API host set");
+            ShowFixStatus("Selection fix", "Red", "no grammar API host set");
+            return false;
+        }
+
+        // Against an elevated target SendInput "succeeds" while UIPI silently drops
+        // the keys: bail out before touching the clipboard, so the user's copy and
+        // clipboard both survive instead of faking a fix.
+        if (AutoPaster.IsTargetElevatedBlocked(targetWindow))
+        {
+            Logger.Info("Selection fix skipped: the target app runs elevated (injected keys would be dropped)");
+            ShowFixStatus("Selection fix", "Red", "target app runs as administrator");
+            return false;
+        }
+
+        ShowFixStatus("Fixing selected text...", "LightBlue", "");
+
+        var snapshot = await TryGetClipboardTextAsync();
+        _pendingClipboardRestore = snapshot;
+        // A clipboard-diff probe can't prove a copy happened when the clipboard already
+        // holds the very text being copied (re-fixing the same selection); seed a
+        // sentinel so any successful Ctrl+C is detectable. Falls back to diffing when
+        // the clipboard is non-text and the sentinel cannot be written.
+        var sentinel = $"__whispernote_copy_probe_{Environment.TickCount:X}__";
+        var probeSent = await TrySetClipboardTextAsync(sentinel) || await TrySetClipboardTextAsync(sentinel);
+        var probe = snapshot != null && probeSent ? sentinel : snapshot;
+        if (AutoPaster.ReclaimForeignForeground(targetWindow))
+            Logger.Info("Selection fix: focus was on a WhisperNote window, restored the target app");
+        var copyInjected = AutoPaster.SendCtrlC();
+        Logger.Info($"Selection fix: Ctrl+C injected={copyInjected}, clipboard snapshot length={(snapshot?.Length ?? -1)}");
+        if (!copyInjected)
+        {
+            if (probe == sentinel && !await TrySetClipboardTextAsync(snapshot!))
+                Logger.Error("Selection fix: clipboard restore failed; a probe placeholder may remain");
+            ShowFixStatus("Selection fix", "Red", "could not copy the selection");
+            return false;
+        }
+
+        var selected = await WaitForCopiedSelectionAsync(probe);
+        if (selected == null)
+        {
+            // Clipboard unchanged: nothing was selected, or the field refuses Ctrl+C.
+            Logger.Info("Selection fix: clipboard unchanged after Ctrl+C (nothing selected or copy refused)");
+            if (probe != null && probe != snapshot && !await TrySetClipboardTextAsync(snapshot!))
+                Logger.Error("Selection fix: clipboard restore failed; a probe placeholder may remain");
+            ShowFixStatus("Selection fix", "Red", "Nothing selected to fix");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(selected))
+        {
+            // CorrectAsync short-circuits on whitespace; report it honestly instead
+            // of blaming the API.
+            Logger.Info($"Selection fix: copied selection is whitespace only ({selected.Length} chars)");
+            if (snapshot != null && selected != snapshot)
+                await TrySetClipboardTextAsync(snapshot);
+            ShowFixStatus("Selection fix", "Red", "Nothing selected to fix");
+            return false;
+        }
+        Logger.Info($"Selection fix: copied {selected.Length} chars, correcting");
+
+        string lastWritten = selected;
+        string? corrected = null;
+        try
+        {
+            corrected = await service.CorrectAsync(selected);
+        }
+        catch (OperationCanceledException) { }
+
+        if (string.IsNullOrWhiteSpace(corrected))
+        {
+            await RestoreClipboardIfNeededAsync(snapshot, lastWritten);
+            ShowFixStatus("Selection fix", "Red", "grammar API unavailable");
+            return false;
+        }
+
+        if (corrected == selected)
+        {
+            await RestoreClipboardIfNeededAsync(snapshot, lastWritten);
+            ShowFixStatus("Selection fix", "Green", "Already correct");
+            return true;
+        }
+
+        if (!await TrySetClipboardTextAsync(corrected))
+        {
+            await RestoreClipboardIfNeededAsync(snapshot, lastWritten);
+            ShowFixStatus("Selection fix", "Red", "clipboard was unavailable");
+            return false;
+        }
+        lastWritten = corrected;
+
+        await Task.Delay(100);
+        AutoPaster.ReclaimForeignForeground(targetWindow);
+        var result = AutoPaster.SendCtrlV();
+        if (!result.Success)
+        {
+            await Task.Delay(250);
+            result = AutoPaster.SendCtrlV();
+        }
+
+        if (result.Success)
+        {
+            Logger.Info($"Selection fix: pasted {corrected.Length} chars over the selection");
+            NotificationSound.Play();
+            ShowFixStatus("Selection fix", "Green", "Grammar fixed");
+            await RestoreClipboardIfNeededAsync(snapshot, lastWritten);
+            return true;
+        }
+
+        // The corrected text stays on the clipboard as the manual-paste fallback.
+        Logger.Error($"Selection fix: Ctrl+V not accepted by the target app ({result.Detail})");
+        ShowFixStatus("Selection fix", "Red", $"corrected text is on the clipboard ({result.ShortReason})");
+        return false;
+    }
+
+    // The target app fills the clipboard a moment after the injected Ctrl+C.
+    async Task<string?> WaitForCopiedSelectionAsync(string? snapshot)
+    {
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            await Task.Delay(60);
+            var current = await TryGetClipboardTextAsync();
+            if (SelectionFixer.ClipboardChanged(snapshot, current))
+                return current;
+            if (attempt == 7)
+                Logger.Info($"Selection fix: clipboard poll saw snapshot length={(snapshot?.Length ?? -1)}, current length={(current?.Length ?? -1)}");
+        }
+        return null;
+    }
+
+    async Task RestoreClipboardIfNeededAsync(string? snapshot, string lastWritten)
+    {
+        if (snapshot == null)
+            return;
+
+        // Slow targets (Chromium async paste, Office re-layout, RDP) read the
+        // clipboard well after Ctrl+V lands; restoring earlier hands them the
+        // user's OLD clipboard text to paste over the selection.
+        await Task.Delay(1200);
+        var current = await TryGetClipboardTextAsync();
+        if (current != null && SelectionFixer.ShouldRestore(current, lastWritten)
+            && !await TrySetClipboardTextAsync(snapshot))
+            Logger.Error("Selection fix: clipboard restore failed after a successful paste");
+    }
+
+    void ShowFixStatus(string status, string kind, string info)
+    {
+        RecordingManager.StatusText = status;
+        RecordingManager.StatusTextKind = kind;
+        RecordingManager.InfoText = info;
+    }
+
     async Task OffloadServerAfterSuccessAsync()
     {
         if (!_autoOffloadVram || !ServerManager.IsLocal)
@@ -1018,6 +1243,26 @@ public class MainWindowViewModel : ViewModel, IDisposable
             {
                 Logger.Error($"Clipboard.SetText failed: {ex.Message}");
                 return false;
+            }
+        }
+    }
+
+    static async Task<string?> TryGetClipboardTextAsync()
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return Clipboard.ContainsText() ? Clipboard.GetText() : null;
+            }
+            catch (Exception ex) when (ex.HResult == ClipbrdECantOpen && attempt < ClipboardRetryAttempts)
+            {
+                await Task.Delay(ClipboardRetryDelayMs);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"Clipboard.GetText failed: {ex.Message}");
+                return null;
             }
         }
     }

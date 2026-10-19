@@ -12,6 +12,7 @@ public static class AutoPaster
     const uint KEYEVENTF_KEYUP = 0x0002;
     const ushort VK_CONTROL = 0x11;
     const ushort VK_V = 0x56;
+    const ushort VK_C = 0x43;
     const uint MAPVK_VK_TO_VSC = 0;
 
     // dwExtraInfo tag the global hotkey hook must ignore, so our injected keys never retrigger a hotkey.
@@ -74,6 +75,28 @@ public static class AutoPaster
     static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
+    static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    static extern bool IsWindow(IntPtr hWnd);
+
+    // Injected keys follow the foreground window; when the selection toolbar popup
+    // holds it, keys would land in WhisperNote itself. Hand focus back to the window
+    // the user had focused when the selection was made.
+    public static bool ReclaimForeignForeground(IntPtr target)
+    {
+        if (target == IntPtr.Zero || !IsWindow(target))
+            return false;
+        var fg = GetForegroundWindow();
+        if (fg == target)
+            return false;
+        GetWindowThreadProcessId(fg, out var fgPid);
+        if ((int)fgPid != Environment.ProcessId)
+            return false;
+        return SetForegroundWindow(target);
+    }
+
+    [DllImport("user32.dll")]
     static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -119,10 +142,47 @@ public static class AutoPaster
         }
     }
 
+    public static bool SendCtrlC()
+    {
+        var inputs = new[]
+        {
+            Key(VK_CONTROL, keyUp: false, PasteMarker),
+            Key(VK_C, keyUp: false, PasteMarker),
+            Key(VK_C, keyUp: true, PasteMarker),
+            Key(VK_CONTROL, keyUp: true, PasteMarker)
+        };
+
+        var injected = Inject(inputs);
+        if (injected != inputs.Length)
+            Logger.Error($"AutoPaste: SendCtrlC injected {injected}/{inputs.Length} (error {Marshal.GetLastWin32Error()})");
+        return injected == inputs.Length;
+    }
+
+    // UIPI silently drops injected keys aimed at a higher-integrity window and no
+    // API reports the drop. Detect that case up front so callers can bail out
+    // honestly instead of showing a false success.
+    public static bool IsTargetElevatedBlocked(IntPtr targetHint)
+    {
+        try
+        {
+            var window = targetHint != IntPtr.Zero && IsWindow(targetHint) ? targetHint : GetForegroundWindow();
+            if (window == IntPtr.Zero)
+                return false;
+            GetWindowThreadProcessId(window, out var pid);
+            if ((int)pid == Environment.ProcessId)
+                return false;
+            return IsProcessElevated(pid) == true && IsProcessElevated((uint)Environment.ProcessId) == false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     static (string ShortReason, string Detail) Diagnose(uint injected, int expected, int error)
     {
-        string foreground;
         string shortReason = $"SendInput injected {injected}/{expected} (error {error})";
+        string foreground;
         try
         {
             var fg = GetForegroundWindow();

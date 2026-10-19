@@ -16,13 +16,13 @@ public sealed class SettingsViewModel : ViewModel
     bool _minimizeToTray;
     bool _startInTray;
     string? _localModelId;
-    bool _hotkeyEnabled;
     int _hotkeyVirtualKeyCode;
     int _micDeviceNumber;
     bool _grammarEnabled;
     string _grammarApiHost = "";
     string _grammarApiKey = "";
     string _grammarEffort = "";
+    bool _selectionToolbarEnabled;
 
     public bool AutoOffloadVram
     {
@@ -65,12 +65,6 @@ public sealed class SettingsViewModel : ViewModel
     {
         get => _localModelId;
         set => SetProperty(ref _localModelId, value);
-    }
-
-    public bool HotkeyEnabled
-    {
-        get => _hotkeyEnabled;
-        set => SetProperty(ref _hotkeyEnabled, value);
     }
 
     public int HotkeyVirtualKeyCode
@@ -123,6 +117,12 @@ public sealed class SettingsViewModel : ViewModel
 
     public IReadOnlyList<GrammarEffortOption> GrammarEffortOptions { get; } = GrammarCheckService.EffortOptions;
 
+    public bool SelectionToolbarEnabled
+    {
+        get => _selectionToolbarEnabled;
+        set => SetProperty(ref _selectionToolbarEnabled, value);
+    }
+
     public string GrammarStatus => _mainViewModel.GrammarStatus;
 
     public Brush GrammarStateBrush => _mainViewModel.GrammarStateBrush;
@@ -137,7 +137,6 @@ public sealed class SettingsViewModel : ViewModel
         _minimizeToTray = mainViewModel.MinimizeToTray;
         _startInTray = mainViewModel.StartInTray;
         _localModelId = mainViewModel.LocalModelId ?? LocalModels.DefaultId;
-        _hotkeyEnabled = mainViewModel.HotkeyEnabled;
         _hotkeyVirtualKeyCode = mainViewModel.HotkeyVirtualKeyCode;
         HotkeyOptions = CreateHotkeyOptions(_hotkeyVirtualKeyCode);
         _micDeviceNumber = mainViewModel.MicDeviceNumber;
@@ -146,6 +145,7 @@ public sealed class SettingsViewModel : ViewModel
         _grammarApiHost = mainViewModel.GrammarApiHost;
         _grammarApiKey = mainViewModel.GrammarApiKey;
         _grammarEffort = mainViewModel.GrammarEffort;
+        _selectionToolbarEnabled = mainViewModel.SelectionToolbarEnabled;
 
         mainViewModel.PropertyChanged += MainViewModel_PropertyChanged;
 
@@ -178,12 +178,12 @@ public sealed class SettingsViewModel : ViewModel
             MinimizeToTray,
             StartInTray,
             LocalModelId,
-            HotkeyEnabled,
             HotkeyVirtualKeyCode,
             GrammarEnabled,
             GrammarApiHost,
             GrammarApiKey,
-            GrammarEffort));
+            GrammarEffort,
+            SelectionToolbarEnabled));
     }
 
     static IReadOnlyList<HotkeyOption> CreateHotkeyOptions(int currentKeyCode) =>
@@ -216,12 +216,12 @@ public sealed record SettingsSnapshot(
     bool MinimizeToTray,
     bool StartInTray,
     string? LocalModelId,
-    bool HotkeyEnabled,
     int HotkeyVirtualKeyCode,
     bool GrammarEnabled,
     string GrammarApiHost,
     string GrammarApiKey,
-    string GrammarEffort);
+    string GrammarEffort,
+    bool SelectionToolbarEnabled);
 
 public sealed class HotkeyOption
 {

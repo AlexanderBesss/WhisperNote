@@ -51,11 +51,6 @@ public class AppState
         get => _settings.HotkeyVirtualKeyCode;
         set { _settings.HotkeyVirtualKeyCode = value; _settings.Save(); }
     }
-    public bool HotkeyEnabled
-    {
-        get => _settings.HotkeyEnabled;
-        set { _settings.HotkeyEnabled = value; _settings.Save(); }
-    }
     public int MicDeviceNumber
     {
         get => _settings.MicDeviceNumber;
@@ -65,6 +60,11 @@ public class AppState
     {
         get => _settings.MicDeviceName;
         set { _settings.MicDeviceName = value; _settings.Save(); }
+    }
+    public bool SelectionToolbarEnabled
+    {
+        get => _settings.SelectionToolbarEnabled;
+        set { _settings.SelectionToolbarEnabled = value; _settings.Save(); }
     }
     public bool GrammarCheckEnabled
     {

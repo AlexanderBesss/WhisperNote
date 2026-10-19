@@ -186,25 +186,26 @@
                 <Border x:Name="PanelRecord" Style="{StaticResource SettingsCard}"
                         Visibility="Collapsed">
                     <StackPanel>
+                        <TextBlock Text="Recording hotkey" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox ItemsSource="{Binding HotkeyOptions}"
+                                  DisplayMemberPath="Name"
+                                  SelectedValuePath="VirtualKeyCode"
+                                  SelectedValue="{Binding HotkeyVirtualKeyCode, Mode=TwoWay}"
+                                  Height="28"
+                                  Margin="0,0,0,6"
+                                  ToolTip="Hold this key to dictate; release to stop and transcribe."/>
+
                         <Grid Style="{StaticResource SettingRow}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Global hotkey" Style="{StaticResource SettingRowName}"/>
+                            <TextBlock Text="Selection toolbar" Style="{StaticResource SettingRowName}"/>
                             <ToggleButton Grid.Column="1" Style="{StaticResource SwitchToggle}"
-                                          IsChecked="{Binding HotkeyEnabled, Mode=TwoWay}"
+                                          IsChecked="{Binding SelectionToolbarEnabled, Mode=TwoWay}"
                                           VerticalAlignment="Center"
-                                          ToolTip="Hold the key to start and stop recording"/>
+                                          ToolTip="Show a small &quot;Fix&quot; button next to selected text; click it to proofread and replace the selection. Works in apps that expose text selection (browsers, Office, WordPad)."/>
                         </Grid>
-
-                        <ComboBox ItemsSource="{Binding HotkeyOptions}"
-                                  DisplayMemberPath="Name"
-                                  SelectedValuePath="VirtualKeyCode"
-                                  SelectedValue="{Binding HotkeyVirtualKeyCode, Mode=TwoWay}"
-                                  IsEnabled="{Binding HotkeyEnabled}"
-                                  Height="28"
-                                  Margin="0,4,0,0"/>
                     </StackPanel>
                 </Border>
 

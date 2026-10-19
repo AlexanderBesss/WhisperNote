@@ -21,12 +21,15 @@ public class AppSettings
     public bool MinimizeToTray { get; set; } = true;
     public bool StartInTray { get; set; } = true;
     public int HotkeyVirtualKeyCode { get; set; } = DefaultHotkeyVkCode;
-    public bool HotkeyEnabled { get; set; } = true;
     // -1 = system default; otherwise an index into the active WASAPI capture endpoints.
     public int MicDeviceNumber { get; set; } = -1;
     // Preferred over the number: WASAPI indexes reshuffle when devices are added/removed.
     public string? MicDeviceName { get; set; }
     public bool MicDeviceNumberIsWasapi { get; set; }
+
+    // Fixes the text selected in any app through a Ctrl+C / correct / Ctrl+V round trip,
+    // triggered from the floating "Fix" popup driven by UIA text-selection events.
+    public bool SelectionToolbarEnabled { get; set; } = true;
 
     public bool GrammarCheckEnabled { get; set; }
     // API root; "/v1/models" and "/v1/chat/completions" are requested under it.

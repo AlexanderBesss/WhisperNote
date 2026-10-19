@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -13,6 +14,10 @@ public partial class MainWindow : Window
     readonly MainWindowViewModel _viewModel;
     TrayIconService? _tray;
     RecordingOverlayWindow? _overlay;
+    SelectionWatcher? _selectionWatcher;
+    SelectionToolbarWindow? _selectionToolbar;
+    SelectionSnapshot? _lastSelection;
+    bool _fixUiBusy;
     bool _exitRequested;
 
     public MainWindow()
@@ -30,6 +35,111 @@ public partial class MainWindow : Window
 
         // Not on Loaded: Loaded never fires while the window starts hidden.
         CreateTrayIcon();
+        _viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        ApplySelectionFixState();
+    }
+
+    void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainWindowViewModel.SelectionToolbarEnabled))
+            ApplySelectionFixState();
+    }
+
+    void ApplySelectionFixState()
+    {
+        if (_viewModel.SelectionToolbarEnabled && _selectionWatcher == null)
+        {
+            try
+            {
+                _selectionWatcher = new SelectionWatcher();
+                _selectionWatcher.SelectionChanged += OnSelectionSnapshot;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"Selection toolbar watcher failed: {ex.Message}");
+                _selectionWatcher = null;
+            }
+        }
+        else if (!_viewModel.SelectionToolbarEnabled)
+        {
+            _selectionWatcher?.Dispose();
+            _selectionWatcher = null;
+            _selectionToolbar?.HidePopup();
+            _lastSelection = null;
+        }
+    }
+
+    void OnSelectionSnapshot(SelectionSnapshot? snapshot)
+    {
+        _lastSelection = snapshot;
+
+        // While a fix or its confirmation is playing out the popup belongs to the
+        // flow: watcher events (the paste collapses the selection) must not hide it.
+        if (_fixUiBusy)
+            return;
+
+        if (snapshot == null || !_viewModel.SelectionToolbarEnabled)
+        {
+            _selectionToolbar?.HidePopup();
+            return;
+        }
+
+        EnsureToolbar();
+        _selectionToolbar!.ShowAt(snapshot.Rects);
+    }
+
+    void EnsureToolbar()
+    {
+        _selectionToolbar ??= new SelectionToolbarWindow(() => _ = RunFixWithConfirmationAsync());
+    }
+
+    // Button -> spinner -> green check (on success) or red X (on failure) at the
+    // selection's side. _fixUiBusy is UI-thread-only; it fences watcher events out
+    // of the popup while a fix flow owns it.
+    async Task RunFixWithConfirmationAsync()
+    {
+        // Single flight: a second press during a running fix must not flash a
+        // failure or release the popup guard while the first flow still owns it.
+        if (_fixUiBusy)
+            return;
+
+        _fixUiBusy = true;
+        var rects = _lastSelection?.Rects;
+        var showPopup = rects != null && _viewModel.SelectionToolbarEnabled;
+        try
+        {
+            if (!showPopup)
+                rects = null;
+
+            if (_selectionToolbar == null && showPopup)
+                EnsureToolbar();
+            if (_selectionToolbar != null && rects != null)
+            {
+                _selectionToolbar.ShowAt(rects);
+                _selectionToolbar.ShowProcessing();
+            }
+
+            var ok = await _viewModel.FixSelectedTextAsync(_lastSelection?.TargetWindow ?? IntPtr.Zero);
+            if (_selectionToolbar != null && rects != null)
+            {
+                if (ok)
+                    _selectionToolbar.ShowConfirmation(rects);
+                else
+                    _selectionToolbar.ShowFailure(rects);
+                var visibleMs = ok
+                    ? SelectionToolbarWindow.ConfirmationVisibleMs
+                    : SelectionToolbarWindow.FailureVisibleMs;
+                await Task.Delay(visibleMs + 100);
+            }
+            else
+            {
+                _selectionToolbar?.HidePopup();
+            }
+        }
+        finally
+        {
+            _fixUiBusy = false;
+        }
     }
 
     void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -93,6 +203,13 @@ public partial class MainWindow : Window
     {
         // ShutdownMode=OnExplicitShutdown (App.xaml): a real exit needs an explicit dispatcher shutdown.
         var shouldExit = _exitRequested || !_viewModel.MinimizeToTray;
+        // A fix caught mid-clipboard-window would otherwise strand its probe
+        // sentinel: pending awaits die at shutdown, finally-blocks do not run.
+        _viewModel.FlushPendingClipboardRestore();
+        _selectionWatcher?.Dispose();
+        _selectionWatcher = null;
+        _selectionToolbar?.Close();
+        _selectionToolbar = null;
         _tray?.Dispose();
         _tray = null;
         _overlay?.Close();
