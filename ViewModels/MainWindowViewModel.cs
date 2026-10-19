@@ -995,9 +995,17 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 Clipboard.SetText(pending);
                 return;
             }
-            catch (COMException)
+            catch (Exception ex) when (ex.HResult == ClipbrdECantOpen && attempt < 4)
             {
                 Thread.Sleep(80);
+            }
+            catch (Exception ex)
+            {
+                // Runs on MainWindow_Closed's stack: an escaping throw skips tray/overlay
+                // teardown and the explicit dispatcher shutdown. Only CLIPBRD_E_CANT_OPEN
+                // is transient; give up quietly on everything else.
+                Logger.Error($"Selection fix: could not restore the clipboard before exit: {ex.Message}");
+                return;
             }
         }
         Logger.Error("Selection fix: could not restore the clipboard before exit");

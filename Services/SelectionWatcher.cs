@@ -217,8 +217,24 @@ public sealed class SelectionWatcher : IDisposable
     public void Dispose()
     {
         _debounce.Stop();
-        Automation.RemoveAutomationFocusChangedEventHandler(_focusHandler);
-        SubscribeToElement(null);
+        // UIA handler removal round-trips through every provider on the machine and can
+        // block indefinitely behind one wedged app. Keep it off the shutdown UI thread
+        // with a bounded wait: a still-pending detach runs on a background thread and
+        // dies with the process instead of hanging the exit.
+        try
+        {
+            var detach = Task.Run(() =>
+            {
+                Automation.RemoveAutomationFocusChangedEventHandler(_focusHandler);
+                SubscribeToElement(null);
+            });
+            if (!detach.Wait(TimeSpan.FromSeconds(2)))
+                Logger.Error("Selection watcher UIA detach still pending; leaving it to process exit");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Selection watcher detach failed: {ex.Message}");
+        }
         _mouseHook?.Dispose();
         _mouseHook = null;
     }
