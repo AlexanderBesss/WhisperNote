@@ -82,11 +82,7 @@ jobs:
             '',
             '## Changes',
             ''
-          ) + $commits + @(
-            '',
-            '',
-            'Models and llama.cpp backends are downloaded by the app on first run.'
-          )
+          ) + $commits
           Set-Content -LiteralPath release-notes.md -Value $lines -Encoding UTF8
 
       - name: Publish release for this commit
