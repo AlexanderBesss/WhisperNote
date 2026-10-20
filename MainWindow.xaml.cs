@@ -211,6 +211,7 @@ public partial class MainWindow : Window
 
     void ExitApplication()
     {
+        Logger.Info("Exit requested from tray menu");
         _exitRequested = true;
         _tray?.Dispose();
         _tray = null;
@@ -220,8 +221,12 @@ public partial class MainWindow : Window
     void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
         if (_exitRequested || !_viewModel.MinimizeToTray)
+        {
+            Logger.Info("MainWindow closing for real");
             return;
+        }
 
+        Logger.Info("MainWindow close converted to tray minimize");
         e.Cancel = true;
         MinimizeToTray();
     }
@@ -232,6 +237,7 @@ public partial class MainWindow : Window
 
         // ShutdownMode=OnExplicitShutdown (App.xaml): a real exit needs an explicit dispatcher shutdown.
         var shouldExit = _exitRequested || !_viewModel.MinimizeToTray;
+        Logger.Info($"MainWindow closed (shutdown={shouldExit})");
         // A fix caught mid-clipboard-window would otherwise strand its probe
         // sentinel: pending awaits die at shutdown, finally-blocks do not run.
         _viewModel.FlushPendingClipboardRestore();
@@ -243,7 +249,9 @@ public partial class MainWindow : Window
         _tray = null;
         _overlay?.Close();
         _overlay = null;
+        Logger.Info("Disposing view model");
         _viewModel.Dispose();
+        Logger.Info("View model disposed; requesting dispatcher shutdown");
         if (shouldExit)
             Application.Current?.Shutdown();
     }

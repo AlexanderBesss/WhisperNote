@@ -214,11 +214,17 @@ public class AudioRecorder : IDisposable
     {
         if (_capture != null)
         {
-            _capture.DataAvailable -= OnDataAvailable;
-            _capture.RecordingStopped -= OnCaptureDied;
+            var capture = _capture;
+            capture.DataAvailable -= OnDataAvailable;
+            capture.RecordingStopped -= OnCaptureDied;
             try
             {
-                _capture.Dispose();
+                // NAudio's WasapiCapture.Dispose joins its capture thread without a
+                // timeout (naudio/NAudio#630); ReleaseCapture runs on the UI thread at
+                // exit, so bound the join and let a wedged dispose die with the process.
+                var disposed = Task.Run(() => capture.Dispose());
+                if (!disposed.Wait(TimeSpan.FromSeconds(2)))
+                    Logger.Error("Capture device dispose still pending; leaving it to process exit");
             }
             catch (Exception ex)
             {
@@ -381,7 +387,10 @@ public class AudioRecorder : IDisposable
         try
         {
             capture.StopRecording();
-            return await stopped.Task.WaitAsync(TimeSpan.FromMilliseconds(DisposeTimeoutMs));
+            // ConfigureAwait(false) is load-bearing: AudioRecorder.Dispose blocks the UI
+            // thread on this task, and posting the timeout continuation back to the WPF
+            // dispatcher queue would deadlock the exit-during-recording path.
+            return await stopped.Task.WaitAsync(TimeSpan.FromMilliseconds(DisposeTimeoutMs)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

@@ -262,11 +262,14 @@ public class ServerStateManager : ViewModel, IDisposable
 
     public void Dispose()
     {
-        if (!_operationLock.Wait(TimeSpan.FromSeconds(10)))
-        {
-            Logger.Error("Timed out waiting to dispose server manager");
-            return;
-        }
+        // The lock holder releases it via a dispatcher continuation, which cannot run
+        // while this UI-thread Dispose blocks, so a long wait is a guaranteed stall
+        // whenever any operation is in flight. Take the lock only if already free,
+        // and kill the server either way: skipping it strands llama-server until
+        // ProcessExit, and the next launch then silently adopts the orphan.
+        var tookLock = _operationLock.Wait(TimeSpan.Zero);
+        if (!tookLock)
+            Logger.Warn("Server manager disposed mid-operation; killing the server without the operation lock");
 
         try
         {
@@ -275,8 +278,11 @@ public class ServerStateManager : ViewModel, IDisposable
         }
         finally
         {
-            _operationLock.Release();
-            _operationLock.Dispose();
+            if (tookLock)
+            {
+                _operationLock.Release();
+                _operationLock.Dispose();
+            }
         }
     }
 }

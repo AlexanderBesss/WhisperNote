@@ -18,6 +18,7 @@ internal static class HotkeyCatalog
         (0x12, "Alt"),
         (0x5B, "Left Win"),
         (0x5C, "Right Win"),
+        (0x09, "Tab"),
     };
 
     public static string NameOf(int vk)

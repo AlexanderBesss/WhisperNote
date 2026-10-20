@@ -68,6 +68,12 @@ public partial class App : Application
         }
     }
 
+    protected override void OnExit(ExitEventArgs e)
+    {
+        Logger.Info("WPF dispatcher exiting");
+        base.OnExit(e);
+    }
+
     static bool IsAutostartLaunch(string[] args)
     {
         foreach (var arg in args)
