@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -19,6 +20,69 @@ public partial class SettingsWindow : Window
         DataContext = _viewModel;
         PreviewKeyDown += SettingsWindow_PreviewKeyDown;
         Closed += (_, _) => _viewModel.Detach();
+        Loaded += (_, _) =>
+        {
+            FitToTallestCard();
+            _viewModel.SetPreviewTabVisible(PanelVisualizer.Visibility == Visibility.Visible);
+        };
+        _viewModel.PropertyChanged += (_, e) =>
+        {
+            // Turning the visualizer off collapses the preview box, which is the tallest
+            // thing in the window: the fit has to run again or its space goes dead.
+            if (e.PropertyName == nameof(SettingsViewModel.VisualizerEnabled))
+                FitToTallestCard();
+        };
+
+        // PasswordBox.Password is a plain CLR property, not a DependencyProperty,
+        // so the masked key cannot bind: seed it from the view model and write
+        // edits back by hand. Subscribe after seeding to skip the seed as an edit.
+        ApiKeyBox.Password = _viewModel.GrammarApiKey;
+        _apiKeyHint = ApiKeyBox.Tag as string;
+        SyncApiKeyHint();
+        ApiKeyBox.PasswordChanged += (_, _) =>
+        {
+            if (_viewModel.GrammarApiKey != ApiKeyBox.Password)
+                _viewModel.GrammarApiKey = ApiKeyBox.Password;
+            SyncApiKeyHint();
+        };
+    }
+
+    // The style shows its placeholder out of Tag, which is a DependencyProperty the
+    // template can trigger on; Password is not, so Tag is cleared while it has text.
+    string? _apiKeyHint;
+
+    void SyncApiKeyHint() => ApiKeyBox.Tag = ApiKeyBox.Password.Length == 0 ? _apiKeyHint : null;
+
+    // The window takes the tallest card's height, so switching tabs never moves the
+    // chrome. Only one card may be visible while measuring: the cards share one grid
+    // cell and stretch to it, so a sibling left shown would inflate the reading. The
+    // ScrollViewer still absorbs display scaling that makes even the tallest card tall.
+    void FitToTallestCard()
+    {
+        var cards = new[] { PanelOutput, PanelVisualizer, PanelModel, PanelRecord };
+        var states = new Visibility[cards.Length];
+        for (int i = 0; i < cards.Length; i++)
+        {
+            states[i] = cards[i].Visibility;
+            cards[i].Visibility = Visibility.Collapsed;
+        }
+
+        double tallest = 0;
+        for (int i = 0; i < cards.Length; i++)
+        {
+            cards[i].Visibility = Visibility.Visible;
+            UpdateLayout();
+            tallest = Math.Max(tallest, cards[i].ActualHeight);
+            cards[i].Visibility = Visibility.Collapsed;
+        }
+
+        for (int i = 0; i < cards.Length; i++)
+            cards[i].Visibility = states[i];
+
+        if (tallest <= 0)
+            return;
+
+        Height = Math.Min(MaxHeight, Math.Ceiling(ActualHeight - PanelScroll.ViewportHeight + tallest));
     }
 
     // WPF commits a focused TextBox only on focus loss; ClearFocus() flushes it before Close.
@@ -34,15 +98,15 @@ public partial class SettingsWindow : Window
     {
         // IsChecked="True" fires this during InitializeComponent(), before the panel fields exist.
         if (PanelModel is null || PanelRecord is null || PanelOutput is null ||
-            PanelGrammar is null || PanelSystem is null)
+            PanelVisualizer is null)
             return;
 
         var tab = (string)((RadioButton)sender).Tag;
         PanelModel.Visibility = TabVisibility(tab == "model");
         PanelRecord.Visibility = TabVisibility(tab == "record");
         PanelOutput.Visibility = TabVisibility(tab == "output");
-        PanelGrammar.Visibility = TabVisibility(tab == "grammar");
-        PanelSystem.Visibility = TabVisibility(tab == "system");
+        PanelVisualizer.Visibility = TabVisibility(tab == "visualizer");
+        _viewModel.SetPreviewTabVisible(tab == "visualizer");
     }
 
     static Visibility TabVisibility(bool show) =>
@@ -93,7 +157,8 @@ public partial class SettingsWindow : Window
         VisualTree.FindAncestor<ButtonBase>(source) != null ||
         VisualTree.FindAncestor<ComboBoxItem>(source) != null ||
         VisualTree.FindAncestor<ComboBox>(source) != null ||
-        VisualTree.FindAncestor<TextBox>(source) != null;
+        VisualTree.FindAncestor<TextBox>(source) != null ||
+        VisualTree.FindAncestor<PasswordBox>(source) != null;
 
     protected override void OnMouseMove(MouseEventArgs e)
     {

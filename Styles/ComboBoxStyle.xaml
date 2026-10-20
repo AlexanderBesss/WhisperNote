@@ -72,10 +72,16 @@
                         </Border>
                         <Popup Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}"
                                AllowsTransparency="True" Focusable="False">
+                            <!-- The popup has no scroll host of its own, so a long list
+                                 (the colour presets) would run past the screen edge. -->
                             <Border Background="#2A2A2A" BorderBrush="#444" BorderThickness="1"
-                                    CornerRadius="8" Padding="4"
+                                    CornerRadius="8" Padding="4" MaxHeight="300"
                                     MinWidth="{TemplateBinding ActualWidth}">
-                                <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              Style="{DynamicResource StyledScrollViewer}"
+                                              Focusable="False">
+                                    <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                </ScrollViewer>
                             </Border>
                         </Popup>
                     </Grid>

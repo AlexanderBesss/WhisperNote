@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,6 +9,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WhisperNote.Config;
 using WhisperNote.Services;
 
 namespace WhisperNote.ViewModels;
@@ -50,9 +52,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
         OnPropertyChanged(nameof(WindowOpacity));
     }
 
-    bool SyncSetting(ref bool field, bool value, Action persist, string? infoText = null)
+    // propertyName is forwarded, not defaulted by SetProperty: the caller here is
+    // this helper, so CallerMemberName alone would report "SyncSetting" and every
+    // listener keyed on the property name (the overlay, the selection toolbar)
+    // would never hear the change. The attribute needs a default value, so the empty
+    // string left by an omitted argument is caught by the assert instead.
+    bool SyncSetting(ref bool field, bool value, Action persist, string? infoText = null, [CallerMemberName] string propertyName = "")
     {
-        if (!SetProperty(ref field, value))
+        System.Diagnostics.Debug.Assert(propertyName.Length > 0, nameof(SyncSetting) + " needs the calling property name");
+        if (!SetProperty(ref field, value, propertyName))
             return false;
         persist();
         if (infoText != null)
@@ -60,9 +68,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
         return true;
     }
 
-    bool SyncTextSetting(ref string field, string value, Action persist)
+    bool SyncTextSetting(ref string field, string value, Action persist, [CallerMemberName] string propertyName = "")
     {
-        if (!SetProperty(ref field, value))
+        System.Diagnostics.Debug.Assert(propertyName.Length > 0, nameof(SyncTextSetting) + " needs the calling property name");
+        if (!SetProperty(ref field, value, propertyName))
             return false;
         persist();
         return true;
@@ -129,6 +138,32 @@ public class MainWindowViewModel : ViewModel, IDisposable
         set => SyncSetting(ref _selectionToolbarEnabled, value,
             () => _state.SelectionToolbarEnabled = value,
             value ? "Selection toolbar enabled" : "Selection toolbar disabled");
+    }
+
+    bool _visualizerEnabled = true;
+    public bool VisualizerEnabled
+    {
+        get => _visualizerEnabled;
+        set
+        {
+            if (SyncSetting(ref _visualizerEnabled, value, () => _state.VisualizerEnabled = value,
+                    value ? "Voice visualizer enabled" : "Voice visualizer disabled"))
+                RecordingManager.SetVisualizerActive(value);
+        }
+    }
+
+    string _visualizerStyle = VisualizerCatalog.DefaultStyleName;
+    public string VisualizerStyle
+    {
+        get => _visualizerStyle;
+        set => SyncTextSetting(ref _visualizerStyle, value, () => _state.VisualizerStyle = value);
+    }
+
+    string _visualizerPalette = VisualizerPaletteCatalog.DefaultPaletteName;
+    public string VisualizerPalette
+    {
+        get => _visualizerPalette;
+        set => SyncTextSetting(ref _visualizerPalette, value, () => _state.VisualizerPalette = value);
     }
 
     bool _grammarEnabled;
@@ -435,6 +470,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _minimizeToTray = _state.MinimizeToTray;
         _startInTray = _state.StartInTray;
         _selectionToolbarEnabled = _state.SelectionToolbarEnabled;
+        _visualizerEnabled = _state.VisualizerEnabled;
+        _visualizerStyle = _state.VisualizerStyle;
+        _visualizerPalette = _state.VisualizerPalette;
         _grammarEnabled = _state.GrammarCheckEnabled;
         _grammarApiHost = _state.GrammarApiEndpoint;
         _grammarApiKey = _state.GrammarApiKey;
@@ -446,6 +484,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _micDeviceNumber = _state.MicDeviceNumber;
         _micDeviceName = _state.MicDeviceName;
         AnchorMicDeviceName();
+
+        // The block above writes fields directly so no setting-change side effect fires
+        // during load, but the recorder's spectrum tap starts active: without this a
+        // persisted VisualizerEnabled=false still pays the FFT on every capture.
+        RecordingManager.SetVisualizerActive(_visualizerEnabled);
     }
 
     void SyncStartupEntry()
@@ -495,6 +538,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
         GrammarEnabled = settings.GrammarEnabled;
 
         SelectionToolbarEnabled = settings.SelectionToolbarEnabled;
+        VisualizerEnabled = settings.VisualizerEnabled;
+        VisualizerStyle = settings.VisualizerStyle;
+        VisualizerPalette = settings.VisualizerPalette;
 
         if (cpuModeChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForCpuMode");

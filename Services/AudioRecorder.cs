@@ -32,6 +32,18 @@ public class AudioRecorder : IDisposable
     bool IsRecording { get; set; }
     public int ChannelCount { get; private set; } = 1;
 
+    // Live levels for the overlay visualizer. Supplied from the capture thread.
+    public SpectrumAnalyzer Spectrum { get; } = new();
+
+    volatile bool _spectrumActive = true;
+    volatile bool _spectrumFailed;
+
+    public bool SpectrumActive
+    {
+        get => _spectrumActive;
+        set => _spectrumActive = value;
+    }
+
     int _preferredDeviceNumber = -1;
     public int PreferredDeviceNumber
     {
@@ -110,6 +122,7 @@ public class AudioRecorder : IDisposable
     {
         var sw = Stopwatch.StartNew();
         _rawStream = new MemoryStream();
+        Spectrum.Reset();
         EnsureCapture();
         try
         {
@@ -274,11 +287,45 @@ public class AudioRecorder : IDisposable
 
     void OnDataAvailable(object? sender, WaveInEventArgs e)
     {
+        var format = _inputFormat;
+        var measuring = IsRecording && _spectrumActive && !_spectrumFailed && format != null;
+
         lock (_bufferLock)
         {
             _rawStream?.Write(e.Buffer, 0, e.BytesRecorded);
         }
+
+        if (!measuring)
+            return;
+
+        // Deliberately outside the buffer lock and never allowed to throw: a
+        // visualizer bug must not cost the user a recording. IsRecording is
+        // false during mic warm-up, so the warm-up capture never lights up the
+        // overlay.
+        try
+        {
+            Spectrum.AddBytes(
+                e.Buffer,
+                e.BytesRecorded,
+                format!.SampleRate,
+                format.Channels,
+                format.BitsPerSample,
+                IsFloatFormat(format));
+        }
+        catch (Exception ex)
+        {
+            _spectrumFailed = true;
+            Logger.Error($"Voice visualizer disabled: {ex.Message}");
+        }
     }
+
+    // WASAPI hands back float capture as WAVE_FORMAT_EXTENSIBLE, whose Encoding
+    // reads Extensible, so the sub-format GUID is what says "IEEE float".
+    static readonly Guid FloatSubFormat = new("00000003-0000-0010-8000-00aa00389b71");
+
+    static bool IsFloatFormat(WaveFormat format) =>
+        format.Encoding == WaveFormatEncoding.IeeeFloat ||
+        (format is WaveFormatExtensible extensible && extensible.SubFormat == FloatSubFormat);
 
     void OnCaptureDied(object? sender, StoppedEventArgs e)
     {

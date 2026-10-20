@@ -31,6 +31,14 @@ public class AppSettings
     // triggered from the floating "Fix" popup driven by UIA text-selection events.
     public bool SelectionToolbarEnabled { get; set; } = true;
 
+    // Live mic visualization drawn in the recording overlay while capturing.
+    // The style is a display name resolved by VisualizerCatalog.Resolve, so an
+    // older build reading a newer name falls back to Spectrum.
+    public bool VisualizerEnabled { get; set; } = true;
+    public string VisualizerStyle { get; set; } = VisualizerCatalog.DefaultStyleName;
+    // Colour scheme name resolved by VisualizerPaletteCatalog.Resolve, same fallback rule.
+    public string VisualizerPalette { get; set; } = VisualizerPaletteCatalog.DefaultPaletteName;
+
     public bool GrammarCheckEnabled { get; set; }
     // API root; "/v1/models" and "/v1/chat/completions" are requested under it.
     public string GrammarApiEndpoint { get; set; } = "";

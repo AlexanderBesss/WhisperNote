@@ -72,3 +72,13 @@ public class BooleanToVisibilityConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
         => throw new NotImplementedException();
 }
+
+// Overlay visualizer: visible only while capturing and only if the setting is on.
+public class AllTrueToVisibilityConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        => values.Length > 0 && Array.TrueForAll(values, value => value is true) ? Visibility.Visible : Visibility.Collapsed;
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
+        => throw new NotImplementedException();
+}

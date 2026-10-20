@@ -2,11 +2,54 @@ using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using WhisperNote.Config;
+using WhisperNote.Services;
 
 namespace WhisperNote;
 
 public partial class RecordingOverlayWindow : Window
 {
+    // The visualizer needs both the live recording state and the user's setting,
+    // so the XAML MultiBinding reads these two window-level properties.
+    public static readonly DependencyProperty VisualizerEnabledProperty =
+        DependencyProperty.Register(
+            nameof(VisualizerEnabled),
+            typeof(bool),
+            typeof(RecordingOverlayWindow),
+            new PropertyMetadata(true));
+
+    public static readonly DependencyProperty VisualizerStyleProperty =
+        DependencyProperty.Register(
+            nameof(VisualizerStyle),
+            typeof(Config.VisualizerStyle),
+            typeof(RecordingOverlayWindow),
+            new PropertyMetadata(Config.VisualizerStyle.Spectrum));
+
+    public static readonly DependencyProperty VisualizerPaletteProperty =
+        DependencyProperty.Register(
+            nameof(VisualizerPalette),
+            typeof(VisualizerPalette),
+            typeof(RecordingOverlayWindow),
+            new PropertyMetadata(VisualizerPaletteCatalog.Default));
+
+    public bool VisualizerEnabled
+    {
+        get => (bool)GetValue(VisualizerEnabledProperty);
+        set => SetValue(VisualizerEnabledProperty, value);
+    }
+
+    public Config.VisualizerStyle VisualizerStyle
+    {
+        get => (Config.VisualizerStyle)GetValue(VisualizerStyleProperty);
+        set => SetValue(VisualizerStyleProperty, value);
+    }
+
+    public VisualizerPalette VisualizerPalette
+    {
+        get => (VisualizerPalette)GetValue(VisualizerPaletteProperty);
+        set => SetValue(VisualizerPaletteProperty, value);
+    }
+
     const int GWL_EXSTYLE = -20;
     const int WS_EX_TOOLWINDOW = 0x00000080;
     const int WS_EX_NOACTIVATE = 0x08000000;

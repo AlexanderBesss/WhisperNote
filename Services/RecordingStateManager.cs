@@ -66,6 +66,18 @@ public class RecordingStateManager : ViewModel
 
     public int ChannelCount => _recorder.ChannelCount;
 
+    // The overlay's visualizer binds this; it is filled on the capture thread.
+    public SpectrumAnalyzer Spectrum => _recorder.Spectrum;
+
+    // Turning the visualizer off also clears the bands, so a mid-recording
+    // switch off leaves no frozen last frame for the next style to draw.
+    public void SetVisualizerActive(bool active)
+    {
+        _recorder.SpectrumActive = active;
+        if (!active)
+            _recorder.Spectrum.Reset();
+    }
+
     public string? MicrophoneName => _recorder.LastDeviceName;
 
     // -1 = system default mic.

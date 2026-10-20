@@ -66,6 +66,21 @@ public class AppState
         get => _settings.SelectionToolbarEnabled;
         set { _settings.SelectionToolbarEnabled = value; _settings.Save(); }
     }
+    public bool VisualizerEnabled
+    {
+        get => _settings.VisualizerEnabled;
+        set { _settings.VisualizerEnabled = value; _settings.Save(); }
+    }
+    public string VisualizerStyle
+    {
+        get => _settings.VisualizerStyle;
+        set { _settings.VisualizerStyle = value; _settings.Save(); }
+    }
+    public string VisualizerPalette
+    {
+        get => _settings.VisualizerPalette;
+        set { _settings.VisualizerPalette = value; _settings.Save(); }
+    }
     public bool GrammarCheckEnabled
     {
         get => _settings.GrammarCheckEnabled;

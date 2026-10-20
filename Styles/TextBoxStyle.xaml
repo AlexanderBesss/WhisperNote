@@ -53,4 +53,57 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!-- PasswordBox.Password is a plain CLR property, not a DependencyProperty, so a
+         trigger on it is read once at template apply and never updates. The hint keys
+         off Tag instead: SettingsWindow keeps the placeholder in Tag only while the
+         box is empty, and a property trigger follows Tag because that one is a DP. -->
+    <Style x:Key="SettingsPasswordField" TargetType="PasswordBox">
+        <Setter Property="Background" Value="#1E1E1E"/>
+        <Setter Property="BorderBrush" Value="#3A3A3A"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="#E0E0E0"/>
+        <Setter Property="CaretBrush" Value="#F0F0F0"/>
+        <Setter Property="SelectionBrush" Value="#2D8A4E"/>
+        <Setter Property="FontSize" Value="11.5"/>
+        <Setter Property="MinHeight" Value="28"/>
+        <Setter Property="Padding" Value="8,4"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Cursor" Value="IBeam"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="PasswordBox">
+                    <Border x:Name="Field" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6">
+                        <Grid>
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center"/>
+                            <TextBlock x:Name="Hint" Text="{TemplateBinding Tag}"
+                                       Margin="{TemplateBinding Padding}"
+                                       VerticalAlignment="Center"
+                                       FontSize="11" Foreground="#6B6B6B"
+                                       IsHitTestVisible="False" Visibility="Visible"/>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Field" Property="BorderBrush" Value="#4C4C4C"/>
+                        </Trigger>
+                        <!-- Must stay last: later triggers win, so focus keeps the accent outline over hover. -->
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Field" Property="BorderBrush" Value="#2D8A4E"/>
+                        </Trigger>
+                        <Trigger Property="Tag" Value="{x:Null}">
+                            <Setter TargetName="Hint" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

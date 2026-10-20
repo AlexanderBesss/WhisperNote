@@ -23,6 +23,10 @@ public sealed class SettingsViewModel : ViewModel
     string _grammarApiKey = "";
     string _grammarEffort = "";
     bool _selectionToolbarEnabled;
+    bool _visualizerEnabled = true;
+    string _visualizerStyle = VisualizerCatalog.DefaultStyleName;
+    string _visualizerPalette = VisualizerPaletteCatalog.DefaultPaletteName;
+    readonly PreviewVoiceSource _previewSource = new();
 
     public bool AutoOffloadVram
     {
@@ -123,6 +127,60 @@ public sealed class SettingsViewModel : ViewModel
         set => SetProperty(ref _selectionToolbarEnabled, value);
     }
 
+    public bool VisualizerEnabled
+    {
+        get => _visualizerEnabled;
+        set
+        {
+            if (SetProperty(ref _visualizerEnabled, value))
+                UpdatePreviewPump();
+        }
+    }
+
+    // The synthetic voice signal only has to run while the preview is on screen.
+    bool _previewTabVisible;
+
+    public void SetPreviewTabVisible(bool visible)
+    {
+        _previewTabVisible = visible;
+        UpdatePreviewPump();
+    }
+
+    void UpdatePreviewPump() => _previewSource.Active = _previewTabVisible && _visualizerEnabled;
+
+    public IReadOnlyList<VisualizerOption> VisualizerStyleOptions { get; } = VisualizerCatalog.Options;
+
+    // Carries the option's display name; VisualizerCatalog.Resolve maps it back.
+    public string VisualizerStyle
+    {
+        get => _visualizerStyle;
+        set
+        {
+            if (SetProperty(ref _visualizerStyle, value))
+                OnPropertyChanged(nameof(PreviewStyle));
+        }
+    }
+
+    public PreviewVoiceSource PreviewSource => _previewSource;
+
+    // The same enum the overlay receives, so the preview cannot drift from the setting.
+    public Config.VisualizerStyle PreviewStyle => VisualizerCatalog.Resolve(_visualizerStyle);
+
+    public IReadOnlyList<VisualizerPalette> VisualizerPaletteOptions { get; } = VisualizerPaletteCatalog.Options;
+
+    // Also a display name kept as text, so an unknown saved name falls back to the default scheme.
+    public string VisualizerPalette
+    {
+        get => _visualizerPalette;
+        set
+        {
+            if (SetProperty(ref _visualizerPalette, value))
+                OnPropertyChanged(nameof(PreviewPalette));
+        }
+    }
+
+    public VisualizerPalette PreviewPalette => VisualizerPaletteCatalog.Resolve(_visualizerPalette);
+
     public string GrammarStatus => _mainViewModel.GrammarStatus;
 
     public Brush GrammarStateBrush => _mainViewModel.GrammarStateBrush;
@@ -146,18 +204,29 @@ public sealed class SettingsViewModel : ViewModel
         _grammarApiKey = mainViewModel.GrammarApiKey;
         _grammarEffort = mainViewModel.GrammarEffort;
         _selectionToolbarEnabled = mainViewModel.SelectionToolbarEnabled;
+        _visualizerEnabled = mainViewModel.VisualizerEnabled;
+        // Normalized so the combo always shows one of its own option names.
+        _visualizerStyle = VisualizerCatalog.NameOf(VisualizerCatalog.Resolve(mainViewModel.VisualizerStyle));
+        _visualizerPalette = VisualizerPaletteCatalog.NameOf(VisualizerPaletteCatalog.Resolve(mainViewModel.VisualizerPalette));
 
         mainViewModel.PropertyChanged += MainViewModel_PropertyChanged;
 
         PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName != nameof(MicDeviceNumber))
+            // MicDeviceNumber commits through SetMicSelection instead. PreviewStyle and
+            // PreviewPalette ride along with Style/Palette, and applying twice would
+            // write the config file twice for one pick.
+            var name = e.PropertyName;
+            if (name != nameof(MicDeviceNumber) && name != nameof(PreviewStyle) && name != nameof(PreviewPalette))
                 Apply();
         };
     }
 
-    public void Detach() =>
+    public void Detach()
+    {
+        _previewSource.Dispose();
         _mainViewModel.PropertyChanged -= MainViewModel_PropertyChanged;
+    }
 
     void MainViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -183,7 +252,10 @@ public sealed class SettingsViewModel : ViewModel
             GrammarApiHost,
             GrammarApiKey,
             GrammarEffort,
-            SelectionToolbarEnabled));
+            SelectionToolbarEnabled,
+            VisualizerEnabled,
+            VisualizerStyle,
+            VisualizerPalette));
     }
 
     static IReadOnlyList<HotkeyOption> CreateHotkeyOptions(int currentKeyCode) =>
@@ -221,7 +293,10 @@ public sealed record SettingsSnapshot(
     string GrammarApiHost,
     string GrammarApiKey,
     string GrammarEffort,
-    bool SelectionToolbarEnabled);
+    bool SelectionToolbarEnabled,
+    bool VisualizerEnabled,
+    string VisualizerStyle,
+    string VisualizerPalette);
 
 public sealed class HotkeyOption
 {

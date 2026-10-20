@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using WhisperNote.Config;
 using WhisperNote.Services;
 using WhisperNote.ViewModels;
 
@@ -19,6 +20,7 @@ public partial class MainWindow : Window
     SelectionSnapshot? _lastSelection;
     bool _fixUiBusy;
     bool _exitRequested;
+    bool _closed;
 
     public MainWindow()
     {
@@ -43,6 +45,25 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(MainWindowViewModel.SelectionToolbarEnabled))
             ApplySelectionFixState();
+        else if (e.PropertyName == nameof(MainWindowViewModel.VisualizerEnabled) ||
+                 e.PropertyName == nameof(MainWindowViewModel.VisualizerStyle) ||
+                 e.PropertyName == nameof(MainWindowViewModel.VisualizerPalette))
+            ApplyVisualizerState();
+    }
+
+    // The overlay pill draws the visualizer, so the settings reach it here; the
+    // recording-state manager decides whether the capture-thread DSP runs at all.
+    void ApplyVisualizerState()
+    {
+        if (_overlay == null)
+            return;
+
+        _overlay.VisualizerEnabled = _viewModel.VisualizerEnabled;
+        _overlay.VisualizerStyle = VisualizerCatalog.Resolve(_viewModel.VisualizerStyle);
+        _overlay.VisualizerPalette = VisualizerPaletteCatalog.Resolve(_viewModel.VisualizerPalette);
+        // The stored string is logged with the resolved style so a fallback to the
+        // default style is visible in the log instead of looking like a random choice.
+        Logger.Info($"Visualizer setting applied: enabled={_overlay.VisualizerEnabled}, style={_overlay.VisualizerStyle}, palette={_overlay.VisualizerPalette.Name}, stored='{_viewModel.VisualizerStyle}'/'{_viewModel.VisualizerPalette}'");
     }
 
     void ApplySelectionFixState()
@@ -157,6 +178,11 @@ public partial class MainWindow : Window
 
     void RestoreFromTray()
     {
+        // A tray click can reach this after the window closed (exit, or a handler
+        // that threw while opening something); Show() on a closed window throws.
+        if (_closed)
+            return;
+
         Show();
         WindowState = WindowState.Normal;
         Activate();
@@ -175,6 +201,7 @@ public partial class MainWindow : Window
         {
             DataContext = _viewModel.RecordingManager
         };
+        ApplyVisualizerState();
 
         _viewModel.ServerManager.PropertyChanged += TrayStatus_PropertyChanged;
         _viewModel.RecordingManager.PropertyChanged += TrayStatus_PropertyChanged;
@@ -201,6 +228,8 @@ public partial class MainWindow : Window
 
     void MainWindow_Closed(object? sender, EventArgs e)
     {
+        _closed = true;
+
         // ShutdownMode=OnExplicitShutdown (App.xaml): a real exit needs an explicit dispatcher shutdown.
         var shouldExit = _exitRequested || !_viewModel.MinimizeToTray;
         // A fix caught mid-clipboard-window would otherwise strand its probe
@@ -244,9 +273,12 @@ public partial class MainWindow : Window
         if (_overlay == null)
             return;
 
-        if (_viewModel.RecordingManager.IsRecording || _viewModel.RecordingManager.IsProcessing)
+        // Several properties (recording, processing, queue, status) all land here,
+        // so the pill only acts on a real visibility transition.
+        var showing = _viewModel.RecordingManager.IsRecording || _viewModel.RecordingManager.IsProcessing;
+        if (showing && !_overlay.IsVisible)
             _overlay.ShowRecording();
-        else
+        else if (!showing && _overlay.IsVisible)
             _overlay.HideRecording();
     }
 
