@@ -53,8 +53,6 @@ public partial class MainWindow : Window
             ApplyVisualizerState();
     }
 
-    // The overlay pill draws the visualizer, so the settings reach it here; the
-    // recording-state manager decides whether the capture-thread DSP runs at all.
     void ApplyVisualizerState()
     {
         if (_overlay == null)
@@ -65,8 +63,6 @@ public partial class MainWindow : Window
         _overlay.VisualizerPalette = VisualizerPaletteCatalog.Resolve(_viewModel.VisualizerPalette);
         _overlay.VisualizerFps = VisualizerFpsCatalog.Resolve(_viewModel.VisualizerFps);
         _overlay.ProcessingAnimation = ProcessingCatalog.Resolve(_viewModel.ProcessingAnimation);
-        // The stored string is logged with the resolved style so a fallback to the
-        // default style is visible in the log instead of looking like a random choice.
         Logger.Info($"Visualizer setting applied: enabled={_overlay.VisualizerEnabled}, style={_overlay.VisualizerStyle}, palette={_overlay.VisualizerPalette.Name}, fps={_overlay.VisualizerFps}, processing={_overlay.ProcessingAnimation}, stored='{_viewModel.VisualizerStyle}'/'{_viewModel.VisualizerPalette}'");
         Logger.Info($"Display refresh detected: max={VisualizerFpsCatalog.MaxRefreshHz()} Hz");
     }
@@ -99,8 +95,7 @@ public partial class MainWindow : Window
     {
         _lastSelection = snapshot;
 
-        // While a fix or its confirmation is playing out the popup belongs to the
-        // flow: watcher events (the paste collapses the selection) must not hide it.
+        // Watcher events (the paste collapses the selection) must not hide the popup while a fix flow owns it.
         if (_fixUiBusy)
             return;
 

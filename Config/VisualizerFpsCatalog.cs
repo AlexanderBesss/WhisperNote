@@ -18,13 +18,9 @@ public sealed class VisualizerFpsOption
     public override string ToString() => Name;
 }
 
-// Animation step sizes in VoiceVisualizer are authored against the nominal rate;
-// the renderer scales them by measured frame time, so every option animates at
-// the same speed and only smoothness changes. The ladder is capped at the
-// display refresh because frames cannot be shown faster than the panel draws
-// them; the maximum over active devices is taken because the overlay may live
-// on the fastest screen, and the pacer then just renders at whatever the
-// hosting display actually delivers.
+// The ladder is capped at the display refresh (frames cannot be shown faster
+// than the panel draws them); the maximum over active devices is taken because
+// the overlay may live on the fastest screen.
 public static class VisualizerFpsCatalog
 {
     public const int NominalFps = 30;

@@ -2,22 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Media.Media3D;
 using WhisperNote.Config;
 using WhisperNote.Services;
 
 namespace WhisperNote;
 
-// Draws the live mic signal behind the recording pill. One control, nine styles;
-// it redraws at the configured rate (30/60/120 FPS, 30 by default) and only while
-// a snapshot actually changed, so an idle
-// overlay costs nothing and a hidden overlay redraws never. The scrolling styles
-// keep their own frame history in this control, so switching style resets it.
 public sealed class VoiceVisualizer : FrameworkElement
 {
-    // All animation step sizes below are authored against the 30 Hz nominal
-    // rate; the snapshot pass rescales them by the measured frame time, so a
-    // 60/120 FPS setting renders smoother motion, never faster motion.
+    // Animation steps are authored at the 30 Hz nominal rate; multiply by _frameSpeed so 60/120 FPS renders smoother motion, never faster.
     const double NominalFrameMs = 1000.0 / VisualizerFpsCatalog.NominalFps;
 
     public static readonly DependencyProperty FrameFpsProperty =
@@ -35,9 +31,7 @@ public sealed class VoiceVisualizer : FrameworkElement
 
     const double PeakDecay = 0.96;
 
-    // Single voice blob (Pulse rings): base circle at idle, breathing with the
-    // overall level, and its outline pushed into lobes by the live spectrum.
-    // Fractions keep the loudest lobe inside the pill (see DrawPulseRings).
+    // Blob radius = halfSpan*(0.34 + 0.28*level); a lobe of 0.52 over that base is the loudest that stays inside the pill.
     const float BlobIdleFraction = 0.34f;
     const float BlobVoiceFraction = 0.28f;
     const float BlobLobeFraction = 0.52f;
@@ -54,8 +48,6 @@ public sealed class VoiceVisualizer : FrameworkElement
     const int CityRows = 20;
     const int CityAlphaSteps = 6;
 
-    // Built once per process: the shell lattice and the city grain jitter never
-    // depend on the palette or the signal, only their shading does.
     static readonly SphereParticle[] FieldSphere =
         ParticleFieldGeometry.BuildSphere(FieldParticleCount, SpectrumAnalyzer.BandCount);
     static readonly GrainOffset[] CityGrains =
@@ -105,16 +97,18 @@ public sealed class VoiceVisualizer : FrameworkElement
     readonly float[] _drawnLevels = new float[SpectrumAnalyzer.BandCount];
     readonly float[] _drawnWave = new float[SpectrumAnalyzer.WaveformPoints];
 
-    // Scrolling-style history, oldest first: one scalar per frame for the trace.
+    static readonly SolidColorBrush BaseFill = MakeFrozen(0x01FFFFFF);
+    readonly Dictionary<VisualizerStyle, VisualizerGpuEffect> _gpu = new();
+    readonly WriteableBitmap _audioData = new(96, 4, 96, 96, PixelFormats.Gray8, null);
+    readonly ImageBrush _audioBrush = new();
+    readonly byte[] _audioBytes = new byte[96 * 4];
+    long _gpuClockStart;
+
     readonly float[] _traceHistory = new float[VisualizerLayout.TraceColumns];
 
-    // The voice blob is drawn from the live snapshot with frozen brushes; only
-    // its geometry changes per frame, nothing animates between frames.
     Pen _blobPen = null!;
     SolidColorBrush _blobFill = null!;
 
-    // Animation clocks for the particle styles; they only tick while their own
-    // style is drawn, so hidden styles never advance or animate.
     float _fieldPhase;
     float _wavePhase;
     float _cityPhase;
@@ -123,8 +117,6 @@ public sealed class VoiceVisualizer : FrameworkElement
     double _drawnPeak;
     readonly FramePacer _pacer = new(NominalFrameMs);
 
-    // Frame-time clock: _frameSpeed is the measured frame time in nominal (30 Hz)
-    // frames; _nominalMs carries the leftover toward the next 30 Hz tick.
     double _nominalMs;
     double _frameSpeed = 1;
     bool _subscribed;
@@ -147,11 +139,33 @@ public sealed class VoiceVisualizer : FrameworkElement
         set => SetValue(PaletteProperty, value);
     }
 
-    // WPF exposes Loaded/Unloaded/IsVisibleChanged only as events, so the render
-    // hook follows visibility through them.
     public VoiceVisualizer()
     {
+        _audioBrush.ImageSource = _audioData;
+        _audioBrush.Stretch = Stretch.Fill;
+        // ShaderEffect needs pixel-shader tier 2; below it no effects are built and the styles must draw their CPU twin.
+        if (RenderCapability.Tier >> 16 >= 2)
+        {
+            foreach (VisualizerStyle style in Enum.GetValues<VisualizerStyle>())
+            {
+                if (!VisualizerCatalog.IsGpu(style))
+                    continue;
+
+                try
+                {
+                    _gpu[style] = new VisualizerGpuEffect(style, _audioBrush);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"VisualizerGpuEffect({style}) failed to load: {ex.Message}");
+                }
+            }
+        }
+
+        // Must run after the _gpu effects are built: BuildBrushes seeds their palette colors.
         BuildBrushes();
+
         IsVisibleChanged += (_, _) => UpdateSubscription();
         Loaded += (_, _) => UpdateSubscription();
         Unloaded += (_, _) => Detach();
@@ -161,17 +175,21 @@ public sealed class VoiceVisualizer : FrameworkElement
     {
         var visualizer = (VoiceVisualizer)d;
         visualizer.ResetSnapshot();
+        visualizer._gpuClockStart = 0;
+        visualizer.Effect = visualizer._gpu.TryGetValue(visualizer.Mode, out var effect)
+            ? effect
+            : null;
         visualizer.UpdateSubscription();
         visualizer.InvalidateVisual();
     }
 
     void UpdateSubscription()
     {
-        // CompositionTarget.Rendering is the app-wide static render hook; the
-        // overlay only exists while recording, and visibility gates the redraws.
-        // IsLoaded is deliberately not required: the pill can be visible before
-        // its loaded pass settles, and a missed frame here would freeze the bars.
-        var shouldRun = IsVisible && Source != null && PresentationSource.FromVisual(this) != null;
+        // IsLoaded deliberately not required: the pill can be visible before its loaded pass settles, and a missed frame here would freeze the bars.
+        // A GPU style runs the hook even with no Source so the settings preview animates (flat data) without the analyzer.
+        var shouldRun = IsVisible
+            && PresentationSource.FromVisual(this) != null
+            && (Source != null || _gpu.ContainsKey(Mode));
         if (shouldRun == _subscribed)
             return;
 
@@ -193,25 +211,43 @@ public sealed class VoiceVisualizer : FrameworkElement
 
     void OnRendering(object? sender, EventArgs e)
     {
-        var source = Source;
-        if (!IsVisible || source == null)
+        if (!IsVisible)
         {
             Detach();
             return;
         }
 
         var now = Stopwatch.GetTimestamp();
+
+        // GPU motion runs at the composition rate and is deliberately not gated by FrameFps.
+        if (_gpu.TryGetValue(Mode, out var gpuEffect) && ReferenceEquals(Effect, gpuEffect))
+        {
+            RefreshSnapshot();
+            WriteAudioTexture();
+            if (_gpuClockStart == 0)
+                _gpuClockStart = now;
+            gpuEffect.Time = FramePacer.MsBetween(_gpuClockStart, now) / 1000.0;
+            gpuEffect.Level = _drawnLevel;
+            gpuEffect.Aux = new Point4D(0, 0, 0, _drawnPeak);
+            var size = RenderSize;
+            gpuEffect.Aspect = size.Height > 0 ? size.Width / size.Height : 1.0;
+            return;
+        }
+
+        var source = Source;
+        if (source == null)
+        {
+            Detach();
+            return;
+        }
+
         if (!_pacer.ShouldRender(FrameFps, now))
             return;
 
-        // The hook only nudges; OnRender pulls the snapshot, so a frame is drawn
-        // from live data on any render pass, not only when this hook fires.
         InvalidateVisual();
     }
 
-    // Pulling the levels here, rather than in the render-loop hook, is what keeps
-    // the pill honest: a style change, a show, or any layout pass draws live
-    // values. The analyzer's lock is held only for the array copies.
+    // Snapshot is pulled here (OnRender), not in the render hook, so a style change, show, or layout pass draws live values.
     void RefreshSnapshot()
     {
         var source = Source;
@@ -225,9 +261,7 @@ public sealed class VoiceVisualizer : FrameworkElement
         source.ReadWaveform(_drawnWave);
         _drawnLevel = source.Level;
 
-        // Wall-clock frame time drives everything that must not speed up when
-        // the configured FPS rises: step sizes authored at 30 Hz are multiplied
-        // by _frameSpeed, and history/onset samples stay on 30 Hz nominal ticks.
+        // History/onset samples tick only on nominal 30 Hz ticks, so a higher FPS never speeds them up.
         var now = Stopwatch.GetTimestamp();
         _frameSpeed = _pacer.FrameSpeed(now);
         var elapsed = _frameSpeed * NominalFrameMs;
@@ -240,8 +274,7 @@ public sealed class VoiceVisualizer : FrameworkElement
             nominalTick = true;
         }
 
-        // Peak-hold is a render-side VU decay: the analyzer reports the smoothed
-        // level only, which is what the meter fill follows.
+        // Peak-hold is a render-side VU decay: the analyzer reports the smoothed level only.
         _drawnPeak = Math.Max(_drawnLevel, _drawnPeak * Math.Pow(PeakDecay, _frameSpeed));
         if (_drawnPeak < 0.01)
             _drawnPeak = 0;
@@ -249,17 +282,15 @@ public sealed class VoiceVisualizer : FrameworkElement
         AdvanceStyleHistory(_frameSpeed, nominalTick);
     }
 
-    // Only the style being drawn keeps a history; the others stay cleared so a
-    // later switch animates from a blank frame, never from stale motion.
     void AdvanceStyleHistory(double speed, bool nominalTick)
     {
-        switch (Mode)
+        switch (VisualizerCatalog.CpuTwin(Mode))
         {
             case VisualizerStyle.Oscilloscope:
                 if (!nominalTick)
                     break;
                 Array.Copy(_traceHistory, 1, _traceHistory, 0, VisualizerLayout.TraceColumns - 1);
-                // The newest waveform sample is the rightmost envelope point.
+                // _traceHistory is oldest→newest: index ^1 is the newest sample = the trace's right edge.
                 _traceHistory[^1] = _drawnWave[^1];
                 break;
 
@@ -298,9 +329,19 @@ public sealed class VoiceVisualizer : FrameworkElement
         if (width <= 0 || height <= 0)
             return;
 
+        if (Effect != null)
+        {
+            // Must draw non-empty content: a ShaderEffect is silently skipped when the element renders nothing.
+            // Aspect set here too: the first composited frame can precede the render hook, and Aspect=1 flattens radial geometry.
+            ((VisualizerGpuEffect)Effect).Aspect = width / height;
+            dc.DrawRectangle(BaseFill, null, new Rect(0, 0, width, height));
+            return;
+        }
+
         RefreshSnapshot();
 
-        switch (Mode)
+        // A GPU style falls back to its CPU twin when the shader is unavailable (or suppressed in tests), never a blank pill.
+        switch (VisualizerCatalog.CpuTwin(Mode))
         {
             case VisualizerStyle.Waveform:
                 DrawWaveform(dc, width, height);
@@ -334,7 +375,6 @@ public sealed class VoiceVisualizer : FrameworkElement
 
     void DrawBars(DrawingContext dc, double width, double height)
     {
-        // Every style draws from the snapshot refreshed once per pass in OnRender.
         var bars = VisualizerLayout.BuildBars(width, height, _drawnLevels);
         foreach (var bar in bars)
         {
@@ -384,8 +424,6 @@ public sealed class VoiceVisualizer : FrameworkElement
 
     void DrawTrace(DrawingContext dc, double width, double height)
     {
-        // The trace reuses the envelope mapping: history is one scalar per frame,
-        // oldest sample at the left edge, newest at the right.
         var points = VisualizerLayout.BuildEnvelope(width, height, _traceHistory);
         if (points.Count < 2)
             return;
@@ -406,19 +444,11 @@ public sealed class VoiceVisualizer : FrameworkElement
         dc.DrawEllipse(_peakBrush, null, new Point(head.X, center - head.HalfHeight), 2.5, 2.5);
     }
 
-    // One blob pinned to the pill centre: the 20 live bands are wrapped around a
-    // circle and each pushes the outline outward at its own direction, so the
-    // silhouette morphs with the voice instead of leaving ripples behind.
-    // Nothing eases or trails between frames; the analyzer's fast attack is what
-    // makes it snap while speaking.
     void DrawPulseRings(DrawingContext dc, double width, double height)
     {
         var centerX = width / 2;
         var centerY = height / 2;
 
-        // Idle sits at a third of the half-height; full voice adds 0.28 more,
-        // and the loudest possible lobe (0.52 over the base) still lands inside
-        // the pill, so the blob never clips against the edges.
         var halfSpan = (float)Math.Min(width, height) / 2f - 2f;
         var baseRadius = halfSpan * (BlobIdleFraction + BlobVoiceFraction * (float)_drawnLevel);
         var vertices = VisualizerLayout.BuildFrequencyRing(
@@ -426,8 +456,6 @@ public sealed class VoiceVisualizer : FrameworkElement
         if (vertices.Count < 3)
             return;
 
-        // Midpoint + quadratic passes make the outline an organic outline instead
-        // of twenty straight chords.
         var geometry = new StreamGeometry();
         using (var context = geometry.Open())
         {
@@ -466,21 +494,14 @@ public sealed class VoiceVisualizer : FrameworkElement
         }
     }
 
-    // Reference: a particle shell where loud frequency bands bulge outward at
-    // their own longitude, the surface ripples, and depth shades the far side.
     void DrawForceField(DrawingContext dc, double width, double height)
     {
         var centerX = width / 2;
         var centerY = height / 2;
-        // Base radius leaves room for the 1.48x loudest bulge so splats stay
-        // round instead of clipping against the pill's top and bottom.
+        // height*0.30 leaves headroom for the 1.48x loudest bulge; a bigger base clips splats against the pill top/bottom.
         var radius = (float)height * 0.30f * (0.9f + 0.22f * (float)_drawnLevel);
         var reach = radius * 1.5f;
-        // Splat width tracks the sphere so the lattice reads as a continuous mesh
-        // rather than a dither of isolated dots. It must exceed the projected
-        // nearest-neighbour spacing (sphereRadius*sqrt(2*pi/count), sparsest at the
-        // disc centre) plus the bulge wobble; below that black holes appear even
-        // when silent.
+        // splat must exceed projected neighbour spacing (radius*sqrt(2*pi/count), sparsest at the disc centre) plus the bulge wobble, else black holes appear even when silent.
         var splat = radius * 0.12f;
 
         var cosSpin = MathF.Cos(_fieldPhase);
@@ -503,8 +524,6 @@ public sealed class VoiceVisualizer : FrameworkElement
             var colorStep = Math.Clamp((int)((centerY + reach - y) / (2 * reach) * (FieldColorSteps - 1)), 0, FieldColorSteps - 1);
             var alphaStep = Math.Clamp((int)((depth + 1f) * 0.5f * (FieldAlphaSteps - 1)), 0, FieldAlphaSteps - 1);
 
-            // Particles seen edge-on pile up along the silhouette; brightening
-            // that band is what makes the reference art glow at the shell edge.
             if (MathF.Abs(depth) < 0.3f && ux * ux + uy * uy > 0.55f)
                 alphaStep = Math.Min(FieldAlphaSteps - 1, alphaStep + 2);
 
@@ -513,8 +532,6 @@ public sealed class VoiceVisualizer : FrameworkElement
         }
     }
 
-    // Reference: several luminous lines flowing past each other; the voice's
-    // harmonic content drives the standing waves, the phases make them travel.
     void DrawLivingWave(DrawingContext dc, double width, double height)
     {
         var drawableW = (float)width - 2 * VisualizerLayout.InsetX;
@@ -552,10 +569,6 @@ public sealed class VoiceVisualizer : FrameworkElement
                     harmonicSum += harmonic[h] * MathF.Sin((h + 1) * u + travel + line * 0.85f + h * 1.9f);
                 }
 
-                // The live envelope carries the voice's peaks; the travelling
-                // harmonics underneath keep the lines flowing between words.
-                // A 1-2-1 kernel tames single-sample spikes so even noisy
-                // input produces fluid lines, matching the reference art.
                 var raw = i < _drawnWave.Length ? _drawnWave[i] : 0f;
                 var before = i > 0 && i - 1 < _drawnWave.Length ? _drawnWave[i - 1] : raw;
                 var after = i + 1 < _drawnWave.Length ? _drawnWave[i + 1] : raw;
@@ -563,16 +576,12 @@ public sealed class VoiceVisualizer : FrameworkElement
                 var y = centerY + sign * shape * maxHalf
                     * (0.5f * harmonicSum + 0.75f * (envelope - 0.42f));
 
-                // At silence the lines fan apart instead of stacking on one
-                // flat line, so the style never looks switched off.
                 y += (line - (WaveLines - 1) / 2f) * (1.6f + 2.2f * (1f - (float)_drawnLevel));
 
                 points[i] = new Point(
                     VisualizerLayout.InsetX + (float)i / (WaveSamples - 1) * drawableW, y);
             }
 
-            // Midpoint quadratic Bézier smoothing: the envelope is only 64
-            // samples, and straight segments between them read as jagged.
             var geometry = new StreamGeometry();
             using (var context = geometry.Open())
             {
@@ -583,14 +592,11 @@ public sealed class VoiceVisualizer : FrameworkElement
             }
             geometry.Freeze();
 
-            // The wide faint pass under the thin bright one fakes the neon bloom.
             dc.DrawGeometry(null, _wavePens[line * 2], geometry);
             dc.DrawGeometry(null, _wavePens[line * 2 + 1], geometry);
         }
     }
 
-    // Reference: each band is a tower of twinkling grains with a beacon light on
-    // its roof, all mirrored in a dim reflection under the street line.
     void DrawCity(DrawingContext dc, double width, double height)
     {
         var drawableW = (float)width - 2 * VisualizerLayout.InsetX;
@@ -598,7 +604,6 @@ public sealed class VoiceVisualizer : FrameworkElement
         if (drawableW <= 0 || drawableH <= 0)
             return;
 
-        // The mirror gets real depth: the skyline owns two thirds of the pill.
         var baselineY = VisualizerLayout.InsetY + drawableH * 0.66f;
         var maxBar = (baselineY - VisualizerLayout.InsetY) * 0.94f;
         var rowHeight = maxBar / CityRows;
@@ -611,8 +616,6 @@ public sealed class VoiceVisualizer : FrameworkElement
         for (int band = 0; band < SpectrumAnalyzer.BandCount; band++)
         {
             var level = Math.Clamp(_drawnLevels[band], 0f, 1f);
-            // Towers keep a short base even in silence: an empty skyline, not a
-            // switched-off meter.
             var barHeight = Math.Max(level, 0.05f) * maxBar;
 
             for (int row = 0; row < CityRows; row++)
@@ -656,8 +659,6 @@ public sealed class VoiceVisualizer : FrameworkElement
         dc.DrawRoundedRectangle(brush, null, new Rect(bar.X, bar.Y, bar.Width, bar.Height), radius, radius);
     }
 
-    // Brushes follow the palette, not the frame: they are rebuilt only when the
-    // palette changes and every one is frozen, so a redraw never allocates.
     void BuildBrushes()
     {
         var palette = Palette ?? VisualizerPaletteCatalog.Default;
@@ -676,8 +677,6 @@ public sealed class VoiceVisualizer : FrameworkElement
 
         _rippleRgb = _peakBrush.Color;
 
-        // The blob keeps a constant ink; only its geometry moves, so the pen and
-        // fill are built once per palette instead of per frame.
         _blobFill = new SolidColorBrush(Color.FromArgb(0x1F, _rippleRgb.R, _rippleRgb.G, _rippleRgb.B));
         _blobFill.Freeze();
         _blobPen = new Pen(new SolidColorBrush(Color.FromArgb(0xD8, _rippleRgb.R, _rippleRgb.G, _rippleRgb.B)), 1.8);
@@ -688,8 +687,6 @@ public sealed class VoiceVisualizer : FrameworkElement
             Color.FromArgb(0, 0, 0, 0));
         _coreBrush.Freeze();
 
-        // Force field: a vertical colour ramp times a depth alpha ramp, quantised
-        // so every particle shares frozen brushes with no per-frame allocs.
         for (int colour = 0; colour < FieldColorSteps; colour++)
         {
             var hue = palette.HueAt((double)colour / (FieldColorSteps - 1)) & 0x00FFFFFFu;
@@ -697,7 +694,6 @@ public sealed class VoiceVisualizer : FrameworkElement
                 _fieldBrushes[colour * FieldAlphaSteps + depth] = MakeFrozen((uint)(0x55 + depth * 0x1C) << 24 | hue);
         }
 
-        // Living waveform: a wide faint pass under a thin bright one fakes neon bloom.
         for (int line = 0; line < WaveLines; line++)
         {
             var hue = palette.HueAt((double)line / (WaveLines - 1)) & 0x00FFFFFFu;
@@ -709,8 +705,6 @@ public sealed class VoiceVisualizer : FrameworkElement
             _wavePens[line * 2 + 1] = core;
         }
 
-        // Frequency city: tower hues walk the palette ramp; twinkle picks one of
-        // a handful of shared alpha steps, reflection a dimmed copy of the same.
         for (int band = 0; band < SpectrumAnalyzer.BandCount; band++)
         {
             var hue = palette.HueAt((double)band / (SpectrumAnalyzer.BandCount - 1)) & 0x00FFFFFFu;
@@ -725,9 +719,36 @@ public sealed class VoiceVisualizer : FrameworkElement
             _cityReflectionBrushes[band * CityAlphaSteps] = MakeFrozen(0);
         }
 
-        // A barely-there ground line reads as the mirror edge without the
-        // hard rule _trackBrush would draw across the pill.
         _cityGroundBrush = MakeFrozen(0x12000000u | palette.HueAt(0.0));
+
+        var peak = ToColor(0xFF000000u | palette.Peak);
+        var mid = ToColor(0xFF000000u | palette.Glow);
+        foreach (var effect in _gpu.Values)
+        {
+            effect.PeakColor = peak;
+            effect.MidColor = mid;
+        }
+    }
+
+    // Gray8 rows the VizStyles shaders sample: bins, waveform, trace history,
+    // then [level, peak]; signed signals ride the 0.5-centered encoding.
+    void WriteAudioTexture()
+    {
+        for (int i = 0; i < SpectrumAnalyzer.BandCount; i++)
+            _audioBytes[i] = (byte)(Math.Clamp(_drawnLevels[i], 0f, 1f) * 255f);
+        for (int i = 0; i < SpectrumAnalyzer.WaveformPoints; i++)
+            _audioBytes[96 + i] = (byte)((Math.Clamp(_drawnWave[i], -1f, 1f) * 0.5f + 0.5f) * 255f);
+        for (int i = 0; i < VisualizerLayout.TraceColumns; i++)
+            _audioBytes[192 + i] = (byte)((Math.Clamp(_traceHistory[i], -1f, 1f) * 0.5f + 0.5f) * 255f);
+        _audioBytes[288] = (byte)(Math.Clamp(_drawnLevel, 0, 1) * 255);
+        _audioBytes[289] = (byte)(Math.Clamp(_drawnPeak, 0, 1) * 255);
+        _audioData.WritePixels(new Int32Rect(0, 0, 96, 4), _audioBytes, 96, 0);
+    }
+
+    internal void PumpGpuAudioForTests()
+    {
+        RefreshSnapshot();
+        WriteAudioTexture();
     }
 
     static LinearGradientBrush MakeGradient(

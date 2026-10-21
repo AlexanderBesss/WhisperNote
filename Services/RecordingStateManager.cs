@@ -11,9 +11,8 @@ public enum RecordingResult
     Error
 }
 
-// What the pill and the overlay show. Recording and processing are independent:
-// the user can already be recording the next clip while the previous one is
-// being transcribed, so both are true at the same time and both icons light up.
+// Recording and processing are independent: both can be true at once (the next
+// clip while the previous is being transcribed), and both icons light up.
 public class RecordingStateManager : ViewModel
 {
     readonly AudioRecorder _recorder;
@@ -39,8 +38,6 @@ public class RecordingStateManager : ViewModel
     // Overlay queue bar: one square for the job in flight plus one per waiting clip.
     public int QueueSquares => _queueBusy ? Math.Min(TranscriptionQueue.Capacity, _queuedCount + 1) : 0;
 
-    // A new clip may be recorded while the previous ones are still processing;
-    // only a running capture or a full queue blocks it.
     public bool CanStartRecording =>
         !_isCapturing && _queueOutstanding < TranscriptionQueue.Capacity;
 
@@ -199,8 +196,7 @@ public class RecordingStateManager : ViewModel
 
     void RefreshStatus()
     {
-        // The newest thing the user is doing wins the single pill line; the
-        // overlay shows both icons, so it never needs to hide one of them.
+        // The newest activity wins the single pill line; the overlay shows both icons.
         var waiting = _queuedCount > 0 ? $" · {_queuedCount} waiting" : "";
 
         if (_isCapturing)

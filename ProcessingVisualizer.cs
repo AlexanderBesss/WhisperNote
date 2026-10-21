@@ -1,19 +1,20 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using WhisperNote.Config;
 
 namespace WhisperNote;
 
-// Fills the overlay pill with a looping animation while the captured audio is
-// processed (transcript + grammar), so the wait reads as work in progress.
-// Render-loop discipline matches VoiceVisualizer: gated by FrameFps, animated
-// phases advance by measured frame time, and the redraw hook is only attached
-// while the control is actually on screen.
 public sealed class ProcessingVisualizer : FrameworkElement
 {
     const double NominalFrameMs = 1000.0 / VisualizerFpsCatalog.NominalFps;
+
+    // Near-invisible base a ShaderEffect needs so the element has non-empty
+    // content; the GPU styles paint everything themselves.
+    static readonly SolidColorBrush BaseFill = MakeFrozen(0x01FFFFFF);
 
     public static readonly DependencyProperty ModeProperty =
         DependencyProperty.Register(
@@ -58,6 +59,10 @@ public sealed class ProcessingVisualizer : FrameworkElement
     {
         var control = (ProcessingVisualizer)d;
         control._phase = 0;
+        control._shaderClockStart = 0;
+        control.Effect = control._gpu.TryGetValue((ProcessingStyle)e.NewValue, out var effect)
+            ? effect
+            : null;
         control.InvalidateVisual();
     }
 
@@ -68,7 +73,6 @@ public sealed class ProcessingVisualizer : FrameworkElement
         control.InvalidateVisual();
     }
 
-    // One looping phase; each style maps it through its own speed and shape.
     float _phase;
     readonly FramePacer _pacer = new(NominalFrameMs);
     double _frameSpeed = 1;
@@ -81,9 +85,37 @@ public sealed class ProcessingVisualizer : FrameworkElement
     SolidColorBrush _trackBrush = null!;
     Pen _basePen = null!;
 
+    readonly Dictionary<ProcessingStyle, ProcessingGpuEffect> _gpu = new();
+    long _shaderClockStart;
+
     public ProcessingVisualizer()
     {
         BuildBrushes();
+        // ShaderEffect only runs on hardware with pixel-shader support
+        // (tier 2); elsewhere the styles must draw their CPU twin, so no
+        // effects are built at all.
+        if (RenderCapability.Tier >> 16 >= 2)
+        {
+            foreach (ProcessingStyle style in Enum.GetValues<ProcessingStyle>())
+            {
+                if (!ProcessingCatalog.IsGpu(style))
+                    continue;
+
+                try
+                {
+                    var effect = new ProcessingGpuEffect(style);
+                    effect.PeakColor = PeakColor();
+                    effect.MidColor = MidColor();
+                    _gpu[style] = effect;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"ProcessingGpuEffect({style}) failed to load: {ex.Message}");
+                }
+            }
+        }
+
         IsVisibleChanged += (_, _) => UpdateSubscription();
         Loaded += (_, _) => UpdateSubscription();
         Unloaded += (_, _) => Detach();
@@ -120,6 +152,20 @@ public sealed class ProcessingVisualizer : FrameworkElement
         }
 
         var now = Stopwatch.GetTimestamp();
+
+        if (_gpu.TryGetValue(Mode, out var effect) && ReferenceEquals(Effect, effect))
+        {
+            // The GPU styles only nudge their time and aspect uniforms: motion
+            // runs at the composition rate regardless of the configured CPU
+            // frame rate.
+            if (_shaderClockStart == 0)
+                _shaderClockStart = now;
+            effect.Time = FramePacer.MsBetween(_shaderClockStart, now) / 1000.0;
+            var size = RenderSize;
+            effect.Aspect = size.Height > 0 ? size.Width / size.Height : 1.0;
+            return;
+        }
+
         if (!_pacer.ShouldRender(FrameFps, now))
             return;
         InvalidateVisual();
@@ -135,8 +181,43 @@ public sealed class ProcessingVisualizer : FrameworkElement
         var now = Stopwatch.GetTimestamp();
         _frameSpeed = _pacer.FrameSpeed(now);
 
-        // ~0.9 phase-units per second at every configured frame rate.
         _phase = (_phase + 0.030f * (float)_frameSpeed) % 1f;
+
+        if (ProcessingCatalog.IsGpu(Mode))
+        {
+            if (Effect != null)
+            {
+                // A ShaderEffect whose registered sampler brush is null is
+                // skipped without an error, so the element must draw real
+                // content; the shader itself paints everything on top.
+                // Aspect is set here too: the first composited frame can
+                // precede the render-loop hook, and Aspect=1 flattens arcs.
+                ((ProcessingGpuEffect)Effect).Aspect = width / height;
+                dc.DrawRectangle(BaseFill, null, new Rect(0, 0, width, height));
+                return;
+            }
+
+            // Shader effect suppressed or unavailable: draw the CPU twin.
+            switch (ProcessingCatalog.CpuTwin(Mode))
+            {
+                case ProcessingStyle.WaveSweep:
+                    DrawWaveSweep(dc, width, height);
+                    return;
+                case ProcessingStyle.CometOrbit:
+                    DrawCometOrbit(dc, width, height);
+                    return;
+                case ProcessingStyle.ShimmerBar:
+                    DrawShimmerBar(dc, width, height);
+                    return;
+                case ProcessingStyle.CounterArcs:
+                    DrawCounterArcs(dc, width, height);
+                    return;
+                case ProcessingStyle.VoiceRipples:
+                    DrawVoiceRipples(dc, width, height);
+                    return;
+            }
+            return;
+        }
 
         switch (Mode)
         {
@@ -158,8 +239,6 @@ public sealed class ProcessingVisualizer : FrameworkElement
         }
     }
 
-    // Two overlapping travelling waves plus a brighter scan window sweeping
-    // left-to-right: the reading metaphor is audio being scrubbed through.
     void DrawWaveSweep(DrawingContext dc, double width, double height)
     {
         const int segments = 56;
@@ -210,7 +289,10 @@ public sealed class ProcessingVisualizer : FrameworkElement
         for (int i = dots - 1; i >= 0; i--)
         {
             var tail = i / (float)dots;
-            var angle = 2f * MathF.PI * (_phase * 1.6f - tail * 0.30f);
+            // Two turns per phase cycle: the %1 phase wrap becomes seamless (a
+            // whole number of orbits), and the head lands where the 0.30-turn
+            // tail trail points already sit, so the loop never visibly resets.
+            var angle = 2f * MathF.PI * (_phase * 2f - tail * 0.30f);
             var strength = (1f - tail) * (1f - tail);
             var size = 1.3f + 3.4f * strength;
             var brush = MakeFrozen((uint)(0xE0 * strength) << 24 | _peakRgb);
@@ -254,14 +336,16 @@ public sealed class ProcessingVisualizer : FrameworkElement
         var center = new Point(width / 2, height / 2);
         var radius = Math.Min(width, height) * 0.34f;
 
+        // Whole turns and whole beats per phase cycle: the %1 phase wrap must
+        // land every oscillator back on itself, or the arcs visibly snap.
         DrawArc(dc, center, radius,
             _phase * 2f * MathF.PI, 2.4f,
             0xB8u << 24 | _hue0, 2.4);
         DrawArc(dc, center, radius * 0.62f,
-            3.1f - _phase * 1.5f * MathF.PI, 1.7f,
+            3.1f - _phase * 2f * MathF.PI, 1.7f,
             0xA0u << 24 | _hueMid, 2.0);
 
-        var pulse = 0.4f + 0.35f * MathF.Sin(_phase * 12f);
+        var pulse = 0.4f + 0.35f * MathF.Sin(_phase * 4f * MathF.PI);
         var core = MakeFrozen((uint)(0xD0 * pulse) << 24 | _peakRgb);
         dc.DrawEllipse(core, null, center, 3.2f, 3.2f);
     }
@@ -312,7 +396,19 @@ public sealed class ProcessingVisualizer : FrameworkElement
 
         _basePen = new Pen(MakeFrozen(0x66u << 24 | _hueMid), 1.6);
         _basePen.Freeze();
+
+        foreach (var effect in _gpu.Values)
+        {
+            effect.PeakColor = PeakColor();
+            effect.MidColor = MidColor();
+        }
     }
+
+    Color PeakColor() => Color.FromRgb(
+        (byte)(_peakRgb >> 16), (byte)(_peakRgb >> 8), (byte)_peakRgb);
+
+    Color MidColor() => Color.FromRgb(
+        (byte)(_hueMid >> 16), (byte)(_hueMid >> 8), (byte)_hueMid);
 
     static SolidColorBrush MakeFrozen(uint argb)
     {

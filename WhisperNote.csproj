@@ -39,6 +39,23 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- fxc-compiled HLSL bytecode (Shaders\*.fx, ps_2_0), reached via the
+         component pack URIs from ProcessingGpuEffect / VisualizerGpuEffect.
+         Recompile each entry with:
+           fxc /O3 /T ps_2_0 /E <entry> /Fo Shaders\<file>_<entry>.ps Shaders\<file>.fx -->
+    <Resource Include="Shaders\proc_main.ps" />
+    <Resource Include="Shaders\proc_cometOrbit.ps" />
+    <Resource Include="Shaders\proc_counterArcs.ps" />
+    <Resource Include="Shaders\proc_voiceRipples.ps" />
+    <Resource Include="Shaders\viz_spectrum.ps" />
+    <Resource Include="Shaders\viz_waveform.ps" />
+    <Resource Include="Shaders\viz_levelMeter.ps" />
+    <Resource Include="Shaders\viz_oscilloscope.ps" />
+    <Resource Include="Shaders\viz_livingWave.ps" />
+    <Resource Include="Shaders\viz_frequencyCity.ps" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="tests\**\*.cs" />
     <None Include="tests\**\*.cs" />
   </ItemGroup>

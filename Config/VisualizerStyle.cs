@@ -14,7 +14,13 @@ public enum VisualizerStyle
     MatrixDots,
     ForceField,
     LivingWave,
-    FrequencyCity
+    FrequencyCity,
+    SpectrumGpu,
+    WaveformGpu,
+    LevelGpu,
+    OscilloscopeGpu,
+    LivingWaveGpu,
+    FrequencyCityGpu,
 }
 
 public sealed class VisualizerOption
@@ -46,6 +52,27 @@ public static class VisualizerCatalog
         new VisualizerOption(VisualizerStyle.ForceField, "Acoustic force field"),
         new VisualizerOption(VisualizerStyle.LivingWave, "Living waveform"),
         new VisualizerOption(VisualizerStyle.FrequencyCity, "Frequency city"),
+        new VisualizerOption(VisualizerStyle.SpectrumGpu, "Spectrum GPU"),
+        new VisualizerOption(VisualizerStyle.WaveformGpu, "Waveform GPU"),
+        new VisualizerOption(VisualizerStyle.LevelGpu, "Level meter GPU"),
+        new VisualizerOption(VisualizerStyle.OscilloscopeGpu, "Oscilloscope GPU"),
+        new VisualizerOption(VisualizerStyle.LivingWaveGpu, "Living wave GPU"),
+        new VisualizerOption(VisualizerStyle.FrequencyCityGpu, "Frequency city GPU"),
+    };
+
+    // Their CPU twins are the fallback when the shader cannot be
+    // created on the machine.
+    public static bool IsGpu(VisualizerStyle style) => style >= VisualizerStyle.SpectrumGpu;
+
+    public static VisualizerStyle CpuTwin(VisualizerStyle style) => style switch
+    {
+        VisualizerStyle.SpectrumGpu => VisualizerStyle.Spectrum,
+        VisualizerStyle.WaveformGpu => VisualizerStyle.Waveform,
+        VisualizerStyle.LevelGpu => VisualizerStyle.Level,
+        VisualizerStyle.OscilloscopeGpu => VisualizerStyle.Oscilloscope,
+        VisualizerStyle.LivingWaveGpu => VisualizerStyle.LivingWave,
+        VisualizerStyle.FrequencyCityGpu => VisualizerStyle.FrequencyCity,
+        _ => style,
     };
 
     // Settings keep the style as a string so whispernote.json stays readable and

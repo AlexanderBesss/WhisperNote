@@ -9,8 +9,14 @@ public enum ProcessingStyle
     WaveSweep,
     CometOrbit,
     ShimmerBar,
+    // Not offered as options anymore; kept as the CPU fallback look of the
+    // GPU twins that still are.
     CounterArcs,
     VoiceRipples,
+    ShaderShimmer,
+    CometOrbitGpu,
+    CounterArcsGpu,
+    VoiceRipplesGpu,
 }
 
 public sealed class ProcessingOption
@@ -27,8 +33,7 @@ public sealed class ProcessingOption
     public override string ToString() => Name;
 }
 
-// The post-recording pass (transcript + grammar) gets its own animated
-// indicator; the style is stored as a display name with fallback, exactly
+// The style is stored as a display name with fallback, exactly
 // like the visualizer style.
 public static class ProcessingCatalog
 {
@@ -39,8 +44,24 @@ public static class ProcessingCatalog
         new ProcessingOption(ProcessingStyle.WaveSweep, "Wave sweep"),
         new ProcessingOption(ProcessingStyle.CometOrbit, "Comet orbit"),
         new ProcessingOption(ProcessingStyle.ShimmerBar, "Shimmer bar"),
-        new ProcessingOption(ProcessingStyle.CounterArcs, "Counter arcs"),
-        new ProcessingOption(ProcessingStyle.VoiceRipples, "Voice ripples"),
+        new ProcessingOption(ProcessingStyle.ShaderShimmer, "Shimmer GPU"),
+        new ProcessingOption(ProcessingStyle.CometOrbitGpu, "Comet orbit GPU"),
+        new ProcessingOption(ProcessingStyle.CounterArcsGpu, "Counter arcs GPU"),
+        new ProcessingOption(ProcessingStyle.VoiceRipplesGpu, "Voice ripples GPU"),
+    };
+
+    // The GPU twins render through ShaderEffect; the CPU style they twin with
+    // is the fallback when the pixel shader cannot be created on the machine.
+    public static bool IsGpu(ProcessingStyle style) =>
+        style >= ProcessingStyle.ShaderShimmer;
+
+    public static ProcessingStyle CpuTwin(ProcessingStyle style) => style switch
+    {
+        ProcessingStyle.ShaderShimmer => ProcessingStyle.ShimmerBar,
+        ProcessingStyle.CometOrbitGpu => ProcessingStyle.CometOrbit,
+        ProcessingStyle.CounterArcsGpu => ProcessingStyle.CounterArcs,
+        ProcessingStyle.VoiceRipplesGpu => ProcessingStyle.VoiceRipples,
+        _ => style,
     };
 
     public static ProcessingStyle Resolve(string? styleName)

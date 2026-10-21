@@ -6,30 +6,26 @@ namespace WhisperNote.Tests;
 public class NumberNormalizerTests
 {
     [Theory]
-    // Plain quantities, including hyphenated and capitalized forms.
     [InlineData("I said twenty five", "I said 25")]
     [InlineData("twenty-one players", "21 players")]
     [InlineData("Twenty five minutes", "25 minutes")]
     [InlineData("He scored eighty points", "He scored 80 points")]
     [InlineData("there are zero left", "there are 0 left")]
-    // Compound numbers with and without "and".
     [InlineData("one hundred and five", "105")]
     [InlineData("one hundred five", "105")]
     [InlineData("one thousand two hundred thirty four", "1,234")]
     [InlineData("two million five hundred thousand", "2,500,000")]
     [InlineData("three billion", "3,000,000,000")]
-    // Decimals, including "oh" as zero.
     [InlineData("three point five", "3.5")]
     [InlineData("two point three five", "2.35")]
     [InlineData("three point oh two", "3.02")]
-    // Currency, including cents.
     [InlineData("it cost forty dollars", "it cost $40")]
     [InlineData("one thousand dollars", "$1,000")]
     [InlineData("forty dollars and fifty cents", "$40.50")]
     [InlineData("five euros", "€5")]
     [InlineData("ten pounds", "£10")]
-    // Spoken money shorthand that drops "hundred"; only resolved in front of
-    // a currency word so ambiguous runs like "five thirty" stay words.
+    // Spoken money shorthand that drops "hundred" resolves only in front of a currency
+    // word, so ambiguous runs like "five thirty" stay words.
     [InlineData("three sixty-five dollars", "$365")]
     [InlineData("three sixty five dollars", "$365")]
     [InlineData("five thirty dollars", "$530")]
@@ -43,13 +39,11 @@ public class NumberNormalizerTests
     }
 
     [Theory]
-    // Idioms and pronouns must stay words.
     [InlineData("one of them")]
     [InlineData("no one knows")]
     [InlineData("one by one")]
     [InlineData("see you one day")]
     [InlineData("thanks a million")]
-    // Ambiguous or malformed number runs must stay words.
     [InlineData("count one two three")]
     [InlineData("five thirty")]
     [InlineData("three sixty-five in the pocket")]
@@ -57,7 +51,6 @@ public class NumberNormalizerTests
     [InlineData("point of sale")]
     [InlineData("oh really")]
     [InlineData("the point is clear")]
-    // Ordinary text without number words.
     [InlineData("Hello, how are you?")]
     [InlineData("None")]
     public void LeavesWordsUntouched(string input)

@@ -2,13 +2,8 @@ using System;
 
 namespace WhisperNote.Services;
 
-// Live mic signal -> band levels, overall level and a waveform envelope for the
-// recording overlay. Pure managed code with no WPF and no NAudio types so the
-// DSP is unit-testable; NAudio 2.2.1 ships no FFT of its own.
-//
-// AddBytes runs on the WASAPI capture thread, Read* on the WPF thread; every
-// public entry point takes the same lock, and the capture path allocates
-// nothing per frame beyond the mono scratch buffer.
+// AddBytes runs on the WASAPI capture thread and Read* on the WPF thread; every
+// public entry point takes the same lock, and the capture path must not allocate per frame.
 public sealed class SpectrumAnalyzer
 {
     public const int BandCount = 20;
@@ -103,7 +98,6 @@ public sealed class SpectrumAnalyzer
         }
     }
 
-    // Smoothed overall loudness, 0..1, dB-mapped like the bands.
     public double Level
     {
         get
@@ -140,8 +134,7 @@ public sealed class SpectrumAnalyzer
             }
 
             _samplesReady += monoCount;
-            // A reader that falls behind drops the oldest audio, which keeps the
-            // framing work per call bounded however large the capture buffer is.
+            // Drops the oldest audio when the reader falls behind, keeping the framing work per call bounded.
             if (_samplesReady > RingSize)
                 _samplesReady = RingSize;
 
@@ -150,9 +143,8 @@ public sealed class SpectrumAnalyzer
         }
     }
 
-    // Sliding windows: every pending window starts HopSize later than the one
-    // before it, oldest first, so the band decay follows real time. The newest
-    // window's samples stay in the ring as the overlap for the next call.
+    // Pending windows must run oldest first, HopSize apart, so the band decay follows real
+    // time; the newest window's samples stay in the ring as the overlap for the next call.
     void ProcessPendingWindows()
     {
         if (_samplesReady < FftSize)
@@ -281,8 +273,7 @@ public sealed class SpectrumAnalyzer
                 framePeak = max;
         }
 
-        // Auto-gain keeps quiet speech visible: the frame's loudest band is
-        // lifted to PeakHeadroomDb, capped so a loud voice is not blown out.
+        // Auto-gain lifts the frame's loudest band to PeakHeadroomDb, capped by MaxGainDb so a loud voice is not blown out.
         _framePeak = Math.Max(framePeak, _framePeak * PeakDecay);
         if (_framePeak < 1e-6)
             _framePeak = 1e-6;

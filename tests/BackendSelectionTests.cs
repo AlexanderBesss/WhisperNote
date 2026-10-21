@@ -7,11 +7,6 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
-/// <summary>
-/// Covers the multi-backend startup path: which binary each detected GPU family runs,
-/// the order the fallback chain tries them in, and which failures count as
-/// "this device cannot run this backend".
-/// </summary>
 public class BackendSelectionTests : IDisposable
 {
     public BackendSelectionTests() => App.DetectedBackend = HardwareBackend.Unknown;
@@ -38,9 +33,6 @@ public class BackendSelectionTests : IDisposable
     [Fact]
     public void StaleDefaultPinIsIgnoredOnNonCuda13Backends()
     {
-        // Settings written by older versions always pinned the CUDA 13 binary. On a
-        // Pascal machine that pin must not stop the legacy backend from picking up
-        // the fast cuda12\ binary.
         App.DetectedBackend = HardwareBackend.NvidiaCudaLegacy;
         var server = new LlmServer();
         server.Configure(new ProviderConfig
@@ -60,9 +52,6 @@ public class BackendSelectionTests : IDisposable
     [Fact]
     public void CustomPinAppliesOnlyToTheDetectedBackend()
     {
-        // A deliberate custom exe is honoured for the detected backend only; the other
-        // backends in the fallback chain keep their own binaries, so the pin cannot
-        // block the switch when the pinned exe fails on this GPU.
         App.DetectedBackend = HardwareBackend.NvidiaCudaLegacy;
         var server = new LlmServer();
         server.Configure(new ProviderConfig
@@ -152,8 +141,6 @@ public class BackendSelectionTests : IDisposable
     [Fact]
     public void DetectedCpuBackendRunsServerArgsWithoutGpuFlags()
     {
-        // The fallback chain lands on Cpu without the user toggling CPU-only mode;
-        // the args must still avoid the GPU paths.
         var server = CreateConfiguredServer(HardwareBackend.Cpu);
 
         var args = server.ServerArgs();

@@ -27,8 +27,7 @@ public partial class SettingsWindow : Window
         };
         _viewModel.PropertyChanged += (_, e) =>
         {
-            // Turning the visualizer off collapses the preview box, which is the tallest
-            // thing in the window: the fit has to run again or its space goes dead.
+            // Turning the visualizer off collapses the tallest card: the fit must re-run or its space goes dead.
             if (e.PropertyName == nameof(SettingsViewModel.VisualizerEnabled))
                 FitToTallestCard();
         };
@@ -53,10 +52,8 @@ public partial class SettingsWindow : Window
 
     void SyncApiKeyHint() => ApiKeyBox.Tag = ApiKeyBox.Password.Length == 0 ? _apiKeyHint : null;
 
-    // The window takes the tallest card's height, so switching tabs never moves the
-    // chrome. Only one card may be visible while measuring: the cards share one grid
-    // cell and stretch to it, so a sibling left shown would inflate the reading. The
-    // ScrollViewer still absorbs display scaling that makes even the tallest card tall.
+    // Only one card may be visible while measuring: the cards share one grid cell
+    // and stretch to it, so a sibling left shown would inflate the reading.
     void FitToTallestCard()
     {
         var cards = new[] { PanelOutput, PanelVisualizer, PanelModel };

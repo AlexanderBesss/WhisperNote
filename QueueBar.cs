@@ -6,11 +6,6 @@ using WhisperNote.Config;
 
 namespace WhisperNote;
 
-// Tetris-style queue bar for the overlay pill's corner: one square per clip in
-// the transcription pipeline. The leftmost square (the job in flight) pulses in
-// the palette peak colour, waiting clips are dim squares. When a job finishes
-// the square flies off to the left; when a clip joins, one pops in at the right.
-// Render-loop discipline matches the other overlay controls.
 public sealed class QueueBar : FrameworkElement
 {
     const double NominalFrameMs = 1000.0 / VisualizerFpsCatalog.NominalFps;

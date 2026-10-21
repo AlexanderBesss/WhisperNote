@@ -119,7 +119,6 @@ public class LocalModelTests
         Assert.Equal("mmproj-Qwen3-ASR-1.7B-Q8_0.gguf", local.Mmproj);
         Assert.Equal("qwen3-asr-1.7b", state.LocalModelId);
 
-        // Applying the same selection again is a no-op.
         Assert.False(state.SetLocalModel("qwen3-asr-1.7b"));
     }
 

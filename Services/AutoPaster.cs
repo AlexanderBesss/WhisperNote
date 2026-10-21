@@ -80,9 +80,8 @@ public static class AutoPaster
     [DllImport("user32.dll")]
     static extern bool IsWindow(IntPtr hWnd);
 
-    // Injected keys follow the foreground window; when the selection toolbar popup
-    // holds it, keys would land in WhisperNote itself. Hand focus back to the window
-    // the user had focused when the selection was made.
+    // Injected keys follow the foreground window: if the selection toolbar popup holds it,
+    // keys land in WhisperNote, so focus must be handed back to the user's original window.
     public static bool ReclaimForeignForeground(IntPtr target)
     {
         if (target == IntPtr.Zero || !IsWindow(target))
@@ -204,7 +203,6 @@ public static class AutoPaster
             var selfElevated = IsProcessElevated((uint)Process.GetCurrentProcess().Id);
             foreground = $"foreground={name} targetElevated={Format(targetElevated)} selfElevated={Format(selfElevated)}";
 
-            // UIPI silently drops injected input aimed at higher-integrity windows; no API reports it.
             if (targetElevated == true && selfElevated == false)
                 shortReason = "target app runs as administrator";
 

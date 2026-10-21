@@ -4,7 +4,6 @@ using System.Windows.Threading;
 
 namespace WhisperNote.Services;
 
-// Minimal WH_MOUSE_LL observer: only signals button releases; never swallows input.
 public sealed class GlobalMouseHook : IDisposable
 {
     const int WH_MOUSE_LL = 14;

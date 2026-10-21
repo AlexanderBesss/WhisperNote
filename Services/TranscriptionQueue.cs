@@ -5,13 +5,11 @@ using System.Threading.Tasks;
 
 namespace WhisperNote.Services;
 
-// One recorded clip waiting to be transcribed. Channels are captured at stop
-// time: the mic can be reopened (or re-selected) before the job runs.
+// Channels are captured at stop time: the mic can be reopened (or re-selected) before the job runs.
 public sealed record QueuedAudio(byte[] Pcm, int Channels);
 
-// A recording is transcribed on its own while the user is already recording the
-// next one. Jobs run strictly one at a time in recording order, which is what
-// keeps the clipboard and the Ctrl+V of message 1 finished before message 2.
+// Jobs run strictly one at a time in recording order, which is what keeps the
+// clipboard and the Ctrl+V of message 1 finished before message 2.
 public sealed class TranscriptionQueue : IDisposable
 {
     public const int Capacity = 5;

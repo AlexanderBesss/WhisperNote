@@ -32,8 +32,6 @@ public readonly struct UiRectPx
 // injects keys into it if focus wanders to WhisperNote's own popup in between.
 public sealed record SelectionSnapshot(IReadOnlyList<UiRectPx> Rects, IntPtr TargetWindow);
 
-// Watches text selection in every app: UIA focus changes, TextPattern selection
-// changes, and mouse releases all feed one debounced query.
 public sealed class SelectionWatcher : IDisposable
 {
     // TextPattern covers keyboard-driven selection changes; the mouse hook covers
@@ -157,8 +155,6 @@ public sealed class SelectionWatcher : IDisposable
                                     range, TextPatternRangeEndpoint.End) != 0)
                             {
                                 var rects = new List<UiRectPx>();
-                                // GetBoundingRectangles is a method in the Core client
-                                // (System.Windows.Automation.Text.TextPatternRange).
                                 foreach (var rect in range.GetBoundingRectangles())
                                 {
                                     if (rect.Width > 0 && rect.Height > 0)
@@ -188,8 +184,6 @@ public sealed class SelectionWatcher : IDisposable
         });
     }
 
-    // Places the popup to the right of the visually last selection line,
-    // flipping to the left near the work-area edge, then clamps inside it.
     internal static bool TryComputePlacement(
         IReadOnlyList<UiRectPx> rects, int popupWidth, int popupHeight,
         UiRectPx work, int gap, out int x, out int y)

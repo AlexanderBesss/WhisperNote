@@ -4,11 +4,9 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
-// The level gate decides whether audio reaches the model at all. It used to
-// reject everything peaking under 500, which threw away real speech: probed
-// against the running model, a sentence recorded at peak 250 and at peak 400
-// was transcribed word for word. The floor now only catches an endpoint that
-// delivers nothing, and whether the audio holds speech is the model's call.
+// SilentPeakFloor is set from probing the running model: a sentence recorded at
+// peak 250 and at peak 400 was transcribed word for word, so the floor only
+// catches an endpoint that delivers nothing.
 public class AudioLevelTests
 {
     static byte[] Pcm(Func<int, short> sampleAt, int count)
@@ -23,8 +21,6 @@ public class AudioLevelTests
         return pcm;
     }
 
-    // A 120 Hz tone at the level of a quiet room, the shape of a real but
-    // low-level recording.
     static byte[] Tone(int peak) => Pcm(
         i => (short)(Math.Sin(2 * Math.PI * 120 * i / 16000) * peak), 16000);
 
@@ -47,8 +43,8 @@ public class AudioLevelTests
     [Fact]
     public void RmsSeparatesASingleClickFromSustainedSignal()
     {
-        // One loud transient peaks like speech but carries far less energy,
-        // which is why both numbers are logged when a recording goes wrong.
+        // A transient peaks like speech with far less energy: that is why peak
+        // and rms are both logged.
         var click = Pcm(i => i == 8000 ? (short)6000 : (short)0, 16000);
         var tone = Tone(6000);
 

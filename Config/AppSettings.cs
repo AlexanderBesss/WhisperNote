@@ -27,18 +27,14 @@ public class AppSettings
     public string? MicDeviceName { get; set; }
     public bool MicDeviceNumberIsWasapi { get; set; }
 
-    // Fixes the text selected in any app through a Ctrl+C / correct / Ctrl+V round trip,
-    // triggered from the floating "Fix" popup driven by UIA text-selection events.
     public bool SelectionToolbarEnabled { get; set; } = true;
 
-    // Live mic visualization drawn in the recording overlay while capturing.
-    // The style is a display name resolved by VisualizerCatalog.Resolve, so an
-    // older build reading a newer name falls back to Spectrum.
+    // Display name resolved by VisualizerCatalog.Resolve, so an older build reading a newer name falls back to Spectrum.
     public bool VisualizerEnabled { get; set; } = true;
     public string VisualizerStyle { get; set; } = VisualizerCatalog.DefaultStyleName;
     // Colour scheme name resolved by VisualizerPaletteCatalog.Resolve, same fallback rule.
     public string VisualizerPalette { get; set; } = VisualizerPaletteCatalog.DefaultPaletteName;
-    // Overlay animation rate; VisualizerFpsCatalog.Resolve clamps unknown values to the default.
+    // VisualizerFpsCatalog.Resolve clamps unknown values to the default.
     public int VisualizerFps { get; set; } = VisualizerFpsCatalog.DefaultFps;
     // Post-recording pass animation style, a display name resolved by ProcessingCatalog.Resolve,
     // same fallback rule as the visualizer style.

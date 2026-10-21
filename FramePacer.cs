@@ -3,11 +3,9 @@ using System.Diagnostics;
 
 namespace WhisperNote;
 
-// Frame pacing for the overlay animations. Environment.TickCount64 advances in
-// ~15.6 ms system-tick steps, so gating a 30/60 Hz refresh-locked feed against
-// it aliases the configured rate down by roughly half; the QPC clock is
-// required. The gate threshold is 65% of the target interval so a real frame
-// is never dropped to sub-millisecond jitter around the threshold.
+// Environment.TickCount64 advances in ~15.6 ms system-tick steps, so gating a 30/60 Hz feed
+// against it aliases the configured rate down by roughly half; the QPC clock is required.
+// Gate at 65% of the target interval so jitter around the threshold never drops a real frame.
 public sealed class FramePacer
 {
     static readonly double MsPerTick = 1000.0 / Stopwatch.Frequency;
@@ -40,8 +38,6 @@ public sealed class FramePacer
         return true;
     }
 
-    // Motion speed relative to the controls' nominal frame rate, so animations
-    // keep their real-time pace at any configured FPS.
     public double FrameSpeed(long now)
     {
         var elapsed = _lastRenderStamp == 0

@@ -6,7 +6,6 @@ namespace WhisperNote.Tests;
 public class HotkeyMatchTests
 {
     [Theory]
-    // Exact codes always match themselves.
     [InlineData(0xA3, 0xA3, true)] // Right Ctrl
     [InlineData(0xA2, 0xA2, true)] // Left Ctrl
     [InlineData(0xA5, 0xA5, true)] // Right Alt
@@ -20,7 +19,6 @@ public class HotkeyMatchTests
     [InlineData(0x10, 0xA1, true)] // Shift <- Right Shift
     [InlineData(0x12, 0xA4, true)] // Alt <- Left Alt
     [InlineData(0x12, 0xA5, true)] // Alt <- Right Alt
-    // A specific side never fires for the other side or another family.
     [InlineData(0xA3, 0xA2, false)] // Right Ctrl <- Left Ctrl
     [InlineData(0xA2, 0xA3, false)] // Left Ctrl <- Right Ctrl
     [InlineData(0xA3, 0xA5, false)] // Right Ctrl <- Right Alt
@@ -39,7 +37,6 @@ public class HotkeyMatchTests
     [InlineData(0xA5, true)] // Right Alt
     [InlineData(0x5B, true)] // Left Win
     [InlineData(0x5C, true)] // Right Win
-    // Ctrl/Shift/Caps Lock taps are harmless to focus and stay pass-through.
     [InlineData(0x11, false)] // Ctrl
     [InlineData(0xA2, false)] // Left Ctrl
     [InlineData(0xA3, false)] // Right Ctrl

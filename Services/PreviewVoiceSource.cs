@@ -3,8 +3,6 @@ using System.Windows.Threading;
 
 namespace WhisperNote.Services;
 
-// Feeds a SpectrumAnalyzer a speech-shaped signal so the settings window can show
-// what each visualizer style looks like without opening the microphone.
 public sealed class PreviewVoiceSource : IDisposable
 {
     const int SampleRate = 48000;
@@ -24,8 +22,7 @@ public sealed class PreviewVoiceSource : IDisposable
         _timer.Tick += (_, _) => Pump();
     }
 
-    // Idle unless the preview is on screen: the timer would otherwise pump ~50 FFT/s
-    // for the whole life of the settings window, including tabs that show no visualizer.
+    // Idle unless the preview is on screen: the timer would otherwise pump ~50 FFT/s for the whole life of the settings window.
     public bool Active
     {
         get => _timer.IsEnabled;
@@ -41,8 +38,6 @@ public sealed class PreviewVoiceSource : IDisposable
     // Internal so a test can step the signal without running a dispatcher.
     internal void Pump()
     {
-        // One slow pitch drift per pass keeps the band pattern moving instead of
-        // freezing on a single row of the equalizer.
         var f0 = 120 + 30 * Math.Sin(2 * Math.PI * _time / 4.0);
         for (var i = 0; i < SamplesPerTick; i++)
         {

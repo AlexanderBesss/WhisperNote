@@ -5,10 +5,6 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
-// The overlay's bars are the user's only feedback that the mic is actually
-// picking up speech, so what matters is that a tone lights the band of its own
-// frequency, that quiet speech is lifted into view by the auto-gain, and that
-// nothing overflows or jitters when the room is silent.
 public class SpectrumAnalyzerTests
 {
     const int SampleRate = 48000;
@@ -62,8 +58,7 @@ public class SpectrumAnalyzerTests
         return levels;
     }
 
-    // Mirrors the band edges the analyzer builds, so a band-index assertion in a
-    // test states the frequency it expects instead of a magic number.
+    // Mirrors the analyzer's band-edge formula; keep it in sync when that formula changes.
     static int BandOf(double hz)
     {
         for (int band = 0; band < SpectrumAnalyzer.BandCount; band++)
@@ -120,7 +115,7 @@ public class SpectrumAnalyzerTests
         var loud = LevelsAfter(new SpectrumAnalyzer(), 440, 0.2);
         var whisper = LevelsAfter(new SpectrumAnalyzer(), 440, 0.005);
 
-        // 40 dB quieter, yet visible: the auto-gain rides the frame peak.
+        // The auto-gain rides the frame peak.
         Assert.True(whisper.Max() > 0.5f);
         Assert.True(loud.Max() <= 1.0f, "a loud voice must not overflow the meter");
     }

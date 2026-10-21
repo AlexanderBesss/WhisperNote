@@ -10,8 +10,8 @@ using NAudio.Wave;
 
 namespace WhisperNote.Services;
 
-// The capture is created once and kept alive between recordings: the Intel SST
-// mic costs 350-650 ms to wake, and the warm client blocks WASAPI exclusive mode.
+// Deliberately kept alive between recordings: the Intel SST mic costs 350-650 ms
+// to wake, and the warm client blocks WASAPI exclusive mode.
 public class AudioRecorder : IDisposable
 {
     const int DisposeTimeoutMs = 2000;
@@ -32,7 +32,6 @@ public class AudioRecorder : IDisposable
     bool IsRecording { get; set; }
     public int ChannelCount { get; private set; } = 1;
 
-    // Live levels for the overlay visualizer. Supplied from the capture thread.
     public SpectrumAnalyzer Spectrum { get; } = new();
 
     volatile bool _spectrumActive = true;
@@ -305,9 +304,7 @@ public class AudioRecorder : IDisposable
             return;
 
         // Deliberately outside the buffer lock and never allowed to throw: a
-        // visualizer bug must not cost the user a recording. IsRecording is
-        // false during mic warm-up, so the warm-up capture never lights up the
-        // overlay.
+        // visualizer bug must not cost the user a recording.
         try
         {
             Spectrum.AddBytes(
@@ -452,8 +449,8 @@ public class AudioRecorder : IDisposable
             return _rawStream?.Length ?? 0;
     }
 
-    // The default endpoint can move on its own while the warm capture stays
-    // bound to the device it opened. Only meaningful while following the default.
+    // WASAPI: the default endpoint can move on its own while the warm capture
+    // stays bound to the device it opened.
     void LogDefaultEndpointDrift()
     {
         var device = _device;

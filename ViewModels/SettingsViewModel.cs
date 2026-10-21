@@ -139,7 +139,6 @@ public sealed class SettingsViewModel : ViewModel
         }
     }
 
-    // The synthetic voice signal only has to run while the preview is on screen.
     bool _previewTabVisible;
 
     public void SetPreviewTabVisible(bool visible)
@@ -183,13 +182,11 @@ public sealed class SettingsViewModel : ViewModel
 
     public VisualizerPalette PreviewPalette => VisualizerPaletteCatalog.Resolve(_visualizerPalette);
 
-    // Rebuilt in the constructor once the saved FPS is resolved: the ladder is
-    // capped to the live display refresh, and settings reopen re-read it.
+    // Rebuilt in the constructor once the saved FPS is resolved: the ladder is capped to the live display refresh.
     public IReadOnlyList<VisualizerFpsOption> VisualizerFpsOptions { get; private set; } =
         VisualizerFpsCatalog.OptionsForMonitor(VisualizerFpsCatalog.DefaultFps);
 
-    // SelectedValuePath is the int, so unknown saved values are clamped in the
-    // constructor rather than appearing as a missing combo selection.
+    // SelectedValuePath is the int, so unknown saved values are clamped in the constructor.
     public int VisualizerFps
     {
         get => _visualizerFps;

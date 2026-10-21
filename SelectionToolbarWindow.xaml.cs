@@ -22,11 +22,9 @@ public partial class SelectionToolbarWindow : Window
     const uint MONITOR_DEFAULTTONEAREST = 2;
     const int PlacementGapPx = 8;
 
-    // How long the green check floats where the button stood after a successful fix.
     public const int ConfirmationVisibleMs = 500;
 
-    // Failures deserve a longer look than the success flash: the user must be able
-    // to notice that nothing changed and that the X is the reason why.
+    // Failures get a deliberately longer look than the success flash: the user must be able to notice that nothing changed.
     public const int FailureVisibleMs = 1500;
 
     DispatcherTimer? _confirmationTimer;
@@ -149,7 +147,6 @@ public partial class SelectionToolbarWindow : Window
         return anchor;
     }
 
-    // Flashes a green check at the button's old spot, then hides and resets to button mode.
     public void ShowConfirmation(IReadOnlyList<UiRectPx> rects) =>
         FlashGlyphAndAutoHide(rects, DoneGlyph, ConfirmationVisibleMs);
 

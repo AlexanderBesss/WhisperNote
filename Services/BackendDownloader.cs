@@ -88,7 +88,7 @@ public static class BackendDownloader
         return SelectAssets(json, spec.AssetPatterns);
     }
 
-    /// <summary>GitHub lists releases newest-first, so the first full-pattern match is the newest.</summary>
+    // GitHub lists releases newest-first, so the first full-pattern match is the newest.
     internal static List<(string Name, string Url)>? SelectAssets(string releasesJson, string[] patterns)
     {
         using var document = JsonDocument.Parse(releasesJson);
@@ -172,7 +172,7 @@ public static class BackendDownloader
         ZipFile.ExtractToDirectory(zipPath, extractDir);
     }
 
-    /// <summary>Release zips wrap everything in one top-level folder; descend into it.</summary>
+    // Release zips wrap everything in one top-level folder; descend into it.
     static string ResolveZipRoot(string extractDir)
     {
         var directories = Directory.GetDirectories(extractDir);

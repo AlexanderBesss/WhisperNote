@@ -7,8 +7,8 @@ namespace WhisperNote.Tests;
 public class SelectionFixTests
 {
     [Theory]
-    [InlineData(null, "abc", true)] // non-text clipboard became text
-    [InlineData("abc", "abc", false)] // Ctrl+C left the old text in place
+    [InlineData(null, "abc", true)]
+    [InlineData("abc", "abc", false)]
     [InlineData("abc", "xyz", true)]
     [InlineData("abc", null, false)]
     [InlineData("abc", "", false)]
@@ -19,8 +19,8 @@ public class SelectionFixTests
     }
 
     [Theory]
-    [InlineData("corrected", "corrected", true)] // clipboard still holds our last write
-    [InlineData("something new", "corrected", false)] // user copied meanwhile
+    [InlineData("corrected", "corrected", true)]
+    [InlineData("something new", "corrected", false)]
     public void RestoreDecision(string current, string lastWritten, bool expected)
     {
         Assert.Equal(expected, SelectionFixer.ShouldRestore(current, lastWritten));
@@ -61,7 +61,6 @@ public class SelectionFixTests
     [Fact]
     public void PlacementClampsInsideWorkArea()
     {
-        // Flipping still lands left of the work area and the selection sits at the top edge.
         Assert.True(SelectionWatcher.TryComputePlacement(
             new[] { Rect(10, -100, 995, -80) }, 120, 40, Work, 8, out var x, out var y));
         Assert.Equal(0, x);

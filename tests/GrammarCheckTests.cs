@@ -10,9 +10,7 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
-// The optional second pass must never cost the user their transcription: a
-// dead host, a rejected key or a model that answers instead of correcting all
-// have to end with the original text and a single round trip.
+// The grammar pass must never cost the user the transcription: every failure ends with the original text and a single round trip.
 public class GrammarCheckTests
 {
     const string Host = "http://127.0.0.1:8082";
@@ -59,7 +57,6 @@ public class GrammarCheckTests
         }
     }
 
-    // Wraps a content string in the chat-completion answer shape.
     static string ChatBody(string content) =>
         """{"choices":[{"message":{"content":""" + System.Text.Json.JsonSerializer.Serialize(content) + "}}]}";
 
@@ -82,10 +79,7 @@ public class GrammarCheckTests
     [Fact]
     public async Task ProofreaderIsToldToConvertAmountsButNotEverydayCounts()
     {
-        // The ASR model writes numbers as words and NumberNormalizer converts
-        // only the phrases it can parse, so the proofreader gets the rest. It
-        // must not convert everyday counts ("two bananas" -> "2 bananas") and
-        // must not touch digits that are already there.
+        // The proofreader must not convert everyday counts ("two bananas") nor touch digits already present.
         var handler = new StubHandler()
             .Reply("GET", "/v1/models", ModelsBody)
             .Reply("POST", "/v1/chat/completions", CorrectedBody);
@@ -96,7 +90,6 @@ public class GrammarCheckTests
         Assert.Contains("Convert spoken numbers into digits", handler.Bodies[1]);
         Assert.Contains("two bananas", handler.Bodies[1]);
         Assert.Contains("pass through untouched", handler.Bodies[1]);
-        // The rule that used to forbid conversion of numbers altogether.
         Assert.DoesNotContain("exactly as it is", handler.Bodies[1]);
     }
 
@@ -179,8 +172,7 @@ public class GrammarCheckTests
     [Fact]
     public async Task ServerWithoutAModelListingStillGetsOneChatRequest()
     {
-        // llama.cpp and Ollama answer /v1/chat/completions for any model name,
-        // so a server that does not list models stays usable.
+        // llama.cpp and Ollama answer /v1/chat/completions for any model name, so a server that does not list models stays usable.
         var handler = new StubHandler()
             .Status("GET", "/v1/models", HttpStatusCode.NotFound)
             .Reply("POST", "/v1/chat/completions", CorrectedBody);
@@ -224,8 +216,7 @@ public class GrammarCheckTests
         await service.CorrectAsync(Transcript);
         await service.CorrectAsync(Transcript);
 
-        // One probe, then the cooldown skips it: a dead host costs the 5 s
-        // probe timeout once, not on every recording.
+        // A dead host pays the 5 s probe timeout once; the cooldown skips later probes.
         Assert.Single(handler.Requests);
     }
 
@@ -265,8 +256,7 @@ public class GrammarCheckTests
     [Fact]
     public async Task BareHostWithoutASchemeStillReachesTheServer()
     {
-        // A LAN server is typed as "192.168.0.68:8080"; that is not a Uri, but
-        // it is unambiguous, so plain HTTP is assumed.
+        // "192.168.0.68:8080" is not a Uri, so plain HTTP is assumed.
         var handler = new StubHandler()
             .Reply("GET", "/v1/models", ModelsBody)
             .Reply("POST", "/v1/chat/completions", CorrectedBody);
@@ -279,8 +269,7 @@ public class GrammarCheckTests
     [Fact]
     public async Task ApiSegmentIsNotDoubledWhenTheHostAlreadyNamesIt()
     {
-        // "https://api.openai.com/v1" is the base URL people copy from providers,
-        // so /v1 must not be appended a second time.
+        // Providers hand out base URLs that already end in /v1; it must not be appended twice.
         var handler = new StubHandler()
             .Reply("GET", "/v1/models", ModelsBody)
             .Reply("POST", "/v1/chat/completions", CorrectedBody);
@@ -299,8 +288,7 @@ public class GrammarCheckTests
         Assert.Contains(@"""reasoning_effort"":""minimal""",
             GrammarCheckService.BuildRequestPayload("m", "text", " MINIMAL "));
 
-        // Not set, and a value the server would not understand, both mean the
-        // parameter is left out; a hand-edited config cannot inject JSON.
+        // Unknown values drop the parameter, so a hand-edited config cannot inject JSON.
         Assert.DoesNotContain("reasoning_effort", GrammarCheckService.BuildRequestPayload("m", "text", null));
         Assert.DoesNotContain("reasoning_effort", GrammarCheckService.BuildRequestPayload("m", "text", ""));
         Assert.DoesNotContain("reasoning_effort",
@@ -310,8 +298,7 @@ public class GrammarCheckTests
     [Fact]
     public void TheOffOptionAsksForTheLowestEffortServersAccept()
     {
-        // The dropdown says "Off" because that is what it feels like; the wire
-        // value stays "minimal", which both llama.cpp and OpenAI accept.
+        // "Off" maps to the wire value "minimal", accepted by llama.cpp and OpenAI.
         var off = GrammarCheckService.EffortOptions.Single(option => option.Name == "Off");
         Assert.Equal("minimal", off.Value);
         Assert.Equal("minimal", GrammarCheckService.NormalizeEffort(off.Value));

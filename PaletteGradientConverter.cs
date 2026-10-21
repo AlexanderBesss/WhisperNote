@@ -7,8 +7,6 @@ using WhisperNote.Config;
 
 namespace WhisperNote;
 
-// The preset list would otherwise be 20+ colour names to read one by one, so each
-// row carries a chip painted from the same stops the pill uses.
 public sealed class PaletteGradientConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>

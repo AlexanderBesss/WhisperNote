@@ -22,12 +22,12 @@
             <Border.Effect>
                 <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.55"/>
             </Border.Effect>
-            <Grid>
-                <!-- Background layer: the live mic signal drawn behind the status text.
-                     The negative margin cancels the Border padding so the bars span the
-                     whole pill; the Border clips the control to the rounded corners.
-                     Visibility needs two sources (the recording state and the setting),
-                     so it is a MultiBinding rather than a single Binding. -->
+            <Grid x:Name="PillContent">
+                <!-- The negative margin cancels the Border's Padding 18,10 so the bars span
+                     the whole pill. A ShaderEffect paints past the rendering element's own
+                     Clip, so the ancestor PillContent Grid clips the visual children to the
+                     pill's rounded rectangle (handler in the code-behind; a WPF Border does
+                     not clip children to its corners). -->
                 <local:VoiceVisualizer x:Name="Visualizer"
                                        Margin="-18,-10"
                                        Opacity="0.6"
@@ -45,9 +45,6 @@
                     </local:VoiceVisualizer.Visibility>
                 </local:VoiceVisualizer>
 
-                <!-- Post-recording pass indicator: the same full-pill treatment as
-                     the voice visualizer, shown while transcript/grammar work runs,
-                     in the style picked in Settings. -->
                 <local:ProcessingVisualizer x:Name="Processing"
                                             Margin="-18,-10"
                                             Opacity="0.55"
@@ -58,11 +55,9 @@
                                             FrameFps="{Binding VisualizerFps, ElementName=OverlayWindow}"
                                             Visibility="{Binding IsProcessing, Converter={StaticResource BooleanToVisibilityConverter}}"/>
 
-                <!-- Queue bar in the pill's right corner: one square for the clip in
-                     flight (pulsing) plus one per clip waiting behind it. The squares
-                     are pinned to the right edge, so finishing a job plays a slide-off
-                     ghost and joining the queue pops a new square in. The size is
-                     MaxSquares * Pitch = 45 x 12 from QueueBar. -->
+                <!-- Width 45 x Height 12 mirrors QueueBar's MaxSquares * Pitch = 45 by a
+                     12-unit square: the squares are pinned to the right edge, so a smaller
+                     size clips them. Keep it in sync with the constants in QueueBar. -->
                 <local:QueueBar x:Name="Queue" Width="45" Height="12"
                                 HorizontalAlignment="Right" VerticalAlignment="Top"
                                 Margin="0,2,0,0"
@@ -71,11 +66,6 @@
                                 FrameFps="{Binding VisualizerFps, ElementName=OverlayWindow}"/>
 
                 <StackPanel x:Name="StatusTextPanel" VerticalAlignment="Center">
-                    <!-- The status text yields to whichever animation owns the
-                         pill: processing hides it for the processing animation,
-                         and recording hides it for the voice visualizer when
-                         that is enabled. With the visualizer off, the text is
-                         the only recording feedback, so it stays. -->
                     <StackPanel.Visibility>
                         <MultiBinding Converter="{StaticResource ProcessingOrAllTrueToHiddenConverter}">
                             <Binding Path="IsProcessing"/>
@@ -91,10 +81,8 @@
             </Grid>
         </Border>
 
-        <!-- Glowing animated outline while the overlay is shown (recording or
-             processing): the colours flow along the pill edge. Same 20-unit margin
-             and radius as the Border, and the glow spills into the transparent
-             margin around it. -->
+        <!-- Same 20-unit margin and 16-unit radius as the pill Border above, and the
+             glow spills into that transparent margin: keep the two in sync. -->
         <local:GlowBorder x:Name="Glow" Margin="20"
                           Palette="{Binding VisualizerPalette, ElementName=OverlayWindow}"
                           FrameFps="{Binding VisualizerFps, ElementName=OverlayWindow}"/>

@@ -8,8 +8,7 @@ public class TranscriptionParserTests
     [Fact]
     public void DedicatedAsrWithoutAsrTextSectionIsTreatedAsEmpty()
     {
-        // Qwen3-ASR emits "language X" when it fails to transcribe instead of
-        // producing an <asr_text> section; that must not be pasted as text.
+        // Qwen3-ASR emits "language X" instead of an <asr_text> section when it fails to transcribe; that must not be pasted.
         Assert.Null(TranscriptionParser.Parse("""{"type":"transcript.text.done","text":"language None"}""", dedicatedAsr: true));
         Assert.Null(TranscriptionParser.Parse("""{"text":"language Chinese"}""", dedicatedAsr: true));
     }
@@ -27,8 +26,7 @@ public class TranscriptionParserTests
     [Fact]
     public void DedicatedAsrNormalizesNumberWordsToDigits()
     {
-        // Qwen3-ASR transcribes numbers verbatim as words; the parser converts
-        // them because the model cannot follow the transcription prompt.
+        // Dedicated ASR writes numbers verbatim as words and cannot follow the transcription prompt, so the parser converts them.
         var text = TranscriptionParser.Parse(
             """{"text":"language English<asr_text>Call me at twenty five.</asr_text>"}""",
             dedicatedAsr: true);
@@ -39,8 +37,7 @@ public class TranscriptionParserTests
     [Fact]
     public void LlmModelOutputKeepsNumberWordsUnnormalized()
     {
-        // LLM models follow the prompt's digit rules themselves; their output
-        // must not be rewritten by the normalizer.
+        // LLM models follow the prompt's digit rules themselves; the normalizer must not rewrite their output.
         var text = TranscriptionParser.Parse("""{"text":"I have twenty five dollars."}""", dedicatedAsr: false);
 
         Assert.Equal("I have twenty five dollars.", text);
@@ -49,8 +46,7 @@ public class TranscriptionParserTests
     [Fact]
     public void PlainTextIsLeftUntouchedForLlmModels()
     {
-        // LLM-based models (non-dedicated-ASR) answer the custom prompt with plain
-        // text and may legitimately start with the word "Language".
+        // Non-ASR models answer the custom prompt in plain text, which may legitimately start with the word "Language".
         var text = TranscriptionParser.Parse("""{"text":"Language models are great."}""", dedicatedAsr: false);
 
         Assert.Equal("Language models are great.", text);
@@ -67,8 +63,7 @@ public class TranscriptionParserTests
     [Fact]
     public void SalvageKeepsAChatStyleTranscriptThatDroppedTheAsrTextTag()
     {
-        // Observed in logs.log: the model transcribed the speech correctly but
-        // answered in chat style, so the strict parser threw the words away.
+        // Observed in logs.log: the model transcribes the speech correctly but answers in chat style, so the strict parser throws the words away.
         var text = TranscriptionParser.SalvageUnformatted(
             """{"type":"transcript.text.done","text":"language English. Yeah, apply small fixes, low risk."}""");
 
@@ -93,9 +88,7 @@ public class TranscriptionParserTests
     [Fact]
     public void FailureNamesWhyTheAnswerWasRejected()
     {
-        // "Nothing happened" needs a different message for a recording that
-        // holds no speech, an answer in another language, and a model that
-        // broke its own output format.
+        // The user needs a distinct message for no speech, an answer in another language, and a model that broke its own output format.
         Assert.Equal(AsrFailure.NoSpeech, Classify("""{"text":"language None<asr_text>"}"""));
         Assert.Equal(AsrFailure.NoSpeech, Classify("""{"text":"language English<asr_text>"}"""));
         Assert.Equal(AsrFailure.ForeignLanguage, Classify("""{"text":"language Chinese<asr_text>啊哈哈！</asr_text>"}"""));
@@ -112,8 +105,7 @@ public class TranscriptionParserTests
     [Fact]
     public void LatinTranscriptsSurviveTheScriptGuard()
     {
-        // Accents and symbols are not another language; only an answer built of
-        // non-Latin letters is.
+        // Accents and symbols are not another language; only an answer built of non-Latin letters is.
         var text = TranscriptionParser.Parse(
             """{"text":"language English<asr_text>Café résumé → done.</asr_text>"}""",
             dedicatedAsr: true);
@@ -124,8 +116,7 @@ public class TranscriptionParserTests
     [Fact]
     public void OneStrayForeignCharacterDistrustsTheWholeAnswer()
     {
-        // With the ASR language pinned to English, any non-Latin letter is the
-        // model guessing; the old majority vote let both of these through.
+        // With the ASR language pinned to English, any non-Latin letter is the model guessing.
         Assert.Equal(AsrFailure.ForeignLanguage,
             Classify("""{"text":"language English<asr_text>Run the scan мир now.</asr_text>"}"""));
         Assert.Equal(AsrFailure.ForeignLanguage,
@@ -135,8 +126,7 @@ public class TranscriptionParserTests
     [Fact]
     public void VietnameseLatinAndEmojiPassTheScriptGuard()
     {
-        // Latin Extended Additional carries Vietnamese tone marks, which the old
-        // range check counted as another language. Emoji are symbols, not letters.
+        // Latin Extended Additional carries Vietnamese tone marks; emoji are symbols, not letters.
         Assert.Equal("Đi Hà Nội rồi.", TranscriptionParser.Parse(
             """{"text":"language English<asr_text>Đi Hà Nội rồi.</asr_text>"}""", dedicatedAsr: true));
         Assert.Equal("Ok 👍.", TranscriptionParser.Parse(
@@ -146,8 +136,7 @@ public class TranscriptionParserTests
     [Fact]
     public void DeclaredNoSpeechIsRefusedEvenWhenTheModelAnswersAfterIt()
     {
-        // "language None" is the model's own verdict on the recording, so text
-        // after it is invented; the tag being present used to make it pasteable.
+        // "language None" is the model's own verdict on the recording, so text after it is invented.
         Assert.Equal(AsrFailure.NoSpeech,
             Classify("""{"text":"language None<asr_text>Thank you.</asr_text>"}"""));
     }

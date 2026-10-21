@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using WhisperNote.Config;
@@ -13,9 +14,6 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
-// The pill's visualizer is fed by XAML bindings onto window-level properties and
-// paints what the settings pick. Both legs fail silently, so the path from a
-// setting to painted pixels is worth pinning.
 public class RecordingOverlayWiringTests
 {
     // WPF is dispatcher-affine and the AppDomain allows one Application, so all
@@ -41,10 +39,11 @@ public class RecordingOverlayWiringTests
                             var app = new App();
                             app.InitializeComponent();
                             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+                            EnsurePackPrefix();
+
                             ready.Set();
 
-                            // Dispatcher.Run returns once its queue drains, which
-                            // would end this thread; a frame keeps it pumping.
                             Dispatcher.PushFrame(new DispatcherFrame(true));
                         }
                         catch (Exception ex)
@@ -153,20 +152,17 @@ public class RecordingOverlayWiringTests
         return analyzer;
     }
 
-    // Ink as WPF would paint it: a setting reaches the overlay only if the
-    // rendered pixels say so. Rendering paints through OnRender, the path that
-    // runs without the render-loop redraw hook.
     static int[] RenderFrame(VoiceVisualizer visualizer, VisualizerStyle style)
     {
         var size = new Size(260, 73);
         visualizer.Mode = style;
+        // Detaches the effect so the helper measures the CPU twin's drawing;
+        // the shader itself is verified by AssertShaderPaints.
+        visualizer.Effect = null;
         visualizer.Measure(size);
         visualizer.Arrange(new Rect(0, 0, size.Width, size.Height));
         visualizer.UpdateLayout();
 
-        // The control spreads past the pill by its negative margin, so the frame
-        // has to be the control's own size: a bottom-anchored style would else
-        // fall outside the picture.
         var width = (int)Math.Ceiling(visualizer.RenderSize.Width);
         var height = (int)Math.Ceiling(visualizer.RenderSize.Height);
         var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
@@ -184,6 +180,9 @@ public class RecordingOverlayWiringTests
     {
         var size = new Size(260, 73);
         visualizer.Mode = style;
+        // Detaches the effect so the helper measures the CPU twin's drawing;
+        // the shader itself is verified by AssertShaderPaints.
+        visualizer.Effect = null;
         visualizer.Measure(size);
         visualizer.Arrange(new Rect(0, 0, size.Width, size.Height));
         visualizer.UpdateLayout();
@@ -195,8 +194,80 @@ public class RecordingOverlayWiringTests
         return pixels.Count(pixel => (pixel >> 24) != 0);
     }
 
-    // The average hue of the ink, because a palette that never reaches the control
-    // would leave every scheme painting the same colour.
+    static void AssertShaderPaints(FrameworkElement element, Enum style)
+    {
+        element.Measure(new Size(260, 73));
+        element.Arrange(new Rect(0, 0, 260, 73));
+        element.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(260, 73, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(element);
+        var pixels = new int[260 * 73];
+        bitmap.CopyPixels(pixels, 4 * 260, 0);
+        int inked = pixels.Count(pixel => ((pixel >> 24) & 0xff) > 20);
+        Assert.True(inked > 100, $"the {style} shader bytecode does not render (inked pixels: {inked})");
+    }
+
+    // A ShaderEffect paints past its own Clip; only an ancestor's clip contains
+    // it (the pill's Border does this in production). Re-parenting the window's
+    // live controls is illegal, so containment is proved on throwaway instances.
+    static void AssertRoundedHostClips(FrameworkElement fresh, Enum style)
+    {
+        var host = new System.Windows.Controls.Grid();
+        host.Clip = new System.Windows.Media.RectangleGeometry(new Rect(0, 0, 260, 73), 16, 16);
+        host.Children.Add(fresh);
+        host.Measure(new Size(260, 73));
+        host.Arrange(new Rect(0, 0, 260, 73));
+        host.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(260, 73, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(host);
+        var pixels = new int[260 * 73];
+        bitmap.CopyPixels(pixels, 4 * 260, 0);
+        int inked = pixels.Count(pixel => ((pixel >> 24) & 0xff) > 20);
+        Assert.True(inked > 100, $"{style} in a clipped host paints nothing (inked: {inked})");
+        Assert.Equal(0, (pixels[0] >> 24) & 0xff);
+    }
+
+    // The fetch chain can replace the pack prefix handlers mid-process (the
+    // real handler then cannot resolve these URIs here), so re-assert ours
+    // right before each ShaderEffect construction that fetches.
+    static void EnsurePackPrefix()
+    {
+        System.Net.WebRequest.RegisterPrefix("pack", new ResourcePackRequestCreator());
+        System.Net.WebRequest.RegisterPrefix("pack://", new ResourcePackRequestCreator());
+    }
+
+    private sealed class ResourcePackRequestCreator : System.Net.IWebRequestCreate
+    {
+        public System.Net.WebRequest Create(Uri requestUri) => new ResourcePackRequest(requestUri);
+    }
+
+    private sealed class ResourcePackRequest(Uri uri) : System.Net.WebRequest
+    {
+        // Reads the shader from the repo's Shaders folder: Application.GetResourceStream
+        // wakes System.IO.Packaging, whose static init overwrites the "pack" prefix
+        // with a handler that cannot resolve pack URIs in the test host.
+        public override System.Net.WebResponse GetResponse()
+        {
+            var tail = uri.AbsolutePath;
+            int cut = tail.IndexOf("/Shaders/", StringComparison.OrdinalIgnoreCase);
+            if (cut < 0)
+                throw new System.Net.WebException($"unexpected pack uri {uri}");
+            var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+            while (dir != null && !System.IO.Directory.Exists(System.IO.Path.Combine(dir.FullName, "Shaders")))
+                dir = dir.Parent;
+            if (dir == null)
+                throw new System.Net.WebException("no Shaders folder above the test binaries");
+            var path = System.IO.Path.Combine(dir.FullName, tail[(cut + 1)..].Replace('/', System.IO.Path.DirectorySeparatorChar));
+            return new ResourcePackResponse(System.IO.File.OpenRead(path));
+        }
+    }
+
+    private sealed class ResourcePackResponse(System.IO.Stream stream) : System.Net.WebResponse
+    {
+        public override long ContentLength => stream.Length;
+        public override System.IO.Stream GetResponseStream() => stream;
+    }
+
     static (int Red, int Green, int Blue) InkTint(VoiceVisualizer visualizer)
     {
         long red = 0, green = 0, blue = 0, painted = 0;
@@ -221,6 +292,7 @@ public class RecordingOverlayWiringTests
         WpfThread.Run(() =>
         {
             var state = new OverlayState { IsRecording = true, Spectrum = FedAnalyzer() };
+            EnsurePackPrefix();
             var window = new RecordingOverlayWindow { DataContext = state };
             PumpDispatcher();
             var visualizer = (VoiceVisualizer)window.FindName("Visualizer");
@@ -228,8 +300,6 @@ public class RecordingOverlayWiringTests
             Assert.Same(state.Spectrum, visualizer.Source);
             Assert.Equal(Visibility.Visible, visualizer.Visibility);
 
-            // The style and the switch live on the window, so the drawing control
-            // has to follow the window's properties.
             Assert.Equal(VisualizerStyle.Spectrum, visualizer.Mode);
             window.VisualizerStyle = VisualizerStyle.Waveform;
             Assert.Equal(VisualizerStyle.Waveform, visualizer.Mode);
@@ -255,7 +325,24 @@ public class RecordingOverlayWiringTests
 
             var ink = new Dictionary<VisualizerStyle, int>();
             foreach (VisualizerStyle style in Enum.GetValues<VisualizerStyle>())
+            {
+                // GPU twins draw their CPU twin once the effect is detached, so
+                // their ink would collide with the original; they are verified
+                // through the shader-render guard instead.
+                if (VisualizerCatalog.IsGpu(style))
+                    continue;
                 ink[style] = InkPixels(visualizer, style);
+            }
+
+            // A GPU style whose effect is detached (a tier-0 machine, or a
+            // shader that failed to load) must never paint a blank pill.
+            foreach (VisualizerStyle style in Enum.GetValues<VisualizerStyle>())
+            {
+                if (!VisualizerCatalog.IsGpu(style))
+                    continue;
+                int fallback = InkPixels(visualizer, style);
+                Assert.True(fallback > 50, $"{style} with a detached effect paints nothing");
+            }
 
             var painted = string.Join(", ", ink.Select(pair => $"{pair.Key}={pair.Value}"));
             foreach (var pair in ink)
@@ -291,8 +378,6 @@ public class RecordingOverlayWiringTests
             window.VisualizerFps = 60;
             Assert.Equal(60, visualizer.FrameFps);
 
-            // The processing indicator shows only while the post-recording pass
-            // runs, follows the window's chosen style, and every option paints.
             var processing = (ProcessingVisualizer)window.FindName("Processing");
             Assert.Equal(Visibility.Collapsed, processing.Visibility);
             state.IsProcessing = true;
@@ -308,14 +393,83 @@ public class RecordingOverlayWiringTests
             window.ProcessingAnimation = ProcessingStyle.CometOrbit;
             Assert.Equal(ProcessingStyle.CometOrbit, processing.Mode);
 
+            window.ProcessingAnimation = ProcessingStyle.ShaderShimmer;
+            Assert.True(processing.Effect != null, "processing.Effect null");
+
+            if (RenderCapability.Tier >> 16 >= 2)
+            {
+                // Bytecode newer than ps_2_0 is silently rejected by WPF and
+                // the plain source renders instead, so prove every GPU style
+                // paints pixels its near-transparent base fill cannot produce.
+                foreach (ProcessingStyle style in Enum.GetValues<ProcessingStyle>())
+                {
+                    if (!ProcessingCatalog.IsGpu(style))
+                        continue;
+                    window.ProcessingAnimation = style;
+                    var effect = (ProcessingGpuEffect)processing.Effect!;
+                    effect.Time = 0.5;
+                    effect.Aspect = 260.0 / 73.0;
+                    AssertShaderPaints(processing, style);
+                }
+
+                foreach (VisualizerStyle style in Enum.GetValues<VisualizerStyle>())
+                {
+                    if (!VisualizerCatalog.IsGpu(style))
+                        continue;
+                    visualizer.Mode = style;
+                    visualizer.PumpGpuAudioForTests();
+                    var effect = (VisualizerGpuEffect)visualizer.Effect!;
+                    effect.Time = 0.7;
+                    effect.Level = Math.Clamp(state.Spectrum.Level, 0.4, 1.0);
+                    effect.Aux = new System.Windows.Media.Media3D.Point4D(0, 0, 0, 0.6);
+                    effect.Aspect = 260.0 / 73.0;
+                    AssertShaderPaints(visualizer, style);
+                }
+
+                EnsurePackPrefix();
+                AssertRoundedHostClips(
+                    new ProcessingVisualizer { Mode = ProcessingStyle.ShaderShimmer },
+                    ProcessingStyle.ShaderShimmer);
+
+                // Re-fetching the same pack URI a second time throws in this
+                // host even with our prefix registered, so the fresh control
+                // borrows the window's already-loaded effect instance.
+                var freshViz = new VoiceVisualizer
+                {
+                    Mode = VisualizerStyle.Spectrum,
+                    Effect = visualizer.Effect,
+                };
+                freshViz.PumpGpuAudioForTests();
+                Assert.True(freshViz.Effect != null, "freshViz.Effect null");
+                ((VisualizerGpuEffect)freshViz.Effect!).Time = 0.7;
+                AssertRoundedHostClips(freshViz, VisualizerStyle.SpectrumGpu);
+
+                visualizer.Mode = VisualizerStyle.Spectrum;
+            }
+
+            window.ProcessingAnimation = ProcessingStyle.WaveSweep;
+            Assert.Null(processing.Effect);
+
             var procInk = new Dictionary<ProcessingStyle, int>();
             foreach (ProcessingStyle style in Enum.GetValues<ProcessingStyle>())
+            {
+                if (ProcessingCatalog.IsGpu(style))
+                    continue;
                 procInk[style] = InkPixels(processing, style);
+            }
 
             var procPainted = string.Join(", ", procInk.Select(pair => $"{pair.Key}={pair.Value}"));
             foreach (var pair in procInk)
                 Assert.True(pair.Value > 50, $"{pair.Key} paints nothing: {procPainted}");
             Assert.Equal(procInk.Count, procInk.Values.Distinct().Count());
+
+            foreach (ProcessingStyle style in Enum.GetValues<ProcessingStyle>())
+            {
+                if (!ProcessingCatalog.IsGpu(style))
+                    continue;
+                int fallback = InkPixels(processing, style);
+                Assert.True(fallback > 50, $"{style} with a detached effect paints nothing");
+            }
             window.ProcessingAnimation = ProcessingStyle.WaveSweep;
 
             state.IsProcessing = false;
@@ -389,6 +543,22 @@ public class RecordingOverlayWiringTests
 
             state.IsRecording = false;
             Assert.Equal(Visibility.Collapsed, visualizer.Visibility);
+
+            // A ShaderEffect paints past its own Clip, so the pill's rounded
+            // containment is wired on the ancestor content Grid. A Window that
+            // was never Shown lays out nothing, so arrange its content root.
+            var pillRoot = (System.Windows.Controls.Grid)window.Content;
+            pillRoot.Measure(new Size(600, 140));
+            pillRoot.Arrange(new Rect(0, 0, 600, 140));
+            pillRoot.UpdateLayout();
+            var pillContent = (System.Windows.Controls.Grid)window.FindName("PillContent");
+            var pillClip = Assert.IsType<System.Windows.Media.RectangleGeometry>(pillContent.Clip);
+            Assert.Equal(16, pillClip.RadiusX, 2);
+            Assert.Equal(16, pillClip.RadiusY, 2);
+            Assert.Equal(-18, pillClip.Bounds.X, 2);
+            Assert.Equal(-10, pillClip.Bounds.Y, 2);
+            Assert.Equal(pillContent.RenderSize.Width + 36, pillClip.Bounds.Width, 2);
+            Assert.Equal(pillContent.RenderSize.Height + 20, pillClip.Bounds.Height, 2);
         });
     }
 

@@ -9,8 +9,7 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
-// The "recorded but got no response" failure: the server answers 200 with a
-// body the parser rejects, and the recording used to be thrown away.
+// The server can answer 200 with a body the parser rejects; that must not throw the recording away.
 public class TranscriptionRetryTests
 {
     const string AsrModel = "Qwen3-ASR-1.7B-Q8_0.gguf";
@@ -69,10 +68,8 @@ public class TranscriptionRetryTests
         Assert.Equal(2, handler.RequestBodies.Count);
     }
 
-    // Probing the running model with silence, a hum, a click and room noise
-    // always answers "language None" or an empty <asr_text>, and decoding is
-    // greedy: the three identical requests the old code fired 250 ms apart
-    // (19 such triples in one day of logs) could only repeat that answer.
+    // Decoding is greedy: probes with silence, a hum, a click and room noise all answer
+    // "language None" or an empty <asr_text>, so identical resends can only repeat that answer.
     [Fact]
     public async Task EmptyAnswerIsNotResentBecauseTheModelHeardNoSpeech()
     {
@@ -98,9 +95,8 @@ public class TranscriptionRetryTests
         Assert.Equal(AsrFailure.NoSpeech, service.LastFailure);
     }
 
-    // Measured against the running model: a 1.4 s low-level vocalisation
-    // answered "language Chinese<asr_text>啊哈哈！", which used to be pasted
-    // into the user's document.
+    // Measured against the running model: a 1.4 s low-level vocalisation answered
+    // "language Chinese<asr_text>啊哈哈！", which must never be pasted into the user's document.
     [Fact]
     public async Task AnswerInAnotherScriptIsDroppedInsteadOfPasted()
     {
@@ -124,9 +120,7 @@ public class TranscriptionRetryTests
         Assert.Equal("en", FormValue(handler.RequestBodies[0], "language"));
     }
 
-    // The mirror of the test above: the language field belongs to dedicated ASR
-    // models only. A chat-style model still gets the transcription prompt, and
-    // must not be told what language to speak.
+    // The language field belongs to dedicated ASR models only; a chat model must not be told what language to speak.
     [Fact]
     public async Task GenericModelFormSendsThePromptInsteadOfALanguage()
     {
@@ -141,9 +135,8 @@ public class TranscriptionRetryTests
         Assert.NotNull(FormValue(handler.RequestBodies[0], "prompt"));
     }
 
-    // llama.cpp handles the language field per audio model, so a model whose
-    // build does not know it would answer 400 to every single recording. The
-    // field is dropped after the first such answer instead.
+    // llama.cpp answers 400 to every recording for a model build that does not know the
+    // language field, so the field is dropped after the first such answer.
     [Fact]
     public async Task LanguageFieldIsDroppedWhenTheServerRejectsIt()
     {
@@ -185,7 +178,6 @@ public class TranscriptionRetryTests
     [Fact]
     public async Task ChatStyleAnswerIsSalvagedOnceRetriesAreExhausted()
     {
-        // Better than reporting "no speech" for audio that clearly had speech.
         var handler = new StubHandler(ChatStyle);
         using var service = new TranscriptionService(LocalProvider(), handler);
 
@@ -217,8 +209,6 @@ public class TranscriptionRetryTests
         Assert.Equal("0", FormValue(handler.RequestBodies[0], "temperature"));
     }
 
-    // Reads one field out of a multipart/form-data body, skipping any
-    // Content-Type header the part carries.
     static string? FormValue(string body, string field)
     {
         var quoted = $"name=\"{field}\"";

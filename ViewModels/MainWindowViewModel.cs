@@ -23,15 +23,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
     bool _hotkeyPressed;
     bool _pendingHotkeyStop;
 
-    // True from a hotkey press until that press's capture is actually running.
-    // Only a release inside that window may be remembered as a pending stop, so
-    // a second quick press cannot stop the clip that is already being captured.
+    // Only a release while this press's capture is still coming up may be remembered as a pending
+    // stop, so a second quick press cannot stop the clip that is already being captured.
     bool _captureStarting;
     readonly SemaphoreSlim _captureLock = new(1, 1);
     readonly TranscriptionQueue _queue;
 
-    // A press that lands while the previous capture is still stopping/resampling
-    // waits for the mic instead of being dropped.
+    // 5 s: a press landing while the previous capture is still stopping/resampling waits for the mic instead of being dropped.
     static readonly TimeSpan CaptureWaitTimeout = TimeSpan.FromSeconds(5);
 
     bool _isHighlighted;
@@ -52,11 +50,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
         OnPropertyChanged(nameof(WindowOpacity));
     }
 
-    // propertyName is forwarded, not defaulted by SetProperty: the caller here is
-    // this helper, so CallerMemberName alone would report "SyncSetting" and every
-    // listener keyed on the property name (the overlay, the selection toolbar)
-    // would never hear the change. The attribute needs a default value, so the empty
-    // string left by an omitted argument is caught by the assert instead.
+    // propertyName must be forwarded to SetProperty: CallerMemberName alone reports "SyncSetting"
+    // here, so listeners keyed on the property name (the overlay, the selection toolbar) would
+    // never hear the change. The empty-string default exists because the attribute needs one, so
+    // an omitted argument is caught by the assert.
     bool SyncSetting(ref bool field, bool value, Action persist, string? infoText = null, [CallerMemberName] string propertyName = "")
     {
         System.Diagnostics.Debug.Assert(propertyName.Length > 0, nameof(SyncSetting) + " needs the calling property name");
@@ -510,9 +507,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _micDeviceName = _state.MicDeviceName;
         AnchorMicDeviceName();
 
-        // The block above writes fields directly so no setting-change side effect fires
-        // during load, but the recorder's spectrum tap starts active: without this a
-        // persisted VisualizerEnabled=false still pays the FFT on every capture.
+        // The fields above are written directly so no setting-change side effect fires during load:
+        // without this a persisted VisualizerEnabled=false still pays the FFT on every capture.
         RecordingManager.SetVisualizerActive(_visualizerEnabled);
     }
 
@@ -655,8 +651,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 }
                 else
                 {
-                    // Normal while the previous clip is still being transcribed:
-                    // the user simply waits for the mic to free up and presses again.
                     Logger.Info(RecordingManager.IsRecording
                         ? "Hotkey press ignored: the microphone is still capturing"
                         : "Hotkey press ignored: the processing queue is full");
@@ -670,8 +664,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 _hotkeyPressed = false;
                 if (RecordingManager.IsRecording)
                 {
-                    // The pending-stop fallback only applies while this press's
-                    // capture is still coming up; see _captureStarting.
+                    // The pending-stop fallback only applies while this press's capture is coming up.
                     await StopHoldRecord(queueIfBusy: _captureStarting);
                 }
             }
@@ -682,9 +675,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     public async Task StartHoldRecord(bool isHotkey = true)
     {
-        // The selection fix owns the clipboard for seconds (copy probe, corrected
-        // text, restore); starting dictation in that window would let its
-        // auto-paste interleave with the fix's Ctrl+V and corrupt the document.
+        // The selection fix owns the clipboard for seconds; auto-paste started in that window
+        // would interleave with the fix's Ctrl+V and corrupt the document.
         if (_fixSelectionRunning)
         {
             Logger.Info("Dictation start ignored: a selection fix is running");
@@ -692,8 +684,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
             return;
         }
 
-        // A press that arrives while the previous capture is still stopping or
-        // resampling waits for the mic instead of being dropped.
         try
         {
             await RunRecordingOperation(
@@ -734,13 +724,10 @@ public class MainWindowViewModel : ViewModel, IDisposable
             failureInfo: "Failed to stop recording");
     }
 
-    // Releasing the hotkey only hands the clip to the queue; the transcription of
-    // this clip and of every clip recorded after it runs one at a time, in order.
     async Task StopAndEnqueueCore()
     {
         var pcm = await RecordingManager.StopRecording();
-        // Read the mic format at stop time: the device can be reopened or
-        // re-selected before this job gets its turn.
+        // Read the mic format at stop time: the device can be reopened or re-selected before this job runs.
         var channels = RecordingManager.ChannelCount;
 
         if (!ValidateRecording(pcm))
@@ -778,8 +765,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         try
         {
-            // Two quick presses can both pass the hotkey gate; the one that had
-            // to wait for the mic must not double-start the capture.
+            // Two quick presses can both pass the hotkey gate; the one that had to wait for the
+            // mic must not double-start the capture.
             if (waitForMic && !RecordingManager.CanStartRecording)
             {
                 Logger.Info($"[{context}] ignored: the capture already started");
@@ -830,8 +817,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         ? $"\u201c{name}\u201d"
         : "the selected mic";
 
-    // Checked the moment the clip is captured, so a bad take reports at once
-    // instead of after the recordings queued in front of it.
+    // Checked at capture time so a bad take reports at once, not after the clips queued in front of it.
     bool ValidateRecording(byte[] pcm)
     {
         if (pcm.Length == 0)
@@ -861,7 +847,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         return true;
     }
 
-    // Runs one clip at a time, in recording order, on the queue's worker.
     async Task ProcessQueuedJobAsync(QueuedAudio job, CancellationToken ct)
     {
         var provider = _state.ActiveProvider;
@@ -882,9 +867,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         await TranscribeAndHandleResultAsync(job.Pcm, job.Channels, ct);
 
-        // Offload only when nothing is waiting behind this job (this job still
-        // counts as running, so Busy would always be true here). Dropping the
-        // model between two queued clips would cost a server restart per message.
+        // WaitingCount == 0, not Busy: this job still counts as running, so Busy would always be
+        // true here. Offloading between two queued clips would cost a server restart per message.
         if (_queue.WaitingCount == 0)
             await OffloadServerAfterSuccessAsync();
     }
@@ -996,8 +980,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     async Task ApplyTranscriptionSuccessAsync(string text, CancellationToken ct, string? grammarNote = null)
     {
-        // Never write the transcript to the clipboard while a selection fix is
-        // mid-flow; queue behind its clipboard window instead of racing it.
+        // Queue behind the selection fix's clipboard window: writing the transcript mid-flow races it.
         await WaitForSelectionFixIdleAsync();
         var copied = await TrySetClipboardTextAsync(text);
         bool pasted = false;
@@ -1051,8 +1034,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
     // UI-thread-only flag; read cross-thread only via WaitForSelectionFixIdleAsync.
     volatile bool _fixSelectionRunning;
 
-    // The user's clipboard snapshot that the fix replaced and has not restored
-    // yet. Kept here so app exit mid-flow can write it back synchronously.
+    // Held here so app exit mid-flow can write the user's clipboard snapshot back synchronously.
     string? _pendingClipboardRestore;
 
     public void FlushPendingClipboardRestore()
@@ -1074,9 +1056,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
             }
             catch (Exception ex)
             {
-                // Runs on MainWindow_Closed's stack: an escaping throw skips tray/overlay
-                // teardown and the explicit dispatcher shutdown. Only CLIPBRD_E_CANT_OPEN
-                // is transient; give up quietly on everything else.
+                // Runs on MainWindow_Closed's stack: an escaping throw skips tray/overlay teardown
+                // and the explicit dispatcher shutdown. Only CLIPBRD_E_CANT_OPEN is transient.
                 Logger.Error($"Selection fix: could not restore the clipboard before exit: {ex.Message}");
                 return;
             }
@@ -1090,11 +1071,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
             await Task.Delay(100);
     }
 
-    // Fixes the text the user selected in whatever app has focus: Ctrl+C through
-    // AutoPaster, the shared GrammarCheckService, then Ctrl+V over the selection.
-    // ProofreadAsync (transcript) is untouched; both flows share the same service.
-    // targetWindow is the window that held the selection; injected keys must land
-    // there, so focus is pulled back from WhisperNote's own popup when needed.
+    // targetWindow is the window that held the selection; injected keys land on the focused window,
+    // so focus must be pulled back from WhisperNote's own popup when needed.
     public async Task<bool> FixSelectedTextAsync(IntPtr targetWindow = default)
     {
         Logger.Info("Selection fix: requested");
@@ -1136,9 +1114,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
             return false;
         }
 
-        // Against an elevated target SendInput "succeeds" while UIPI silently drops
-        // the keys: bail out before touching the clipboard, so the user's copy and
-        // clipboard both survive instead of faking a fix.
+        // Against an elevated target SendInput "succeeds" while UIPI silently drops the keys: bail out
+        // before touching the clipboard, so the user's copy and clipboard both survive.
         if (AutoPaster.IsTargetElevatedBlocked(targetWindow))
         {
             Logger.Info("Selection fix skipped: the target app runs elevated (injected keys would be dropped)");
@@ -1150,10 +1127,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         var snapshot = await TryGetClipboardTextAsync();
         _pendingClipboardRestore = snapshot;
-        // A clipboard-diff probe can't prove a copy happened when the clipboard already
-        // holds the very text being copied (re-fixing the same selection); seed a
-        // sentinel so any successful Ctrl+C is detectable. Falls back to diffing when
-        // the clipboard is non-text and the sentinel cannot be written.
+        // A clipboard-diff probe can't prove a copy when the clipboard already holds the very text being
+        // copied (re-fixing the same selection): seed a sentinel so any successful Ctrl+C is detectable.
+        // Falls back to diffing when the sentinel cannot be written.
         var sentinel = $"__whispernote_copy_probe_{Environment.TickCount:X}__";
         var probeSent = await TrySetClipboardTextAsync(sentinel) || await TrySetClipboardTextAsync(sentinel);
         var probe = snapshot != null && probeSent ? sentinel : snapshot;
@@ -1172,7 +1148,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
         var selected = await WaitForCopiedSelectionAsync(probe);
         if (selected == null)
         {
-            // Clipboard unchanged: nothing was selected, or the field refuses Ctrl+C.
             Logger.Info("Selection fix: clipboard unchanged after Ctrl+C (nothing selected or copy refused)");
             if (probe != null && probe != snapshot && !await TrySetClipboardTextAsync(snapshot!))
                 Logger.Error("Selection fix: clipboard restore failed; a probe placeholder may remain");
@@ -1181,8 +1156,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
         if (string.IsNullOrWhiteSpace(selected))
         {
-            // CorrectAsync short-circuits on whitespace; report it honestly instead
-            // of blaming the API.
+            // CorrectAsync short-circuits on whitespace; report it honestly, not as an API failure.
             Logger.Info($"Selection fix: copied selection is whitespace only ({selected.Length} chars)");
             if (snapshot != null && selected != snapshot)
                 await TrySetClipboardTextAsync(snapshot);
@@ -1265,9 +1239,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
         if (snapshot == null)
             return;
 
-        // Slow targets (Chromium async paste, Office re-layout, RDP) read the
-        // clipboard well after Ctrl+V lands; restoring earlier hands them the
-        // user's OLD clipboard text to paste over the selection.
+        // 1200 ms: slow targets (Chromium async paste, Office re-layout, RDP) read the clipboard well
+        // after Ctrl+V lands; restoring earlier hands them the user's OLD text to paste over the selection.
         await Task.Delay(1200);
         var current = await TryGetClipboardTextAsync();
         if (current != null && SelectionFixer.ShouldRestore(current, lastWritten)
@@ -1304,10 +1277,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     static async Task<bool> TrySetClipboardTextAsync(string text)
     {
-        // The clipboard is a system-wide lock held by whichever process opened it.
-        // CLIPBRD_E_CANT_OPEN means somebody (Ctrl+V in the target app, Win+V history,
-        // clipboard managers, RDP) is holding it right now; WPF tries once and gives up,
-        // so retry briefly as Microsoft's docs recommend. Other errors are not transient.
+        // The clipboard is a system-wide lock; CLIPBRD_E_CANT_OPEN means another process (Ctrl+V in the
+        // target app, Win+V history, clipboard managers, RDP) holds it now. WPF tries once and gives up,
+        // so retry briefly as Microsoft's docs recommend; other errors are not transient.
         for (var attempt = 1; ; attempt++)
         {
             try
@@ -1368,8 +1340,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     public void Dispose()
     {
-        // Cancels the running job and drops the queued ones, so nothing below is
-        // touched by a job after it has been disposed.
+        // Dispose the queue first: it cancels the running job and drops queued ones so nothing below is touched.
         _queue.Dispose();
         _highlightTimer.Stop();
         _captureLock.Dispose();

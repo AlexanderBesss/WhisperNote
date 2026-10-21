@@ -167,12 +167,9 @@
                 </UniformGrid>
             </Border>
 
-            <!-- Tab content scrolls when display scaling makes the tallest card
-                 taller than the window may be (MaxHeight on the window itself). The grid
-                 must keep its full desired height: clamping it to the viewport would hide
-                 the overflow instead of scrolling it. Top alignment is deliberate too,
-                 because a centred grid pushes a short tab down and leaves dead space
-                 above and below the card. -->
+            <!-- The grid must keep its full desired height: clamping it to the viewport
+                 would hide the overflow instead of scrolling it. Top alignment is deliberate
+                 too: a centred grid pushes a short tab down and leaves dead space. -->
             <ScrollViewer x:Name="PanelScroll" Grid.Row="2"
                           Style="{StaticResource StyledScrollViewer}"
                           VerticalScrollBarVisibility="Auto"
@@ -349,8 +346,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Its own tab: the microphone picker plus the visualizer's switch, two
-                     pickers and a live preview would crowd the General card at large scaling. -->
                 <Border x:Name="PanelVisualizer" Style="{StaticResource SettingsCard}"
                         Visibility="Collapsed">
                     <StackPanel>
@@ -402,8 +397,6 @@
                                   IsEnabled="{Binding VisualizerEnabled}"
                                   ToolTip="Which shape is drawn behind the recording status text"/>
 
-                        <!-- The same control the pill hosts, fed a synthetic voice,
-                             so the shape and colours can be seen while they are chosen. -->
                         <Border Background="#151515" BorderBrush="#333" BorderThickness="1"
                                 CornerRadius="6" Height="73" ClipToBounds="True" Margin="0,0,0,8"
                                 Visibility="{Binding VisualizerEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">

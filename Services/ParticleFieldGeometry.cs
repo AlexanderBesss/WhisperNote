@@ -6,14 +6,9 @@ public readonly record struct SphereParticle(float X, float Y, float Z, float Lo
 
 public readonly record struct GrainOffset(float DX, float DY, float Phase);
 
-// Pure geometry for the particle-based visualizer styles: placement, rotation and
-// grain layout without WPF types, so the math stays unit-testable and the control
-// only paints. All of it is static/precomputed: a 30 fps frame must not rebuild
-// thousand-point lattices.
+// Static/precomputed only: a 30 fps frame must not rebuild thousand-point lattices.
 public static class ParticleFieldGeometry
 {
-    // Fibonacci lattice: evenly spread points on the unit sphere with no visible
-    // polar clustering, like the shell in reference art of force fields.
     public static SphereParticle[] BuildSphere(int count, int bands)
     {
         var points = new SphereParticle[count];
@@ -38,8 +33,6 @@ public static class ParticleFieldGeometry
         return points;
     }
 
-    // Spin about the vertical axis, then a fixed camera tilt; depth is the
-    // camera-axis coordinate the renderer shades with.
     public static void RotateProject(
         SphereParticle p, float cosSpin, float sinSpin, float cosTilt, float sinTilt,
         out float px, out float py, out float depth)
@@ -51,8 +44,7 @@ public static class ParticleFieldGeometry
         depth = p.Y * sinTilt + spunZ * cosTilt;
     }
 
-    // Jittered placement inside a cell plus a per-grain phase, from a fixed seed
-    // so the grain layout is identical across runs and only its twinkle animates.
+    // Fixed seed: the grain layout must stay identical across runs, only its twinkle animates.
     public static GrainOffset[] BuildGrainPattern(int cells, int seed)
     {
         var grain = new GrainOffset[cells];

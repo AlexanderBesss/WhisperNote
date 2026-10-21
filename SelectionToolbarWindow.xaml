@@ -25,7 +25,6 @@
                     Style="{StaticResource ModernButton}"
                     Padding="12,5"
                     FontSize="12"/>
-            <!-- Spinner shown in place of the button while the API round trip runs. -->
             <TextBlock x:Name="ProcessingGlyph"
                        Text="&#xE72C;"
                        FontFamily="Segoe MDL2 Assets"
@@ -35,7 +34,6 @@
                        VerticalAlignment="Center"
                        Margin="9,4"
                        Visibility="Collapsed"/>
-            <!-- Success flash shown in place of the button after a fix lands. -->
             <TextBlock x:Name="DoneGlyph"
                        Text="&#xE73E;"
                        FontFamily="Segoe MDL2 Assets"
@@ -45,7 +43,6 @@
                        VerticalAlignment="Center"
                        Margin="9,3"
                        Visibility="Collapsed"/>
-            <!-- Failure flash (API timeout, nothing selected, paste refused...). -->
             <TextBlock x:Name="FailedGlyph"
                        Text="&#xE711;"
                        FontFamily="Segoe MDL2 Assets"

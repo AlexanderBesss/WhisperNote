@@ -37,8 +37,6 @@ public class BackendDownloaderTests
     [Fact]
     public void SelectAssetsRequiresEveryPatternInTheSameRelease()
     {
-        // The cudart zip exists only in the older release: the newer release
-        // must not be half-selected.
         var json = $"[ {Release("b2", "llama-b2-bin-win-cuda-12.4-x64.zip")}, "
                  + $"{Release("b1", "cudart-llama-bin-win-cuda-12.4-x64.zip", "llama-b1-bin-win-cuda-12.4-x64.zip")} ]";
 

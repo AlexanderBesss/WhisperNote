@@ -7,16 +7,14 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
-// The point of the queue: a clip is transcribed while the user is already
-// recording the next one, but the results must still land one at a time and in
-// recording order, so the paste of message 1 finishes before message 2 starts.
+// Jobs run strictly one at a time in recording order: the paste of message 1
+// finishes before message 2 starts.
 public class TranscriptionQueueTests
 {
     static QueuedAudio Clip(byte number) => new(new byte[] { number, 0 }, 1);
 
     // Enqueue from a pool thread: the production caller is the WPF dispatcher,
-    // and the test runner's own synchronization context is not what we want the
-    // worker's continuations posted to.
+    // not the test runner's synchronization context.
     static Task<bool> EnqueueAsync(TranscriptionQueue queue, byte number) =>
         Task.Run(() => queue.TryEnqueue(Clip(number)));
 

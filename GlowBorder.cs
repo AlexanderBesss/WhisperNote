@@ -6,10 +6,6 @@ using WhisperNote.Config;
 
 namespace WhisperNote;
 
-// Flowing-colour outline drawn over the pill edge while the overlay window is
-// visible, which is exactly while recording or processing. A reflecting
-// gradient slid along the edge reads as colour travelling from one side of the
-// pill to the other; the wide faint stroke behind the bright one is the glow.
 // Radius and the 20-unit margin in XAML must track the pill Border.
 public sealed class GlowBorder : FrameworkElement
 {
@@ -91,8 +87,7 @@ public sealed class GlowBorder : FrameworkElement
             SpreadMethod = GradientSpreadMethod.Reflect
         };
 
-        // Reflect spread joins the gradient seamlessly at both ends, so sliding
-        // it by whole gradient widths loops without a visible seam or jump.
+        // Reflect spread is required: the slide loops by whole gradient widths, so only Reflect is seam-free.
         brush.GradientStops.Add(new GradientStop(WithAlpha(alpha, palette.HueAt(0.0)), 0.0));
         brush.GradientStops.Add(new GradientStop(WithAlpha(alpha, palette.HueAt(0.25)), 0.25));
         brush.GradientStops.Add(new GradientStop(WithAlpha(alpha, palette.Peak), 0.5));

@@ -129,6 +129,14 @@ public partial class RecordingOverlayWindow : Window
     public RecordingOverlayWindow()
     {
         InitializeComponent();
+
+        // A ShaderEffect paints past the rendering element's own Clip, so an
+        // ancestor must do the clipping: the content Grid is trimmed to the
+        // Border's rounded rectangle (Padding 18,10 + CornerRadius 16), which
+        // reaches past the Grid's own bounds.
+        PillContent.SizeChanged += (_, e) =>
+            PillContent.Clip = new System.Windows.Media.RectangleGeometry(
+                new Rect(-18, -10, e.NewSize.Width + 36, e.NewSize.Height + 20), 16, 16);
     }
 
     public void ShowRecording()

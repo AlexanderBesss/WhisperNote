@@ -4,10 +4,6 @@ using System.Linq;
 
 namespace WhisperNote.Config;
 
-// A visualizer colour scheme: one gradient drawn bottom-up, plus the accents the
-// glow and meter styles need. Stops are RGB only, because the alpha ramp is applied
-// uniformly so every preset keeps the same "strong at the baseline, faint at the
-// tip" read no matter how many hues it walks through.
 public sealed class VisualizerPalette
 {
     const double BaseAlpha = 0xD0;
@@ -18,7 +14,7 @@ public sealed class VisualizerPalette
 
     public string Name { get; }
 
-    // Bottom stop first; a single hue paints a flat gradient, several hues blend.
+    // Bottom stop first.
     public IReadOnlyList<uint> Hues { get; }
 
     public uint Glow { get; }
@@ -50,7 +46,6 @@ public sealed class VisualizerPalette
         return stops;
     }
 
-    // The meter fill reads across the pill at one strength, so it keeps a flat alpha.
     public IReadOnlyList<(uint Argb, double Offset)> FillStops()
     {
         var last = Hues.Count - 1;
@@ -64,8 +59,6 @@ public sealed class VisualizerPalette
     public IReadOnlyList<(uint Argb, double Offset)> GlowStops() =>
         new[] { (Argb(GlowAlpha, Glow), 0.0), (Argb(0, Glow), 1.0) };
 
-    // Samples the hue ramp at a position, for styles that spread colours over
-    // something other than the bottom-up gradient (e.g. over frequency rows).
     public uint HueAt(double t)
     {
         if (Hues.Count == 1)

@@ -68,7 +68,7 @@ public class GlobalKeyboardHook : IDisposable
 
     // Bare Alt/Win presses activate menu mode or Start and steal the caret; Ctrl/Shift do not.
     internal static bool IsFocusStealingModifier(int vkCode) =>
-        vkCode is 0x12 or 0xA4 or 0xA5 or 0x5B or 0x5C; // Alt, L/R Alt, L/R Win
+        vkCode is 0x12 or 0xA4 or 0xA5 or 0x5B or 0x5C;
 
     // Many layouts deliver AltGr as RCtrl down + LAlt down; that is not the selected Alt hotkey.
     internal static bool IsAltGrPress(int vkCode, bool rightCtrlHeld) =>

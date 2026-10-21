@@ -14,7 +14,6 @@ public class TrayTests
         var defaults = new AppSettings();
         Assert.True(defaults.MinimizeToTray);
 
-        // Configs written before the tray existed omit the key: keep tray minimize on.
         var legacy = JsonSerializer.Deserialize<AppSettings>("""
             {
               "ActiveProviderIndex": 0,
@@ -44,7 +43,6 @@ public class TrayTests
         var defaults = new AppSettings();
         Assert.True(defaults.StartInTray);
 
-        // Configs written before the option existed omit the key: launch hidden in the tray.
         var legacy = JsonSerializer.Deserialize<AppSettings>("""
             {
               "ActiveProviderIndex": 0,
