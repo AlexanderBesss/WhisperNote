@@ -89,6 +89,8 @@ public class RecordingOverlayWiringTests
     {
         SpectrumAnalyzer _spectrum = new();
         bool _isRecording;
+        bool _isProcessing;
+        int _queuedCount;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -104,7 +106,20 @@ public class RecordingOverlayWiringTests
             set { _isRecording = value; Raise(nameof(IsRecording)); }
         }
 
-        public bool IsProcessing { get; set; }
+        public bool IsProcessing
+        {
+            get => _isProcessing;
+            set { _isProcessing = value; Raise(nameof(IsProcessing)); Raise(nameof(QueueSquares)); }
+        }
+
+        public int QueuedCount
+        {
+            get => _queuedCount;
+            set { _queuedCount = value; Raise(nameof(QueuedCount)); Raise(nameof(QueueSquares)); }
+        }
+
+        public int QueueSquares => _isProcessing ? Math.Min(TranscriptionQueue.Capacity, _queuedCount + 1) : 0;
+
         public string StatusText { get; set; } = "Recording";
         public string InfoText { get; set; } = "00:03";
 
@@ -143,7 +158,7 @@ public class RecordingOverlayWiringTests
     // runs without the render-loop redraw hook.
     static int[] RenderFrame(VoiceVisualizer visualizer, VisualizerStyle style)
     {
-        var size = new Size(300, 78);
+        var size = new Size(260, 73);
         visualizer.Mode = style;
         visualizer.Measure(size);
         visualizer.Arrange(new Rect(0, 0, size.Width, size.Height));
@@ -164,6 +179,21 @@ public class RecordingOverlayWiringTests
 
     static int InkPixels(VoiceVisualizer visualizer, VisualizerStyle style) =>
         RenderFrame(visualizer, style).Count(pixel => (pixel >> 24) != 0);
+
+    static int InkPixels(ProcessingVisualizer visualizer, ProcessingStyle style)
+    {
+        var size = new Size(260, 73);
+        visualizer.Mode = style;
+        visualizer.Measure(size);
+        visualizer.Arrange(new Rect(0, 0, size.Width, size.Height));
+        visualizer.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(260, 73, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visualizer);
+
+        var pixels = new int[260 * 73];
+        bitmap.CopyPixels(pixels, 4 * 260, 0);
+        return pixels.Count(pixel => (pixel >> 24) != 0);
+    }
 
     // The average hue of the ink, because a palette that never reaches the control
     // would leave every scheme painting the same colour.
@@ -211,6 +241,18 @@ public class RecordingOverlayWiringTests
             window.VisualizerEnabled = true;
             Assert.Equal(Visibility.Visible, visualizer.Visibility);
 
+            // The status text trades places with the drawing: it would cover the
+            // visualization, so it is hidden exactly while the visualizer shows.
+            var statusText = (System.Windows.Controls.StackPanel)window.FindName("StatusTextPanel");
+            Assert.Equal(Visibility.Collapsed, statusText.Visibility);
+            window.VisualizerEnabled = false;
+            Assert.Equal(Visibility.Visible, statusText.Visibility);
+            window.VisualizerEnabled = true;
+            Assert.Equal(Visibility.Collapsed, statusText.Visibility);
+            state.IsRecording = false;
+            Assert.Equal(Visibility.Visible, statusText.Visibility);
+            state.IsRecording = true;
+
             var ink = new Dictionary<VisualizerStyle, int>();
             foreach (VisualizerStyle style in Enum.GetValues<VisualizerStyle>())
                 ink[style] = InkPixels(visualizer, style);
@@ -241,9 +283,159 @@ public class RecordingOverlayWiringTests
             Assert.True(red.Red > red.Green, $"the red scheme did not paint red: {hues}");
             Assert.True(mint.Green > mint.Red, $"the mint scheme did not paint green: {hues}");
 
+            // Frame rate travels the same way as the style, and the default must
+            // be the nominal rate the animation step sizes are authored against.
+            Assert.Equal(VisualizerFpsCatalog.DefaultFps, visualizer.FrameFps);
+            window.VisualizerFps = 120;
+            Assert.Equal(120, visualizer.FrameFps);
+            window.VisualizerFps = 60;
+            Assert.Equal(60, visualizer.FrameFps);
+
+            // The processing indicator shows only while the post-recording pass
+            // runs, follows the window's chosen style, and every option paints.
+            var processing = (ProcessingVisualizer)window.FindName("Processing");
+            Assert.Equal(Visibility.Collapsed, processing.Visibility);
+            state.IsProcessing = true;
+            Assert.Equal(Visibility.Visible, processing.Visibility);
+
+            // Processing owns the pill: the status text is hidden even with
+            // the voice visualizer off, leaving the animation as the feedback.
+            window.VisualizerEnabled = false;
+            Assert.Equal(Visibility.Collapsed, statusText.Visibility);
+            window.VisualizerEnabled = true;
+
+            Assert.Equal(ProcessingStyle.WaveSweep, processing.Mode);
+            window.ProcessingAnimation = ProcessingStyle.CometOrbit;
+            Assert.Equal(ProcessingStyle.CometOrbit, processing.Mode);
+
+            var procInk = new Dictionary<ProcessingStyle, int>();
+            foreach (ProcessingStyle style in Enum.GetValues<ProcessingStyle>())
+                procInk[style] = InkPixels(processing, style);
+
+            var procPainted = string.Join(", ", procInk.Select(pair => $"{pair.Key}={pair.Value}"));
+            foreach (var pair in procInk)
+                Assert.True(pair.Value > 50, $"{pair.Key} paints nothing: {procPainted}");
+            Assert.Equal(procInk.Count, procInk.Values.Distinct().Count());
+            window.ProcessingAnimation = ProcessingStyle.WaveSweep;
+
+            state.IsProcessing = false;
+            Assert.Equal(Visibility.Collapsed, processing.Visibility);
+
+            // The queue bar shows one square for the clip in flight plus one per
+            // waiting clip, and the counters drive it through the binding.
+            var queue = (QueueBar)window.FindName("Queue");
+            Assert.Equal(0, queue.Squares);
+            state.IsProcessing = true;
+            state.QueuedCount = 3;
+            Assert.Equal(4, queue.Squares);
+            state.QueuedCount = 0;
+            Assert.Equal(1, queue.Squares);
+            state.IsProcessing = false;
+            Assert.Equal(0, queue.Squares);
+
+            var barInk = InkOfSquares(new QueueBar { Squares = 3 });
+            Assert.True(barInk > 90, $"the queue bar paints too little: {barInk}");
+            Assert.Equal(0, InkOfSquares(new QueueBar()));
+
+            // The slide-off ghost: dropping the count briefly paints the
+            // vacated leftmost slot (columns below the surviving squares),
+            // and the ghost is gone once its animation expires.
+            var ghostBar = new QueueBar { Squares = 3 };
+            ghostBar.Measure(new Size(45, 12));
+            ghostBar.Arrange(new Rect(0, 0, 45, 12));
+            ghostBar.UpdateLayout();
+            ghostBar.Squares = 2;
+            var ghostInk = InkInColumns(ghostBar, 15, 28);
+            Assert.True(ghostInk > 20, $"the slide-off ghost does not paint: {ghostInk}");
+            Thread.Sleep(400);
+            Assert.Equal(0, InkInColumns(ghostBar, 15, 28));
+
+            // The glow outline is wired to the window's palette and fps, paints
+            // a ring around the pill, and its colours flow along the edge.
+            var glow = (GlowBorder)window.FindName("Glow");
+            Assert.NotNull(glow);
+            Assert.Same(window.VisualizerPalette, glow.Palette);
+            Assert.Equal(window.VisualizerFps, glow.FrameFps);
+            window.VisualizerFps = 120;
+            Assert.Equal(120, glow.FrameFps);
+            window.VisualizerFps = VisualizerFpsCatalog.DefaultFps;
+
+            var outline = new GlowBorder();
+            outline.Measure(new Size(260, 73));
+            outline.Arrange(new Rect(0, 0, 260, 73));
+            outline.UpdateLayout();
+            outline.InvalidateVisual();
+            PumpDispatcher();
+            var glowA = GlowPixels(outline);
+            var ringInk = glowA.Count(pixel => ((pixel >> 24) & 0xFF) != 0);
+            Assert.True(ringInk > 800, $"the glow outline paints too little: {ringInk}");
+
+            // The control advances its slide by real elapsed time per render,
+            // so the flow check pumps frames at an app-like pace.
+            for (int frame = 0; frame < 30; frame++)
+            {
+                Thread.Sleep(15);
+                outline.InvalidateVisual();
+                PumpDispatcher();
+            }
+
+            var glowB = GlowPixels(outline);
+            // Inside the bright top-edge stroke band (centred on row ~1), on
+            // the straight run away from the corners.
+            const int edge = 1 * 260 + 65;
+            var flowed = Math.Abs(((glowA[edge] >> 16) & 0xFF) - ((glowB[edge] >> 16) & 0xFF))
+                + Math.Abs(((glowA[edge] >> 8) & 0xFF) - ((glowB[edge] >> 8) & 0xFF));
+            Assert.True(flowed > 8, $"the glow outline does not flow: {flowed}");
+
             state.IsRecording = false;
             Assert.Equal(Visibility.Collapsed, visualizer.Visibility);
         });
+    }
+
+    static int[] GlowPixels(GlowBorder outline)
+    {
+        var bitmap = new RenderTargetBitmap(260, 73, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(outline);
+        var pixels = new int[260 * 73];
+        bitmap.CopyPixels(pixels, 4 * 260, 0);
+        return pixels;
+    }
+
+    static int InkInColumns(QueueBar bar, int from, int to)
+    {
+        bar.InvalidateVisual();
+        PumpDispatcher();
+        var bitmap = new RenderTargetBitmap(45, 12, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(bar);
+        var pixels = new int[45 * 12];
+        bitmap.CopyPixels(pixels, 4 * 45, 0);
+        int ink = 0;
+        for (int y = 0; y < 12; y++)
+            for (int x = from; x < to; x++)
+                if (((pixels[y * 45 + x] >> 24) & 0xFF) != 0)
+                    ink++;
+        return ink;
+    }
+
+    // A standalone bar lets the pop-in animation expire (sleep) before forcing a
+    // fresh render pass, so the counted ink is the steady-state row of squares.
+    static int InkOfSquares(QueueBar bar)
+    {
+        bar.Measure(new Size(45, 12));
+        bar.Arrange(new Rect(0, 0, 45, 12));
+        bar.UpdateLayout();
+        Thread.Sleep(400);
+        bar.InvalidateVisual();
+        PumpDispatcher();
+        var bitmap = new RenderTargetBitmap(45, 12, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(bar);
+        var pixels = new int[45 * 12];
+        bitmap.CopyPixels(pixels, 4 * 45, 0);
+        int ink = 0;
+        foreach (var pixel in pixels)
+            if (((pixel >> 24) & 0xFF) != 0)
+                ink++;
+        return ink;
     }
 
 }

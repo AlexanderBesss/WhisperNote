@@ -154,18 +154,15 @@
 
             <Border Grid.Row="1" Background="#1E1E1E" BorderBrush="#353535"
                     BorderThickness="1" CornerRadius="9" Padding="3" Margin="0,0,0,10">
-                <UniformGrid Columns="4">
+                <UniformGrid Columns="3">
                     <RadioButton x:Name="TabOutput" Style="{StaticResource PillTab}"
                                  Content="General" GroupName="SettingsTabs" Tag="output"
                                  IsChecked="True" Checked="Tab_Checked"/>
-                    <RadioButton x:Name="TabVisualizer" Style="{StaticResource PillTab}"
-                                 Content="Voice" GroupName="SettingsTabs" Tag="visualizer"
+                    <RadioButton x:Name="TabVisualizer" Style="{StaticResource PillTab}" FontSize="10"
+                                 Content="Visualization" GroupName="SettingsTabs" Tag="visualizer"
                                  Checked="Tab_Checked"/>
                     <RadioButton x:Name="TabModel" Style="{StaticResource PillTab}"
                                  Content="Model" GroupName="SettingsTabs" Tag="model"
-                                 Checked="Tab_Checked"/>
-                    <RadioButton x:Name="TabRecord" Style="{StaticResource PillTab}"
-                                 Content="Hotkey" GroupName="SettingsTabs" Tag="record"
                                  Checked="Tab_Checked"/>
                 </UniformGrid>
             </Border>
@@ -180,8 +177,7 @@
                           Style="{StaticResource StyledScrollViewer}"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
-                          Focusable="False"
-                          Padding="0,0,6,0">
+                          Focusable="False">
                 <Grid VerticalAlignment="Top">
                 <Border x:Name="PanelModel" Style="{StaticResource SettingsCard}"
                         Visibility="Collapsed">
@@ -253,8 +249,7 @@
                     </StackPanel>
                 </Border>
 
-                <Border x:Name="PanelRecord" Style="{StaticResource SettingsCard}"
-                        Visibility="Collapsed">
+                <Border x:Name="PanelOutput" Style="{StaticResource SettingsCard}">
                     <StackPanel>
                         <TextBlock Text="Recording hotkey" Style="{StaticResource FieldLabel}"/>
                         <ComboBox ItemsSource="{Binding HotkeyOptions}"
@@ -276,11 +271,7 @@
                                           VerticalAlignment="Center"
                                           ToolTip="Show a small &quot;Fix&quot; button next to selected text; click it to proofread and replace the selection. Works in apps that expose text selection (browsers, Office, WordPad)."/>
                         </Grid>
-                    </StackPanel>
-                </Border>
 
-                <Border x:Name="PanelOutput" Style="{StaticResource SettingsCard}">
-                    <StackPanel>
                         <Grid Style="{StaticResource SettingRow}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -383,6 +374,25 @@
                                           ToolTip="Draw the live microphone levels in the background of the recording overlay while dictating"/>
                         </Grid>
 
+                        <TextBlock Text="Colours" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox Style="{StaticResource SettingsCombo}"
+                                  ItemsSource="{Binding VisualizerPaletteOptions}"
+                                  ItemTemplate="{StaticResource PaletteChipTemplate}"
+                                  SelectedValuePath="Name"
+                                  SelectedValue="{Binding VisualizerPalette, Mode=TwoWay}"
+                                  IsEnabled="{Binding VisualizerEnabled}"
+                                  ToolTip="Colour scheme of the recording and processing animations"/>
+
+                        <TextBlock Text="Animation speed" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox Style="{StaticResource SettingsCombo}"
+                                  ItemsSource="{Binding VisualizerFpsOptions}"
+                                  DisplayMemberPath="Name"
+                                  SelectedValuePath="Fps"
+                                  SelectedValue="{Binding VisualizerFps, Mode=TwoWay}"
+                                  IsEnabled="{Binding VisualizerEnabled}"
+                                  Margin="0,0,0,8"
+                                  ToolTip="Frames per second the overlay redraws at. All options animate at the same speed; higher values only render smoother. Rates above your monitor's refresh are not offered"/>
+
                         <TextBlock Text="Style" Style="{StaticResource FieldLabel}"/>
                         <ComboBox Style="{StaticResource SettingsCombo}"
                                   ItemsSource="{Binding VisualizerStyleOptions}"
@@ -392,25 +402,34 @@
                                   IsEnabled="{Binding VisualizerEnabled}"
                                   ToolTip="Which shape is drawn behind the recording status text"/>
 
-                        <TextBlock Text="Colours" Style="{StaticResource FieldLabel}"/>
-                        <ComboBox Style="{StaticResource SettingsCombo}"
-                                  ItemsSource="{Binding VisualizerPaletteOptions}"
-                                  ItemTemplate="{StaticResource PaletteChipTemplate}"
-                                  SelectedValuePath="Name"
-                                  SelectedValue="{Binding VisualizerPalette, Mode=TwoWay}"
-                                  IsEnabled="{Binding VisualizerEnabled}"
-                                  ToolTip="Colour scheme drawn behind the recording status text"/>
-
-                        <TextBlock Text="Preview" Style="{StaticResource FieldLabel}"/>
                         <!-- The same control the pill hosts, fed a synthetic voice,
                              so the shape and colours can be seen while they are chosen. -->
                         <Border Background="#151515" BorderBrush="#333" BorderThickness="1"
-                                CornerRadius="6" Height="58" ClipToBounds="True" Margin="0,0,0,1"
+                                CornerRadius="6" Height="73" ClipToBounds="True" Margin="0,0,0,8"
                                 Visibility="{Binding VisualizerEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <local:VoiceVisualizer Mode="{Binding PreviewStyle}"
                                                    Palette="{Binding PreviewPalette}"
+                                                   FrameFps="{Binding VisualizerFps}"
                                                    Source="{Binding PreviewSource.Spectrum}"
                                                    Margin="8,5"/>
+                        </Border>
+
+                        <TextBlock Text="Processing animation" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox Style="{StaticResource SettingsCombo}"
+                                  ItemsSource="{Binding ProcessingOptions}"
+                                  DisplayMemberPath="Name"
+                                  SelectedValuePath="Name"
+                                  SelectedValue="{Binding ProcessingAnimation, Mode=TwoWay}"
+                                  ToolTip="Animation the overlay loops while the recording is transcribed and polished after you release the button"/>
+
+                        <!-- The processing indicator runs independently of the
+                             recording visualizer, so its preview stays available. -->
+                        <Border Background="#151515" BorderBrush="#333" BorderThickness="1"
+                                CornerRadius="6" Height="73" ClipToBounds="True">
+                            <local:ProcessingVisualizer Mode="{Binding PreviewProcessingStyle}"
+                                                        Palette="{Binding PreviewPalette}"
+                                                        FrameFps="{Binding VisualizerFps}"
+                                                        Margin="8,5"/>
                         </Border>
                     </StackPanel>
                 </Border>

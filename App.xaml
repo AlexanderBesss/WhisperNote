@@ -18,6 +18,7 @@
             <vm:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
             <vm:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
             <vm:AllTrueToVisibilityConverter x:Key="AllTrueToVisibilityConverter"/>
+            <vm:ProcessingOrAllTrueToHiddenConverter x:Key="ProcessingOrAllTrueToHiddenConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

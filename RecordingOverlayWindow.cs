@@ -32,6 +32,20 @@ public partial class RecordingOverlayWindow : Window
             typeof(RecordingOverlayWindow),
             new PropertyMetadata(VisualizerPaletteCatalog.Default));
 
+    public static readonly DependencyProperty VisualizerFpsProperty =
+        DependencyProperty.Register(
+            nameof(VisualizerFps),
+            typeof(int),
+            typeof(RecordingOverlayWindow),
+            new PropertyMetadata(VisualizerFpsCatalog.DefaultFps));
+
+    public static readonly DependencyProperty ProcessingAnimationProperty =
+        DependencyProperty.Register(
+            nameof(ProcessingAnimation),
+            typeof(ProcessingStyle),
+            typeof(RecordingOverlayWindow),
+            new PropertyMetadata(ProcessingStyle.WaveSweep));
+
     public bool VisualizerEnabled
     {
         get => (bool)GetValue(VisualizerEnabledProperty);
@@ -48,6 +62,18 @@ public partial class RecordingOverlayWindow : Window
     {
         get => (VisualizerPalette)GetValue(VisualizerPaletteProperty);
         set => SetValue(VisualizerPaletteProperty, value);
+    }
+
+    public int VisualizerFps
+    {
+        get => (int)GetValue(VisualizerFpsProperty);
+        set => SetValue(VisualizerFpsProperty, value);
+    }
+
+    public ProcessingStyle ProcessingAnimation
+    {
+        get => (ProcessingStyle)GetValue(ProcessingAnimationProperty);
+        set => SetValue(ProcessingAnimationProperty, value);
     }
 
     const int GWL_EXSTYLE = -20;

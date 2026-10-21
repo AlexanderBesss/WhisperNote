@@ -82,3 +82,27 @@ public class AllTrueToVisibilityConverter : IMultiValueConverter
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
         => throw new NotImplementedException();
 }
+
+// Overlay status text: hidden while the processing animation owns the pill,
+// and while recording with the voice visualizer on (the drawing and the text
+// would overlap). Binding convention: values[0] is the hard-hide flag
+// (IsProcessing); the remaining values hide together when all are true.
+public class ProcessingOrAllTrueToHiddenConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+    {
+        if (values.Length == 0)
+            return Visibility.Visible;
+        if (values[0] is true)
+            return Visibility.Collapsed;
+
+        for (int i = 1; i < values.Length; i++)
+            if (values[i] is not true)
+                return Visibility.Visible;
+
+        return values.Length > 1 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, System.Globalization.CultureInfo culture)
+        => throw new NotImplementedException();
+}

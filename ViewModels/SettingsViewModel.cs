@@ -26,6 +26,8 @@ public sealed class SettingsViewModel : ViewModel
     bool _visualizerEnabled = true;
     string _visualizerStyle = VisualizerCatalog.DefaultStyleName;
     string _visualizerPalette = VisualizerPaletteCatalog.DefaultPaletteName;
+    int _visualizerFps = VisualizerFpsCatalog.DefaultFps;
+    string _processingAnimation = ProcessingCatalog.DefaultStyleName;
     readonly PreviewVoiceSource _previewSource = new();
 
     public bool AutoOffloadVram
@@ -181,6 +183,33 @@ public sealed class SettingsViewModel : ViewModel
 
     public VisualizerPalette PreviewPalette => VisualizerPaletteCatalog.Resolve(_visualizerPalette);
 
+    // Rebuilt in the constructor once the saved FPS is resolved: the ladder is
+    // capped to the live display refresh, and settings reopen re-read it.
+    public IReadOnlyList<VisualizerFpsOption> VisualizerFpsOptions { get; private set; } =
+        VisualizerFpsCatalog.OptionsForMonitor(VisualizerFpsCatalog.DefaultFps);
+
+    // SelectedValuePath is the int, so unknown saved values are clamped in the
+    // constructor rather than appearing as a missing combo selection.
+    public int VisualizerFps
+    {
+        get => _visualizerFps;
+        set => SetProperty(ref _visualizerFps, value);
+    }
+
+    public IReadOnlyList<ProcessingOption> ProcessingOptions { get; } = ProcessingCatalog.Options;
+
+    public string ProcessingAnimation
+    {
+        get => _processingAnimation;
+        set
+        {
+            if (SetProperty(ref _processingAnimation, value))
+                OnPropertyChanged(nameof(PreviewProcessingStyle));
+        }
+    }
+
+    public ProcessingStyle PreviewProcessingStyle => ProcessingCatalog.Resolve(_processingAnimation);
+
     public string GrammarStatus => _mainViewModel.GrammarStatus;
 
     public Brush GrammarStateBrush => _mainViewModel.GrammarStateBrush;
@@ -208,6 +237,9 @@ public sealed class SettingsViewModel : ViewModel
         // Normalized so the combo always shows one of its own option names.
         _visualizerStyle = VisualizerCatalog.NameOf(VisualizerCatalog.Resolve(mainViewModel.VisualizerStyle));
         _visualizerPalette = VisualizerPaletteCatalog.NameOf(VisualizerPaletteCatalog.Resolve(mainViewModel.VisualizerPalette));
+        _visualizerFps = VisualizerFpsCatalog.Resolve(mainViewModel.VisualizerFps);
+        VisualizerFpsOptions = VisualizerFpsCatalog.OptionsForMonitor(_visualizerFps);
+        _processingAnimation = ProcessingCatalog.NameOf(ProcessingCatalog.Resolve(mainViewModel.ProcessingAnimation));
 
         mainViewModel.PropertyChanged += MainViewModel_PropertyChanged;
 
@@ -255,7 +287,9 @@ public sealed class SettingsViewModel : ViewModel
             SelectionToolbarEnabled,
             VisualizerEnabled,
             VisualizerStyle,
-            VisualizerPalette));
+            VisualizerPalette,
+            VisualizerFps,
+            ProcessingAnimation));
     }
 
     static IReadOnlyList<HotkeyOption> CreateHotkeyOptions(int currentKeyCode) =>
@@ -296,7 +330,9 @@ public sealed record SettingsSnapshot(
     bool SelectionToolbarEnabled,
     bool VisualizerEnabled,
     string VisualizerStyle,
-    string VisualizerPalette);
+    string VisualizerPalette,
+    int VisualizerFps,
+    string ProcessingAnimation);
 
 public sealed class HotkeyOption
 {

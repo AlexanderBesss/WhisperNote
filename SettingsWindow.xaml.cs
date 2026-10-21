@@ -59,7 +59,7 @@ public partial class SettingsWindow : Window
     // ScrollViewer still absorbs display scaling that makes even the tallest card tall.
     void FitToTallestCard()
     {
-        var cards = new[] { PanelOutput, PanelVisualizer, PanelModel, PanelRecord };
+        var cards = new[] { PanelOutput, PanelVisualizer, PanelModel };
         var states = new Visibility[cards.Length];
         for (int i = 0; i < cards.Length; i++)
         {
@@ -97,13 +97,12 @@ public partial class SettingsWindow : Window
     void Tab_Checked(object sender, RoutedEventArgs e)
     {
         // IsChecked="True" fires this during InitializeComponent(), before the panel fields exist.
-        if (PanelModel is null || PanelRecord is null || PanelOutput is null ||
+        if (PanelModel is null || PanelOutput is null ||
             PanelVisualizer is null)
             return;
 
         var tab = (string)((RadioButton)sender).Tag;
         PanelModel.Visibility = TabVisibility(tab == "model");
-        PanelRecord.Visibility = TabVisibility(tab == "record");
         PanelOutput.Visibility = TabVisibility(tab == "output");
         PanelVisualizer.Visibility = TabVisibility(tab == "visualizer");
         _viewModel.SetPreviewTabVisible(tab == "visualizer");

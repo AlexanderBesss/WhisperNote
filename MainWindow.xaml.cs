@@ -47,7 +47,9 @@ public partial class MainWindow : Window
             ApplySelectionFixState();
         else if (e.PropertyName == nameof(MainWindowViewModel.VisualizerEnabled) ||
                  e.PropertyName == nameof(MainWindowViewModel.VisualizerStyle) ||
-                 e.PropertyName == nameof(MainWindowViewModel.VisualizerPalette))
+                 e.PropertyName == nameof(MainWindowViewModel.VisualizerPalette) ||
+                 e.PropertyName == nameof(MainWindowViewModel.VisualizerFps) ||
+                 e.PropertyName == nameof(MainWindowViewModel.ProcessingAnimation))
             ApplyVisualizerState();
     }
 
@@ -61,9 +63,12 @@ public partial class MainWindow : Window
         _overlay.VisualizerEnabled = _viewModel.VisualizerEnabled;
         _overlay.VisualizerStyle = VisualizerCatalog.Resolve(_viewModel.VisualizerStyle);
         _overlay.VisualizerPalette = VisualizerPaletteCatalog.Resolve(_viewModel.VisualizerPalette);
+        _overlay.VisualizerFps = VisualizerFpsCatalog.Resolve(_viewModel.VisualizerFps);
+        _overlay.ProcessingAnimation = ProcessingCatalog.Resolve(_viewModel.ProcessingAnimation);
         // The stored string is logged with the resolved style so a fallback to the
         // default style is visible in the log instead of looking like a random choice.
-        Logger.Info($"Visualizer setting applied: enabled={_overlay.VisualizerEnabled}, style={_overlay.VisualizerStyle}, palette={_overlay.VisualizerPalette.Name}, stored='{_viewModel.VisualizerStyle}'/'{_viewModel.VisualizerPalette}'");
+        Logger.Info($"Visualizer setting applied: enabled={_overlay.VisualizerEnabled}, style={_overlay.VisualizerStyle}, palette={_overlay.VisualizerPalette.Name}, fps={_overlay.VisualizerFps}, processing={_overlay.ProcessingAnimation}, stored='{_viewModel.VisualizerStyle}'/'{_viewModel.VisualizerPalette}'");
+        Logger.Info($"Display refresh detected: max={VisualizerFpsCatalog.MaxRefreshHz()} Hz");
     }
 
     void ApplySelectionFixState()

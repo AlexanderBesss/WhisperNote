@@ -36,6 +36,9 @@ public class RecordingStateManager : ViewModel
 
     public int QueuedCount => _queuedCount;
 
+    // Overlay queue bar: one square for the job in flight plus one per waiting clip.
+    public int QueueSquares => _queueBusy ? Math.Min(TranscriptionQueue.Capacity, _queuedCount + 1) : 0;
+
     // A new clip may be recorded while the previous ones are still processing;
     // only a running capture or a full queue blocks it.
     public bool CanStartRecording =>
@@ -189,6 +192,7 @@ public class RecordingStateManager : ViewModel
         OnPropertyChanged(nameof(IsRecording));
         OnPropertyChanged(nameof(IsProcessing));
         OnPropertyChanged(nameof(QueuedCount));
+        OnPropertyChanged(nameof(QueueSquares));
         OnPropertyChanged(nameof(CanStartRecording));
         OnPropertyChanged(nameof(Result));
     }

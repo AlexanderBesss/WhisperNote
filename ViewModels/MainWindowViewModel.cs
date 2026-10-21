@@ -77,6 +77,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
         return true;
     }
 
+    bool SyncIntSetting(ref int field, int value, Action persist, [CallerMemberName] string propertyName = "")
+    {
+        System.Diagnostics.Debug.Assert(propertyName.Length > 0, nameof(SyncIntSetting) + " needs the calling property name");
+        if (!SetProperty(ref field, value, propertyName))
+            return false;
+        persist();
+        return true;
+    }
+
     bool _autoOffloadVram;
     public bool AutoOffloadVram
     {
@@ -164,6 +173,20 @@ public class MainWindowViewModel : ViewModel, IDisposable
     {
         get => _visualizerPalette;
         set => SyncTextSetting(ref _visualizerPalette, value, () => _state.VisualizerPalette = value);
+    }
+
+    int _visualizerFps = VisualizerFpsCatalog.DefaultFps;
+    public int VisualizerFps
+    {
+        get => _visualizerFps;
+        set => SyncIntSetting(ref _visualizerFps, value, () => _state.VisualizerFps = value);
+    }
+
+    string _processingAnimation = ProcessingCatalog.DefaultStyleName;
+    public string ProcessingAnimation
+    {
+        get => _processingAnimation;
+        set => SyncTextSetting(ref _processingAnimation, value, () => _state.ProcessingAnimation = value);
     }
 
     bool _grammarEnabled;
@@ -473,6 +496,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _visualizerEnabled = _state.VisualizerEnabled;
         _visualizerStyle = _state.VisualizerStyle;
         _visualizerPalette = _state.VisualizerPalette;
+        _visualizerFps = _state.VisualizerFps;
+        _processingAnimation = _state.ProcessingAnimation;
         _grammarEnabled = _state.GrammarCheckEnabled;
         _grammarApiHost = _state.GrammarApiEndpoint;
         _grammarApiKey = _state.GrammarApiKey;
@@ -541,6 +566,8 @@ public class MainWindowViewModel : ViewModel, IDisposable
         VisualizerEnabled = settings.VisualizerEnabled;
         VisualizerStyle = settings.VisualizerStyle;
         VisualizerPalette = settings.VisualizerPalette;
+        VisualizerFps = settings.VisualizerFps;
+        ProcessingAnimation = settings.ProcessingAnimation;
 
         if (cpuModeChanged && ServerManager.IsLocal && ServerManager.IsServerRunning)
             FireAndForget(ServerManager.StopServerAsync(), "StopServerForCpuMode");

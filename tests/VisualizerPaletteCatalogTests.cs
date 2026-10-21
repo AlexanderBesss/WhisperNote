@@ -104,6 +104,34 @@ public class VisualizerPaletteCatalogTests
         }
     }
 
+    // The waterfall colours frequency rows by sampling the ramp, so the sampler
+    // must land on the exact end hues, blend the middle, and clamp outside input
+    // instead of indexing past the list.
+    [Fact]
+    public void HueSamplerWalksTheRampAndClampsOutside()
+    {
+        var ramp = new VisualizerPalette("Ramp", 0x00FF00, 0x00FF00, 0x000000, 0xFF0000);
+
+        Assert.Equal(0x000000u, ramp.HueAt(0.0));
+        Assert.Equal(0x800000u, ramp.HueAt(0.5));
+        Assert.Equal(0xFF0000u, ramp.HueAt(1.0));
+        Assert.Equal(0x000000u, ramp.HueAt(-2.0));
+        Assert.Equal(0xFF0000u, ramp.HueAt(3.0));
+
+        var three = new VisualizerPalette("Three", 0x00FF00, 0x00FF00, 0x000000, 0x00FF00, 0xFF0000);
+        Assert.Equal(0x00FF00u, three.HueAt(0.5));
+
+        var solid = new VisualizerPalette("Solid", 0x22CC66, 0x22CC66, 0x22CC66);
+        Assert.Equal(0x22CC66u, solid.HueAt(0.37));
+
+        // Every preset must return plain rgb; a stray alpha byte would blank cells.
+        Assert.All(VisualizerPaletteCatalog.Options, palette =>
+        {
+            for (var step = 0; step <= 8; step++)
+                Assert.True(palette.HueAt(step / 8.0) < 0x01000000u, $"{palette.Name}: alpha leaked into the hue");
+        });
+    }
+
     static string Family(uint rgb)
     {
         var r = (int)(rgb >> 16 & 0xFF);

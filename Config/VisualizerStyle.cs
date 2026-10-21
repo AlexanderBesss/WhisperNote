@@ -9,7 +9,12 @@ public enum VisualizerStyle
     Spectrum,
     Waveform,
     Level,
-    SpectrumGlow
+    Oscilloscope,
+    PulseRings,
+    MatrixDots,
+    ForceField,
+    LivingWave,
+    FrequencyCity
 }
 
 public sealed class VisualizerOption
@@ -35,7 +40,12 @@ public static class VisualizerCatalog
         new VisualizerOption(VisualizerStyle.Spectrum, "Spectrum bars"),
         new VisualizerOption(VisualizerStyle.Waveform, "Waveform"),
         new VisualizerOption(VisualizerStyle.Level, "Level meter"),
-        new VisualizerOption(VisualizerStyle.SpectrumGlow, "Spectrum + glow"),
+        new VisualizerOption(VisualizerStyle.Oscilloscope, "Oscilloscope scroll"),
+        new VisualizerOption(VisualizerStyle.PulseRings, "Pulse rings"),
+        new VisualizerOption(VisualizerStyle.MatrixDots, "Matrix dots"),
+        new VisualizerOption(VisualizerStyle.ForceField, "Acoustic force field"),
+        new VisualizerOption(VisualizerStyle.LivingWave, "Living waveform"),
+        new VisualizerOption(VisualizerStyle.FrequencyCity, "Frequency city"),
     };
 
     // Settings keep the style as a string so whispernote.json stays readable and

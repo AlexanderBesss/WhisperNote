@@ -67,6 +67,33 @@ public class VisualizerLayoutTests
     {
         Assert.Empty(VisualizerLayout.BuildBars(0, 0, Levels(0.5)));
         Assert.Empty(VisualizerLayout.BuildEnvelope(0, 0, Levels(0.5)));
+        Assert.Empty(VisualizerLayout.BuildDotGrid(0, 0));
+    }
+
+    [Fact]
+    public void DotGridMirrorsEachBandColumnAroundTheMidline()
+    {
+        var dots = VisualizerLayout.BuildDotGrid(Width, Height);
+
+        Assert.Equal(VisualizerLayout.BarCount * 2 * VisualizerLayout.DotRowsPerSide, dots.Count);
+        Assert.Equal(VisualizerLayout.BarCount, dots.Select(dot => dot.X).Distinct().Count());
+
+        var midline = VisualizerLayout.InsetY + (Height - 2 * VisualizerLayout.InsetY) / 2;
+        foreach (var dot in dots)
+        {
+            Assert.True(dot.Y > midline || dot.Y < midline, "a dot on the midline has no mirror pair");
+
+            var mirrorY = 2 * midline - dot.Y;
+            Assert.Contains(dots, other =>
+                other != dot &&
+                other.Column == dot.Column &&
+                other.Row == dot.Row &&
+                Math.Abs(other.X - dot.X) < 0.01f &&
+                Math.Abs(other.Y - mirrorY) < 0.01f);
+
+            Assert.True(dot.X - dot.Radius >= 0 && dot.X + dot.Radius <= Width);
+            Assert.True(dot.Y - dot.Radius >= 0 && dot.Y + dot.Radius <= Height);
+        }
     }
 
     [Fact]
@@ -85,6 +112,31 @@ public class VisualizerLayoutTests
     }
 
     [Fact]
+    public void FrequencyRingBulgesOnlyWhereLevelsAreLoud()
+    {
+        var flat = VisualizerLayout.BuildFrequencyRing(
+            100, 30, 20f, 10f, Levels(Enumerable.Repeat(0.5, VisualizerLayout.BarCount).ToArray()));
+
+        Assert.Equal(VisualizerLayout.BarCount, flat.Count);
+        // Flat levels make a circle: every vertex sits at base + amp * level.
+        Assert.All(flat, vertex => Assert.Equal(25.0, DistanceToCentre(vertex), 2));
+
+        var loud = new float[VisualizerLayout.BarCount];
+        loud[3] = 1f;
+        loud[7] = 0.5f;
+        var ring = VisualizerLayout.BuildFrequencyRing(100, 30, 20f, 10f, loud);
+
+        Assert.Equal(30.0, DistanceToCentre(ring[3]), 2);
+        Assert.Equal(25.0, DistanceToCentre(ring[7]), 2);
+        Assert.Equal(20.0, DistanceToCentre(ring[0]), 2);
+
+        // Out-of-range levels clamp like every other mapping.
+        var clamped = VisualizerLayout.BuildFrequencyRing(100, 30, 20f, 10f, Levels(4, -2));
+        Assert.Equal(30.0, DistanceToCentre(clamped[0]), 2);
+        Assert.Equal(20.0, DistanceToCentre(clamped[1]), 2);
+    }
+
+    [Fact]
     public void MeterFillIsProportionalToTheLevel()
     {
         var half = VisualizerLayout.BuildMeter(Width, Height, 0.5, 0.75);
@@ -99,15 +151,6 @@ public class VisualizerLayoutTests
         Assert.True(half.PeakX > quiet.PeakX);
     }
 
-    [Fact]
-    public void GlowKeepsAStubWhenSilentAndFillsWhenLoud()
-    {
-        var silent = VisualizerLayout.BuildGlow(Width, Height, 0);
-        var loud = VisualizerLayout.BuildGlow(Width, Height, 1);
-
-        Assert.Equal(VisualizerLayout.GlowHeight, silent.Width);
-        Assert.True(loud.Width > silent.Width);
-        Assert.True(loud.X + loud.Width <= Width);
-        Assert.True(loud.Y + loud.Height <= Height);
-    }
+    static double DistanceToCentre(VisualizerVertex vertex) =>
+        Math.Sqrt((vertex.X - 100) * (vertex.X - 100) + (vertex.Y - 30) * (vertex.Y - 30));
 }

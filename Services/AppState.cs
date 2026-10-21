@@ -81,6 +81,16 @@ public class AppState
         get => _settings.VisualizerPalette;
         set { _settings.VisualizerPalette = value; _settings.Save(); }
     }
+    public int VisualizerFps
+    {
+        get => _settings.VisualizerFps;
+        set { _settings.VisualizerFps = value; _settings.Save(); }
+    }
+    public string ProcessingAnimation
+    {
+        get => _settings.ProcessingAnimation;
+        set { _settings.ProcessingAnimation = value; _settings.Save(); }
+    }
     public bool GrammarCheckEnabled
     {
         get => _settings.GrammarCheckEnabled;

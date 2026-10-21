@@ -88,6 +88,24 @@ public class RecordingStateDisplayTests
     }
 
     [Fact]
+    public void QueueSquaresCoversTheJobInFlightAndTheWaitingOnes()
+    {
+        var state = new RecordingStateManager();
+
+        state.SetQueueState(waitingCount: 0, outstandingCount: 0);
+        Assert.Equal(0, state.QueueSquares);
+
+        state.SetQueueState(waitingCount: 0, outstandingCount: 1);
+        Assert.Equal(1, state.QueueSquares);
+
+        state.SetQueueState(waitingCount: 3, outstandingCount: 4);
+        Assert.Equal(4, state.QueueSquares);
+
+        state.SetQueueState(TranscriptionQueue.Capacity - 1, TranscriptionQueue.Capacity);
+        Assert.Equal(TranscriptionQueue.Capacity, state.QueueSquares);
+    }
+
+    [Fact]
     public void QueueChangesPublishWhatTheOverlayAndTrayBind()
     {
         var state = new RecordingStateManager();
@@ -98,6 +116,7 @@ public class RecordingStateDisplayTests
 
         Assert.Contains(nameof(RecordingStateManager.IsProcessing), raised);
         Assert.Contains(nameof(RecordingStateManager.QueuedCount), raised);
+        Assert.Contains(nameof(RecordingStateManager.QueueSquares), raised);
         Assert.Contains(nameof(RecordingStateManager.CanStartRecording), raised);
         Assert.Contains(nameof(RecordingStateManager.StatusText), raised);
     }

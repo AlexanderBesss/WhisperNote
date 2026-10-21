@@ -38,6 +38,11 @@ public class AppSettings
     public string VisualizerStyle { get; set; } = VisualizerCatalog.DefaultStyleName;
     // Colour scheme name resolved by VisualizerPaletteCatalog.Resolve, same fallback rule.
     public string VisualizerPalette { get; set; } = VisualizerPaletteCatalog.DefaultPaletteName;
+    // Overlay animation rate; VisualizerFpsCatalog.Resolve clamps unknown values to the default.
+    public int VisualizerFps { get; set; } = VisualizerFpsCatalog.DefaultFps;
+    // Post-recording pass animation style, a display name resolved by ProcessingCatalog.Resolve,
+    // same fallback rule as the visualizer style.
+    public string ProcessingAnimation { get; set; } = ProcessingCatalog.DefaultStyleName;
 
     public bool GrammarCheckEnabled { get; set; }
     // API root; "/v1/models" and "/v1/chat/completions" are requested under it.

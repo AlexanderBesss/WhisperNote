@@ -64,6 +64,35 @@ public sealed class VisualizerPalette
     public IReadOnlyList<(uint Argb, double Offset)> GlowStops() =>
         new[] { (Argb(GlowAlpha, Glow), 0.0), (Argb(0, Glow), 1.0) };
 
+    // Samples the hue ramp at a position, for styles that spread colours over
+    // something other than the bottom-up gradient (e.g. over frequency rows).
+    public uint HueAt(double t)
+    {
+        if (Hues.Count == 1)
+            return Mask(Hues[0]);
+
+        var scaled = Math.Clamp(t, 0.0, 1.0) * (Hues.Count - 1);
+        var lower = Math.Min(Hues.Count - 2, (int)scaled);
+        var mix = scaled - lower;
+
+        var a = Mask(Hues[lower]);
+        var b = Mask(Hues[lower + 1]);
+        // Channels go through double before the subtraction: uint - uint wraps
+        // instead of going negative, which a darker-to-brighter stop would corrupt.
+        var red = (uint)Math.Round(LerpChannel(a >> 16, b >> 16, mix));
+        var green = (uint)Math.Round(LerpChannel(a >> 8, b >> 8, mix));
+        var blue = (uint)Math.Round(LerpChannel(a, b, mix));
+
+        return red << 16 | green << 8 | blue;
+    }
+
+    static double LerpChannel(uint fromShifted, uint toShifted, double t)
+    {
+        double from = fromShifted & 0xFF;
+        double to = toShifted & 0xFF;
+        return from + (to - from) * t;
+    }
+
     public uint TrackArgb => TrackAlpha << 24 | Mask(Hues[0]);
 
     public uint PeakArgb => 0xFFu << 24 | Mask(Peak);
