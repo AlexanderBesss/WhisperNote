@@ -7,16 +7,27 @@ namespace WhisperNote;
 
 // The palette chosen in settings re-tints every accent in the app through these
 // resource keys; templates reference them with DynamicResource. The fallback
-// values live in Styles/Theme.xaml and must match the default palette's Glow.
+// values live in Styles/Theme.xaml and must match the default palette's average.
 public static class PaletteTheme
 {
+    // The application dictionary freezes every brush inserted into it (XAML
+    // fallbacks at load, later replacements on insertion), so entries can never
+    // be mutated in place. These statics stay out of any dictionary and are the
+    // live instances converters hand out: Apply mutates them, so values captured
+    // earlier re-tint without re-evaluating.
+    public static SolidColorBrush Accent => AccentLive;
+
+    static readonly SolidColorBrush AccentLive = LiveBrush(1.0);
+    static readonly SolidColorBrush AccentDeepLive = LiveBrush(0.72);
+    static readonly SolidColorBrush AccentFillLive = LiveBrush(0.35);
+
     public static void Apply(VisualizerPalette palette)
     {
         var average = AverageHue(palette);
         var resources = Application.Current.Resources;
-        SetColor(resources, "AccentBrush", average, 1.0);
-        SetColor(resources, "AccentDeepBrush", average, 0.72);
-        SetColor(resources, "AccentFillBrush", average, 0.35);
+        Retint(resources, AccentLive, "AccentBrush", average, 1.0);
+        Retint(resources, AccentDeepLive, "AccentDeepBrush", average, 0.72);
+        Retint(resources, AccentFillLive, "AccentFillBrush", average, 0.35);
     }
 
     // The glows paint the Hues gradient, so the solid accents use its average:
@@ -36,19 +47,24 @@ public static class PaletteTheme
             | (int)Math.Round(b / n));
     }
 
-    // Mutates the shared brush instance instead of swapping it, so consumers
-    // that captured the brush once (converter results) re-tint live too.
-    static void SetColor(ResourceDictionary resources, string key, uint rgb, double factor)
+    static SolidColorBrush LiveBrush(double factor) =>
+        new SolidColorBrush(ScaleColor(AverageHue(VisualizerPaletteCatalog.Default), factor));
+
+    // Mutate the live instance for earlier converter captures, then post a
+    // frozen snapshot under the key: the dictionary would freeze an unfrozen
+    // insert anyway, and DynamicResource consumers re-resolve the replacement.
+    static void Retint(ResourceDictionary resources, SolidColorBrush live, string key, uint rgb, double factor)
     {
-        var color = Color.FromRgb(
+        var color = ScaleColor(rgb, factor);
+        live.Color = color;
+        var snapshot = new SolidColorBrush(color);
+        snapshot.Freeze();
+        resources[key] = snapshot;
+    }
+
+    static Color ScaleColor(uint rgb, double factor) =>
+        Color.FromRgb(
             (byte)((rgb >> 16 & 0xFF) * factor + 0.5),
             (byte)((rgb >> 8 & 0xFF) * factor + 0.5),
             (byte)((rgb & 0xFF) * factor + 0.5));
-        if (resources[key] is SolidColorBrush brush && !brush.IsFrozen)
-            brush.Color = color;
-        else
-            // Replacing a frozen brush orphans values converters captured earlier
-            // (they never re-resolve); keep the XAML fallback brushes unfrozen.
-            resources[key] = new SolidColorBrush(color);
-    }
 }

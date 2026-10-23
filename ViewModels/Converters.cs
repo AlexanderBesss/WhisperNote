@@ -8,15 +8,13 @@ namespace WhisperNote.ViewModels;
 static class StatusBrushes
 {
     public static readonly SolidColorBrush GrayBrush = new(Color.FromRgb(128, 128, 128));
-    public static readonly SolidColorBrush GreenBrush = new(Color.FromRgb(144, 238, 144));
     public static readonly SolidColorBrush OrangeBrush = new(Color.FromRgb(255, 165, 0));
     public static readonly SolidColorBrush RedBrush = new(Color.FromRgb(220, 50, 50));
     public static readonly SolidColorBrush LightBlueBrush = new(Color.FromRgb(173, 216, 230));
 
-    // The "online/success" state follows the app palette: PaletteTheme mutates
-    // this same brush instance, so already-bound dots and text re-tint too.
-    public static SolidColorBrush OnlineBrush =>
-        Application.Current?.Resources["AccentBrush"] as SolidColorBrush ?? GreenBrush;
+    // The "online/success" state follows the app palette: PaletteTheme owns this
+    // brush and mutates it in place, so already-bound dots and text re-tint too.
+    public static SolidColorBrush OnlineBrush => PaletteTheme.Accent;
 }
 
 public class ServerStatusKindToBrushConverter : IValueConverter
