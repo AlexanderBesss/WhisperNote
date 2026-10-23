@@ -296,6 +296,20 @@ public class RecordingOverlayWiringTests
             var state = new OverlayState { IsRecording = true, Spectrum = FedAnalyzer() };
             EnsurePackPrefix();
             var window = new RecordingOverlayWindow { DataContext = state };
+
+            // The floating Fix pill wears the record pill's outfit: the same
+            // translucent radius-16 surface, shadow, and glow outline. Its XAML is
+            // loaded here, before any pump or render pass, because pumping can mark
+            // the one-per-process Application shut down and later LoadComponent
+            // calls then throw; a window collected between facts does the same.
+            var toolbarWindow = SelectionToolbarWiringTests.AssertFixPillStyle();
+
+            // One pick in settings must retint every accent brush the app's
+            // styles read. Must stay before the first pump: pumping finishes the
+            // shutdown landmine and Application.Current goes null for the rest
+            // of the fact.
+            AssertPaletteThemeFollowsTheSettingsPalette();
+
             PumpDispatcher();
             var visualizer = (VoiceVisualizer)window.FindName("Visualizer");
 
@@ -562,7 +576,50 @@ public class RecordingOverlayWiringTests
             Assert.Equal(-10, pillClip.Bounds.Y, 2);
             Assert.Equal(pillContent.RenderSize.Width + 36, pillClip.Bounds.Width, 2);
             Assert.Equal(pillContent.RenderSize.Height + 20, pillClip.Bounds.Height, 2);
+
+            // Keep the toolbar window alive until the fact's last pump: a window
+            // collected mid-fact trips the WPF shutdown landmine.
+            GC.KeepAlive(toolbarWindow);
         });
+    }
+
+    // One pick in settings must retint every accent brush the app's styles read.
+    static void AssertPaletteThemeFollowsTheSettingsPalette()
+    {
+        var warm = VisualizerPaletteCatalog.Resolve("Signal Red");
+        PaletteTheme.Apply(warm);
+        Assert.Equal(Color.FromRgb(0xF2, 0x61, 0x64),
+            ((SolidColorBrush)Application.Current.Resources["AccentBrush"]).Color);
+        Assert.Equal(Color.FromRgb(0xAE, 0x46, 0x48),
+            ((SolidColorBrush)Application.Current.Resources["AccentDeepBrush"]).Color);
+        Assert.Equal(Color.FromRgb(0x55, 0x22, 0x23),
+            ((SolidColorBrush)Application.Current.Resources["AccentFillBrush"]).Color);
+
+        var cool = VisualizerPaletteCatalog.Resolve("Ocean Depth");
+        PaletteTheme.Apply(cool);
+        Assert.Equal(Color.FromRgb(0x2E, 0x9F, 0xDC),
+            ((SolidColorBrush)Application.Current.Resources["AccentBrush"]).Color);
+        Assert.Equal(Color.FromRgb(0x21, 0x72, 0x9E),
+            ((SolidColorBrush)Application.Current.Resources["AccentDeepBrush"]).Color);
+
+        // Multi-hue palettes land on the sweep's average, not on one stop.
+        var neon = VisualizerPaletteCatalog.Resolve("Neon Nightfall");
+        PaletteTheme.Apply(neon);
+        Assert.Equal(Color.FromRgb(0x7B, 0x80, 0xD3),
+            ((SolidColorBrush)Application.Current.Resources["AccentBrush"]).Color);
+        Assert.Equal(Color.FromRgb(0x59, 0x5C, 0x98),
+            ((SolidColorBrush)Application.Current.Resources["AccentDeepBrush"]).Color);
+
+        // The "Green" status states (server dot, status line, power glyph,
+        // success text) must return the same live brush instance PaletteTheme
+        // mutates, so values bound earlier re-tint without re-evaluating.
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var status = new WhisperNote.ViewModels.StatusKindToBrushConverter()
+            .Convert("Green", typeof(SolidColorBrush), null, culture);
+        Assert.Same(Application.Current.Resources["AccentBrush"], status);
+        var server = new WhisperNote.ViewModels.ServerStatusKindToBrushConverter()
+            .Convert(Models.ServerStatusKind.Green, typeof(SolidColorBrush), null, culture);
+        Assert.Same(Application.Current.Resources["AccentBrush"], server);
     }
 
     static int[] GlowPixels(GlowBorder outline)

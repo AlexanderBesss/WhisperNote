@@ -55,14 +55,24 @@ public partial class MainWindow : Window
 
     void ApplyVisualizerState()
     {
+        var palette = VisualizerPaletteCatalog.Resolve(_viewModel.VisualizerPalette);
+        var fps = VisualizerFpsCatalog.Resolve(_viewModel.VisualizerFps);
+
+        // Every window carries the pill's animated outline, so the main window
+        // glows with the palette and fps the user picked, even before the overlay exists.
+        Glow.Palette = palette;
+        Glow.FrameFps = fps;
+        PaletteTheme.Apply(palette);
+
         if (_overlay == null)
             return;
 
         _overlay.VisualizerEnabled = _viewModel.VisualizerEnabled;
         _overlay.VisualizerStyle = VisualizerCatalog.Resolve(_viewModel.VisualizerStyle);
-        _overlay.VisualizerPalette = VisualizerPaletteCatalog.Resolve(_viewModel.VisualizerPalette);
-        _overlay.VisualizerFps = VisualizerFpsCatalog.Resolve(_viewModel.VisualizerFps);
+        _overlay.VisualizerPalette = palette;
+        _overlay.VisualizerFps = fps;
         _overlay.ProcessingAnimation = ProcessingCatalog.Resolve(_viewModel.ProcessingAnimation);
+        ApplyToolbarVisualState();
         Logger.Info($"Visualizer setting applied: enabled={_overlay.VisualizerEnabled}, style={_overlay.VisualizerStyle}, palette={_overlay.VisualizerPalette.Name}, fps={_overlay.VisualizerFps}, processing={_overlay.ProcessingAnimation}, stored='{_viewModel.VisualizerStyle}'/'{_viewModel.VisualizerPalette}'");
         Logger.Info($"Display refresh detected: max={VisualizerFpsCatalog.MaxRefreshHz()} Hz");
     }
@@ -112,6 +122,18 @@ public partial class MainWindow : Window
     void EnsureToolbar()
     {
         _selectionToolbar ??= new SelectionToolbarWindow(() => _ = RunFixWithConfirmationAsync());
+        ApplyToolbarVisualState();
+    }
+
+    // The fix pill carries the same glow border as the recording overlay,
+    // so it follows the visualizer settings the user picked.
+    void ApplyToolbarVisualState()
+    {
+        if (_selectionToolbar == null)
+            return;
+
+        _selectionToolbar.Palette = VisualizerPaletteCatalog.Resolve(_viewModel.VisualizerPalette);
+        _selectionToolbar.FrameFps = VisualizerFpsCatalog.Resolve(_viewModel.VisualizerFps);
     }
 
     // Button -> spinner -> green check (on success) or red X (on failure) at the

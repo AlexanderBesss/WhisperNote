@@ -7,7 +7,7 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Foreground" Value="#E0E0E0"/>
         <Setter Property="CaretBrush" Value="#F0F0F0"/>
-        <Setter Property="SelectionBrush" Value="#2D8A4E"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource AccentDeepBrush}"/>
         <Setter Property="FontSize" Value="11.5"/>
         <Setter Property="MinHeight" Value="28"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
@@ -43,7 +43,7 @@
                         </Trigger>
                         <!-- Must stay last: later triggers win, so focus keeps the accent outline over hover. -->
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="Field" Property="BorderBrush" Value="#2D8A4E"/>
+                            <Setter TargetName="Field" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                         </Trigger>
                         <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="">
                             <Setter TargetName="Hint" Property="Visibility" Value="Visible"/>
@@ -63,7 +63,7 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Foreground" Value="#E0E0E0"/>
         <Setter Property="CaretBrush" Value="#F0F0F0"/>
-        <Setter Property="SelectionBrush" Value="#2D8A4E"/>
+        <Setter Property="SelectionBrush" Value="{DynamicResource AccentDeepBrush}"/>
         <Setter Property="FontSize" Value="11.5"/>
         <Setter Property="MinHeight" Value="28"/>
         <Setter Property="Padding" Value="8,4"/>
@@ -96,7 +96,7 @@
                         </Trigger>
                         <!-- Must stay last: later triggers win, so focus keeps the accent outline over hover. -->
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="Field" Property="BorderBrush" Value="#2D8A4E"/>
+                            <Setter TargetName="Field" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                         </Trigger>
                         <Trigger Property="Tag" Value="{x:Null}">
                             <Setter TargetName="Hint" Property="Visibility" Value="Collapsed"/>

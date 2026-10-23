@@ -12,6 +12,11 @@ static class StatusBrushes
     public static readonly SolidColorBrush OrangeBrush = new(Color.FromRgb(255, 165, 0));
     public static readonly SolidColorBrush RedBrush = new(Color.FromRgb(220, 50, 50));
     public static readonly SolidColorBrush LightBlueBrush = new(Color.FromRgb(173, 216, 230));
+
+    // The "online/success" state follows the app palette: PaletteTheme mutates
+    // this same brush instance, so already-bound dots and text re-tint too.
+    public static SolidColorBrush OnlineBrush =>
+        Application.Current?.Resources["AccentBrush"] as SolidColorBrush ?? GreenBrush;
 }
 
 public class ServerStatusKindToBrushConverter : IValueConverter
@@ -23,7 +28,7 @@ public class ServerStatusKindToBrushConverter : IValueConverter
 
         return kind switch
         {
-            WhisperNote.Models.ServerStatusKind.Green => StatusBrushes.GreenBrush,
+            WhisperNote.Models.ServerStatusKind.Green => StatusBrushes.OnlineBrush,
             WhisperNote.Models.ServerStatusKind.Orange => StatusBrushes.OrangeBrush,
             WhisperNote.Models.ServerStatusKind.Red => StatusBrushes.RedBrush,
             _ => StatusBrushes.GrayBrush
@@ -43,7 +48,7 @@ public class StatusKindToBrushConverter : IValueConverter
 
         return kind switch
         {
-            "Green" => StatusBrushes.GreenBrush,
+            "Green" => StatusBrushes.OnlineBrush,
             "Orange" => StatusBrushes.OrangeBrush,
             "Red" => StatusBrushes.RedBrush,
             "LightBlue" => StatusBrushes.LightBlueBrush,

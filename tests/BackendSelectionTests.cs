@@ -7,6 +7,9 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
+// Writes App.DetectedBackend (a static that LlmServer.Configure reads), so it
+// must not overlap the other classes that read or branch on that state.
+[Collection("DetectedBackend")]
 public class BackendSelectionTests : IDisposable
 {
     public BackendSelectionTests() => App.DetectedBackend = HardwareBackend.Unknown;

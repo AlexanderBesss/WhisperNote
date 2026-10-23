@@ -1,6 +1,8 @@
 <Window x:Class="WhisperNote.SelectionToolbarWindow"
+        x:Name="ToolbarWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:WhisperNote"
         Title="SelectionToolbar"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -12,46 +14,62 @@
         ResizeMode="NoResize"
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="Manual">
-    <Border Background="#1F1F1F" BorderBrush="#444" BorderThickness="1"
-            CornerRadius="8" Padding="5"
-            SnapsToDevicePixels="True">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.5"/>
-        </Border.Effect>
-        <Grid>
-            <Button x:Name="FixButton"
-                    Content="Fix"
-                    Click="FixButton_Click"
-                    Style="{StaticResource ModernButton}"
-                    Padding="12,5"
-                    FontSize="12"/>
-            <TextBlock x:Name="ProcessingGlyph"
-                       Text="&#xE72C;"
-                       FontFamily="Segoe MDL2 Assets"
-                       FontSize="16"
-                       Foreground="#CFCFCF"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       Margin="9,4"
-                       Visibility="Collapsed"/>
-            <TextBlock x:Name="DoneGlyph"
-                       Text="&#xE73E;"
-                       FontFamily="Segoe MDL2 Assets"
-                       FontSize="18"
-                       Foreground="#3FAE65"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       Margin="9,3"
-                       Visibility="Collapsed"/>
-            <TextBlock x:Name="FailedGlyph"
-                       Text="&#xE711;"
-                       FontFamily="Segoe MDL2 Assets"
-                       FontSize="18"
-                       Foreground="#D9534F"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       Margin="9,3"
-                       Visibility="Collapsed"/>
-        </Grid>
-    </Border>
+
+    <Grid>
+        <!-- The 20-unit margin gives the DropShadowEffect and the GlowBorder halo room;
+             without it they clip square at the window bounds. Same pill as the recording
+             overlay: #E61A1A1A, radius 16, padding 18,10, and the same drop shadow. -->
+        <Border Background="#E61A1A1A" CornerRadius="16" Padding="18,10" Margin="20">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.55"/>
+            </Border.Effect>
+            <!-- Static content box: 16x16 is the spinner glyph's measured size,
+                 and it is the size the pill had in that state. Fixing it keeps
+                 the pill the same size in every state (button, spinner, ticks);
+                 anything placed here must fit in 16x16. -->
+            <Grid Width="16" Height="16">
+                <!-- The button IS the pill's inner surface: the negative margin
+                     mirrors the Border's Padding 18,10 and the style's radius
+                     matches the pill's 16, so face, outline and click area all
+                     end exactly at the pill edge. -->
+                <Button x:Name="FixButton"
+                        Content="Fix"
+                        Click="FixButton_Click"
+                        Style="{StaticResource PillSurfaceButton}"
+                        Margin="-18,-10"
+                        Padding="12,5"
+                        FontSize="12"/>
+                <TextBlock x:Name="ProcessingGlyph"
+                           Text="&#xE72C;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="16"
+                           Foreground="#F0F0F0"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed"/>
+                <TextBlock x:Name="DoneGlyph"
+                           Text="&#xE73E;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="16"
+                           Foreground="#90EE90"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed"/>
+                <TextBlock x:Name="FailedGlyph"
+                           Text="&#xE711;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="16"
+                           Foreground="#DC3232"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed"/>
+            </Grid>
+        </Border>
+
+        <!-- Same 20-unit margin and 16-unit radius as the pill Border above, and the
+             glow spills into that transparent margin: keep the two in sync. -->
+        <local:GlowBorder x:Name="Glow" Margin="20"
+                          Palette="{Binding Palette, ElementName=ToolbarWindow}"
+                          FrameFps="{Binding FrameFps, ElementName=ToolbarWindow}"/>
+    </Grid>
 </Window>

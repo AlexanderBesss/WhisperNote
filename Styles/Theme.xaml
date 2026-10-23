@@ -1,0 +1,11 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Fallback tints before PaletteTheme.Apply runs; must match the average
+         of the default palette's hues (Signal Red #F26164) and PaletteTheme's
+         scale factors. -->
+    <SolidColorBrush x:Key="AccentBrush" Color="#F26164"/>
+    <SolidColorBrush x:Key="AccentDeepBrush" Color="#AE4648"/>
+    <SolidColorBrush x:Key="AccentFillBrush" Color="#552223"/>
+
+</ResourceDictionary>

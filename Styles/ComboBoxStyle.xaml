@@ -23,7 +23,7 @@
                                         <Setter TargetName="ItemBg" Property="Background" Value="#3A3A3A"/>
                                     </Trigger>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Foreground" Value="#3FAE65"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
                                     </Trigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
@@ -87,7 +87,7 @@
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsDropDownOpen" Value="True">
-                            <Setter TargetName="border" Property="BorderBrush" Value="#666"/>
+                            <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource AccentDeepBrush}"/>
                             <Setter TargetName="arrow" Property="Foreground" Value="#CCC"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">

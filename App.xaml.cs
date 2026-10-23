@@ -44,6 +44,11 @@ public partial class App : Application
             var settings = AppSettings.Load();
             AppState = new AppState(settings);
 
+            // XAML load freezes Theme.xaml's fallback brushes, and Apply replaces a
+            // frozen entry instead of mutating it; a converter binding that captured
+            // the fallback first never re-tints again. Seed before any window binds.
+            PaletteTheme.Apply(VisualizerPaletteCatalog.Resolve(settings.VisualizerPalette));
+
             AppDomain.CurrentDomain.ProcessExit += (_, _) => KillServer();
             AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             {

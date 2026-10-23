@@ -12,10 +12,10 @@
                             HorizontalAlignment="Center"/>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="#666"/>
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource AccentDeepBrush}"/>
                         </Trigger>
                         <Trigger Property="IsDragging" Value="True">
-                            <Setter TargetName="bg" Property="Background" Value="#888"/>
+                            <Setter TargetName="bg" Property="Background" Value="{DynamicResource AccentBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

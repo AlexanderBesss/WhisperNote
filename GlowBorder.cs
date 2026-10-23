@@ -6,7 +6,7 @@ using WhisperNote.Config;
 
 namespace WhisperNote;
 
-// Radius and the 20-unit margin in XAML must track the pill Border.
+// Radius 16 and each host's XAML margin must track the rounded Border the glow rings.
 public sealed class GlowBorder : FrameworkElement
 {
     const double NominalFrameMs = 1000.0 / VisualizerFpsCatalog.NominalFps;
@@ -58,6 +58,9 @@ public sealed class GlowBorder : FrameworkElement
 
     public GlowBorder()
     {
+        // Purely decorative: the drawn ring must never steal mouse input from
+        // the surface it rings.
+        IsHitTestVisible = false;
         BuildBrushes();
         IsVisibleChanged += (_, _) => UpdateSubscription();
         Loaded += (_, _) => UpdateSubscription();

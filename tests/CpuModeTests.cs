@@ -5,6 +5,7 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
+[Collection("DetectedBackend")] // Configure() reads the static App.DetectedBackend another class flips
 public class CpuModeTests
 {
     [Fact]

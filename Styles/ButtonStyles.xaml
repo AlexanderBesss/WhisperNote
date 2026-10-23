@@ -29,6 +29,38 @@
         </Setter>
     </Style>
 
+    <!-- The classic Fix button (face, #444 outline, hover dimming) grown into
+         the whole inner surface of an overlay pill. Its radius 16 must equal
+         the pill Border's so their edges coincide and only one box shows. -->
+    <Style x:Key="PillSurfaceButton" TargetType="Button">
+        <Setter Property="Background" Value="#2A2A2A"/>
+        <Setter Property="Foreground" Value="#CFCFCF"/>
+        <Setter Property="BorderBrush" Value="#444"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="border" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            Padding="{TemplateBinding Padding}"
+                            CornerRadius="16">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Opacity" Value="0.8"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="border" Property="Opacity" Value="0.6"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="CircleButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
         <Setter Property="Template">
             <Setter.Value>
@@ -81,9 +113,9 @@
                             <Setter TargetName="border" Property="Opacity" Value="0.6"/>
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="border" Property="Background" Value="#1E3A2E"/>
-                            <Setter TargetName="border" Property="BorderBrush" Value="#2D8A4E"/>
-                            <Setter Property="Foreground" Value="#4ADE80"/>
+                            <Setter TargetName="border" Property="Background" Value="{DynamicResource AccentFillBrush}"/>
+                            <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource AccentDeepBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

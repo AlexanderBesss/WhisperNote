@@ -6,6 +6,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
+using WhisperNote.Config;
 using WhisperNote.Services;
 
 namespace WhisperNote;
@@ -20,7 +21,37 @@ public partial class SelectionToolbarWindow : Window
     const uint SWP_NOACTIVATE = 0x0010;
     const uint SWP_SHOWWINDOW = 0x0040;
     const uint MONITOR_DEFAULTTONEAREST = 2;
-    const int PlacementGapPx = 8;
+    // The pill is wrapped in a 20-unit transparent margin for its glow and shadow (XAML);
+    // the negative gap keeps the visible pill, not the window edge, 8 units from the selection.
+    const int VisibleGapUnits = 8;
+    const int PillMarginUnits = 20;
+
+    // The glow border matches the recording overlay's, so it follows the same user settings.
+    public static readonly DependencyProperty PaletteProperty =
+        DependencyProperty.Register(
+            nameof(Palette),
+            typeof(VisualizerPalette),
+            typeof(SelectionToolbarWindow),
+            new PropertyMetadata(VisualizerPaletteCatalog.Default));
+
+    public static readonly DependencyProperty FrameFpsProperty =
+        DependencyProperty.Register(
+            nameof(FrameFps),
+            typeof(int),
+            typeof(SelectionToolbarWindow),
+            new PropertyMetadata(VisualizerFpsCatalog.DefaultFps));
+
+    public VisualizerPalette Palette
+    {
+        get => (VisualizerPalette)GetValue(PaletteProperty);
+        set => SetValue(PaletteProperty, value);
+    }
+
+    public int FrameFps
+    {
+        get => (int)GetValue(FrameFpsProperty);
+        set => SetValue(FrameFpsProperty, value);
+    }
 
     public const int ConfirmationVisibleMs = 500;
 
@@ -131,7 +162,8 @@ public partial class SelectionToolbarWindow : Window
         }
 
         if (SelectionWatcher.TryComputePlacement(
-                rects, popupWidth, popupHeight, work, (int)(PlacementGapPx * scale), out var x, out var y))
+                rects, popupWidth, popupHeight, work,
+                (int)((VisibleGapUnits - PillMarginUnits) * scale), out var x, out var y))
         {
             SetWindowPos(hwnd, HWND_TOPMOST, x, y, 0, 0,
                 SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
