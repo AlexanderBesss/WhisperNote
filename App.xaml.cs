@@ -44,9 +44,9 @@ public partial class App : Application
             var settings = AppSettings.Load();
             AppState = new AppState(settings);
 
-            // XAML load freezes Theme.xaml's fallback brushes, and Apply replaces a
-            // frozen entry instead of mutating it; a converter binding that captured
-            // the fallback first never re-tints again. Seed before any window binds.
+            // Seed before the first window binds: the XAML fallback and the
+            // converter-owned live brushes only carry the default palette, so a
+            // saved pick must be applied before anything paints or captures them.
             PaletteTheme.Apply(VisualizerPaletteCatalog.Resolve(settings.VisualizerPalette));
 
             AppDomain.CurrentDomain.ProcessExit += (_, _) => KillServer();
