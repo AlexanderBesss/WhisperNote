@@ -35,8 +35,12 @@ public class RecordingStateManager : ViewModel
 
     public int QueuedCount => _queuedCount;
 
-    // Overlay queue bar: one square for the job in flight plus one per waiting clip.
-    public int QueueSquares => _queueBusy ? Math.Min(TranscriptionQueue.Capacity, _queuedCount + 1) : 0;
+    // Overlay queue bar: one square per clip the queue holds, in flight or still
+    // waiting. The count must not add a job in flight on its own: right after a
+    // clip is queued the worker has not picked it up yet, and claiming both a
+    // waiting clip and a running one makes the bar play its slide-off animation
+    // at record-stop time, before anything was transcribed.
+    public int QueueSquares => Math.Min(TranscriptionQueue.Capacity, _queueOutstanding);
 
     public bool CanStartRecording =>
         !_isCapturing && _queueOutstanding < TranscriptionQueue.Capacity;

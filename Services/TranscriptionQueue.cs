@@ -49,10 +49,20 @@ public sealed class TranscriptionQueue : IDisposable
 
         // The counter is the authority on capacity: the channel buffer alone
         // would also allow Capacity waiting plus the clip already running.
-        if (OutstandingCount >= Capacity || !_channel.Writer.TryWrite(item))
+        if (OutstandingCount >= Capacity)
             return false;
 
+        // Counted before the handoff: TryWrite resumes the parked worker on this
+        // thread when no context was captured, and that worker decrements
+        // _waiting. Counting after the write lets it observe -1 and publish an
+        // empty queue for a clip that does exist.
         Interlocked.Increment(ref _waiting);
+
+        if (!_channel.Writer.TryWrite(item))
+        {
+            Interlocked.Decrement(ref _waiting);
+            return false;
+        }
 
         // The worker is started by calling it, never with Task.Run: a job writes
         // the clipboard, and Clipboard.SetText needs the caller's STA context

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using WhisperNote.Services;
 using Xunit;
 
@@ -95,6 +96,11 @@ public class RecordingStateDisplayTests
         state.SetQueueState(waitingCount: 0, outstandingCount: 0);
         Assert.Equal(0, state.QueueSquares);
 
+        // A freshly queued clip has not started yet: it is one clip, not a
+        // waiting clip plus a phantom job in flight.
+        state.SetQueueState(waitingCount: 1, outstandingCount: 1);
+        Assert.Equal(1, state.QueueSquares);
+
         state.SetQueueState(waitingCount: 0, outstandingCount: 1);
         Assert.Equal(1, state.QueueSquares);
 
@@ -103,6 +109,55 @@ public class RecordingStateDisplayTests
 
         state.SetQueueState(TranscriptionQueue.Capacity - 1, TranscriptionQueue.Capacity);
         Assert.Equal(TranscriptionQueue.Capacity, state.QueueSquares);
+    }
+
+    // The overlay plays a slide-off animation on every drop of the square count,
+    // so a count that inflates a freshly queued clip shows a square leaving the
+    // bar the moment the button is released, before any clip was transcribed.
+    [Fact]
+    public async Task PublishedSquaresNeverExceedTheClipsInTheQueue()
+    {
+        var starts = 0;
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var state = new RecordingStateManager();
+
+        using var queue = new TranscriptionQueue(async (job, ct) =>
+        {
+            starts++;
+            await release.Task;
+        });
+
+        // One square per clip the queue holds: the bar must never show a clip
+        // that is not there, and never hide one that is.
+        var published = new List<(int Outstanding, int Squares)>();
+        queue.Changed += (_, _) =>
+        {
+            var outstanding = queue.OutstandingCount;
+            state.SetQueueState(queue.WaitingCount, outstanding);
+            published.Add((outstanding, state.QueueSquares));
+        };
+
+        // The first clip starts the worker inline; every later clip finds it
+        // parked, which is the ordering the running app has from clip two on.
+        Assert.True(await Task.Run(() => queue.TryEnqueue(new QueuedAudio(new byte[] { 1, 0 }, 1))));
+        await WaitUntilAsync(() => starts == 1, "the first clip never started");
+        release.SetResult();
+        await WaitUntilAsync(() => !queue.Busy, "the first clip never finished");
+
+        Assert.True(await Task.Run(() => queue.TryEnqueue(new QueuedAudio(new byte[] { 2, 0 }, 1))));
+        await WaitUntilAsync(() => starts == 2, "the second clip never started");
+        await WaitUntilAsync(() => !queue.Busy, "the second clip never finished");
+
+        Assert.NotEmpty(published);
+        Assert.All(published, pair => Assert.Equal(pair.Outstanding, pair.Squares));
+    }
+
+    static async Task WaitUntilAsync(Func<bool> condition, string because)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!condition() && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
+        Assert.True(condition(), because);
     }
 
     [Fact]

@@ -89,7 +89,7 @@ public class RecordingOverlayWiringTests
         SpectrumAnalyzer _spectrum = new();
         bool _isRecording;
         bool _isProcessing;
-        int _queuedCount;
+        int _outstanding;
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -108,16 +108,18 @@ public class RecordingOverlayWiringTests
         public bool IsProcessing
         {
             get => _isProcessing;
-            set { _isProcessing = value; Raise(nameof(IsProcessing)); Raise(nameof(QueueSquares)); }
+            set { _isProcessing = value; Raise(nameof(IsProcessing)); }
         }
 
-        public int QueuedCount
+        // Mirrors RecordingStateManager: the bar counts the clips the queue
+        // holds, so the queue hands over its outstanding total.
+        public int OutstandingCount
         {
-            get => _queuedCount;
-            set { _queuedCount = value; Raise(nameof(QueuedCount)); Raise(nameof(QueueSquares)); }
+            get => _outstanding;
+            set { _outstanding = value; Raise(nameof(OutstandingCount)); Raise(nameof(QueueSquares)); }
         }
 
-        public int QueueSquares => _isProcessing ? Math.Min(TranscriptionQueue.Capacity, _queuedCount + 1) : 0;
+        public int QueueSquares => Math.Min(TranscriptionQueue.Capacity, _outstanding);
 
         public string StatusText { get; set; } = "Recording";
         public string InfoText { get; set; } = "00:03";
@@ -475,17 +477,18 @@ public class RecordingOverlayWiringTests
             state.IsProcessing = false;
             Assert.Equal(Visibility.Collapsed, processing.Visibility);
 
-            // The queue bar shows one square for the clip in flight plus one per
-            // waiting clip, and the counters drive it through the binding.
+            // The queue bar shows one square per clip the queue holds, and the
+            // counters drive it through the binding.
             var queue = (QueueBar)window.FindName("Queue");
             Assert.Equal(0, queue.Squares);
             state.IsProcessing = true;
-            state.QueuedCount = 3;
+            state.OutstandingCount = 4;
             Assert.Equal(4, queue.Squares);
-            state.QueuedCount = 0;
+            state.OutstandingCount = 1;
             Assert.Equal(1, queue.Squares);
-            state.IsProcessing = false;
+            state.OutstandingCount = 0;
             Assert.Equal(0, queue.Squares);
+            state.IsProcessing = false;
 
             var barInk = InkOfSquares(new QueueBar { Squares = 3 });
             Assert.True(barInk > 90, $"the queue bar paints too little: {barInk}");
