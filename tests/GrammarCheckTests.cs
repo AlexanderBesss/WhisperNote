@@ -287,6 +287,10 @@ public class GrammarCheckTests
             GrammarCheckService.BuildRequestPayload("m", "text", "low"));
         Assert.Contains(@"""reasoning_effort"":""minimal""",
             GrammarCheckService.BuildRequestPayload("m", "text", " MINIMAL "));
+        Assert.Contains(@"""reasoning_effort"":""minimal""",
+            GrammarCheckService.BuildRequestPayload("m", "text", "Off"));
+        Assert.Contains(@"""reasoning_effort"":""none""",
+            GrammarCheckService.BuildRequestPayload("m", "text", "none"));
 
         // Unknown values drop the parameter, so a hand-edited config cannot inject JSON.
         Assert.DoesNotContain("reasoning_effort", GrammarCheckService.BuildRequestPayload("m", "text", null));
@@ -296,12 +300,22 @@ public class GrammarCheckTests
     }
 
     [Fact]
-    public void TheOffOptionAsksForTheLowestEffortServersAccept()
+    public void TheOffOptionIsStoredAsOffAndSentAsMinimal()
     {
-        // "Off" maps to the wire value "minimal", accepted by llama.cpp and OpenAI.
+        // Config, combo and code all say "off"; only the wire value is the "minimal" servers accept.
         var off = GrammarCheckService.EffortOptions.Single(option => option.Name == "Off");
-        Assert.Equal("minimal", off.Value);
-        Assert.Equal("minimal", GrammarCheckService.NormalizeEffort(off.Value));
+        Assert.Equal("off", off.Value);
+        Assert.Equal("off", GrammarCheckService.NormalizeEffort(off.Value));
+        Assert.Equal("minimal", GrammarCheckService.WireEffort(off.Value));
+    }
+
+    [Fact]
+    public void TheLegacyMinimalSpellingBecomesOffButStillReachesTheServer()
+    {
+        Assert.Equal("off", GrammarCheckService.NormalizeEffort(" MINIMAL "));
+        Assert.Equal("minimal", GrammarCheckService.WireEffort("minimal"));
+        Assert.Contains(@"""reasoning_effort"":""minimal""",
+            GrammarCheckService.BuildRequestPayload("m", "text", "minimal"));
     }
 
     [Fact]
@@ -310,7 +324,7 @@ public class GrammarCheckTests
         var handler = new StubHandler()
             .Reply("GET", "/v1/models", ModelsBody)
             .Reply("POST", "/v1/chat/completions", CorrectedBody);
-        using var service = new GrammarCheckService(Host, "", handler, "minimal");
+        using var service = new GrammarCheckService(Host, "", handler, "off");
 
         Assert.Equal("I have an apple and two bananas.", await service.CorrectAsync(Transcript));
         Assert.Contains(@"""reasoning_effort"":""minimal""", handler.Bodies[1]);

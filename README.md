@@ -91,10 +91,11 @@ The API key is stored in plain text in `whispernote.json`.
 
 **Thinking effort** decides how much the model may think before answering, forwarded as the standard
 `reasoning_effort` chat parameter: **Server default** sends no parameter at all (what an endpoint without
-that support expects), or **Off**, **Low**, **Medium**, **High** — `Off` sends `minimal`, the lowest value
-servers in this family accept. On a reasoning model this is the difference between roughly half a second
-and several seconds per correction, and proofreading rarely needs the extra thinking. An unrecognised
-value in `whispernote.json` is treated as "Server default".
+that support expects), or **Off**, **Low**, **Medium**, **High** — `Off` is what `whispernote.json` stores
+and it goes over the wire as `minimal`, the lowest value servers in this family accept. On a reasoning
+model this is the difference between roughly half a second and several seconds per correction, and
+proofreading rarely needs the extra thinking. An unrecognised value in `whispernote.json` is treated as
+"Server default".
 
 ### When a recording produces nothing
 

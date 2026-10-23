@@ -113,8 +113,9 @@ Output ONLY the corrected text.";
             if (response.IsSuccessStatusCode)
             {
                 DetectedModel = FindModelId(body) ?? FallbackModel;
+                var wireEffort = WireEffort(_reasoningEffort);
                 Logger.Info($"Grammar API ready at {_endpoint}: model {DetectedModel}" +
-                    (_reasoningEffort.Length > 0 ? $", effort {_reasoningEffort}" : ""));
+                    (wireEffort.Length > 0 ? $", effort {wireEffort}" : ""));
                 return true;
             }
 
@@ -221,20 +222,30 @@ Output ONLY the corrected text.";
     internal static bool ShouldRetryProbe(DateTime? failedAtUtc, DateTime nowUtc) =>
         failedAtUtc == null || nowUtc - failedAtUtc.Value >= TimeSpan.FromSeconds(ProbeRetryCooldownSeconds);
 
-    // Only these effort values are ever sent; unknown ones are omitted so strict servers keep working.
-    static readonly string[] EffortValues = { "none", "minimal", "low", "medium", "high" };
+    // Only these stored spellings are accepted; unknown ones normalize to "" so a hand-edited config
+    // cannot inject JSON and strict servers keep working.
+    static readonly string[] EffortValues = { "none", "off", "low", "medium", "high" };
 
+    // The config/UI spelling. "minimal" is what older whispernote.json files wrote for what is now "off".
     internal static string NormalizeEffort(string? effort)
     {
         var value = (effort ?? "").Trim().ToLowerInvariant();
+        if (value == "minimal")
+            value = "off";
         return Array.IndexOf(EffortValues, value) >= 0 ? value : "";
     }
 
-    // The "Off" label maps to "minimal": OpenAI-style servers reject "off" as a reasoning_effort value.
+    // OpenAI-style servers reject "off" as a reasoning_effort value, so only the wire keeps "minimal".
+    internal static string WireEffort(string? effort)
+    {
+        var value = NormalizeEffort(effort);
+        return value == "off" ? "minimal" : value;
+    }
+
     public static IReadOnlyList<GrammarEffortOption> EffortOptions { get; } = new[]
     {
         new GrammarEffortOption("", "Server default"),
-        new GrammarEffortOption("minimal", "Off"),
+        new GrammarEffortOption("off", "Off"),
         new GrammarEffortOption("low", "Low"),
         new GrammarEffortOption("medium", "Medium"),
         new GrammarEffortOption("high", "High"),
@@ -254,7 +265,7 @@ Output ONLY the corrected text.";
             },
         };
 
-        var reasoning = NormalizeEffort(effort);
+        var reasoning = WireEffort(effort);
         if (reasoning.Length > 0)
             payload["reasoning_effort"] = reasoning;
 

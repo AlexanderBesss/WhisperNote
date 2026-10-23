@@ -353,15 +353,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     public string? LocalModelId => _state.LocalModelId;
 
-    public Brush HardwareModeForeground { get; } = CreateHardwareModeBrush();
-
-    static SolidColorBrush CreateHardwareModeBrush()
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(124, 252, 0));
-        brush.Freeze();
-        return brush;
-    }
-
     string _hardwareMode = "";
     public string HardwareMode
     {
@@ -498,7 +489,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         _grammarEnabled = _state.GrammarCheckEnabled;
         _grammarApiHost = _state.GrammarApiEndpoint;
         _grammarApiKey = _state.GrammarApiKey;
-        _grammarEffort = _state.GrammarReasoningEffort;
+        _grammarEffort = GrammarCheckService.NormalizeEffort(_state.GrammarReasoningEffort);
         RefreshGrammarService();
         SyncStartupEntry();
         _hotkeyVirtualKeyCode = _state.HotkeyVirtualKeyCode;

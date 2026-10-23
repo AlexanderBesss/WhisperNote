@@ -44,7 +44,8 @@ public class AppSettings
     // API root; "/v1/models" and "/v1/chat/completions" are requested under it.
     public string GrammarApiEndpoint { get; set; } = "";
     public string GrammarApiKey { get; set; } = "";
-    // "minimal"|"low"|"medium"|"high", forwarded as the "reasoning_effort" chat parameter; empty = server default.
+    // "off"|"low"|"medium"|"high", stored exactly as the settings combo shows it; empty = server default.
+    // GrammarCheckService.WireEffort turns "off" into the "minimal" the API actually accepts.
     public string GrammarReasoningEffort { get; set; } = "";
 
     static string ConfigPath() => AppPaths.SettingsPath;
@@ -69,6 +70,13 @@ public class AppSettings
                 return defaults;
             }
             var changed = settings.NormalizeProviders();
+            // Rewrites the pre-"off" spelling (and any junk) so whispernote.json and the settings combo agree.
+            var effort = GrammarCheckService.NormalizeEffort(settings.GrammarReasoningEffort);
+            if (settings.GrammarReasoningEffort != effort)
+            {
+                settings.GrammarReasoningEffort = effort;
+                changed = true;
+            }
             if (!settings.MicDeviceNumberIsWasapi)
             {
                 settings.MicDeviceNumber = -1;
