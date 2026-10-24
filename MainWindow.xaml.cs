@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     SelectionToolbarWindow? _selectionToolbar;
     SelectionSnapshot? _lastSelection;
     bool _fixUiBusy;
+    DateTime _fixPillHiddenUntilUtc;
     bool _exitRequested;
     bool _closed;
 
@@ -115,14 +116,31 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Pressing the pill's X is itself a button-up, which wakes the watcher over a selection that
+        // is still live: without this the pill pops back under the cursor that just cancelled.
+        if (DateTime.UtcNow < _fixPillHiddenUntilUtc)
+            return;
+
         EnsureToolbar();
         _selectionToolbar!.ShowAt(snapshot.Rects);
     }
 
     void EnsureToolbar()
     {
-        _selectionToolbar ??= new SelectionToolbarWindow(() => _ = RunFixWithConfirmationAsync());
+        _selectionToolbar ??= new SelectionToolbarWindow(
+            () => _ = RunFixWithConfirmationAsync(),
+            CancelRunningFix);
         ApplyToolbarVisualState();
+    }
+
+    // The pill shows an X while a fix runs; clicking it stops the fix before anything is pasted.
+    void CancelRunningFix()
+    {
+        if (!_fixUiBusy)
+            return;
+
+        _fixPillHiddenUntilUtc = DateTime.UtcNow.AddMilliseconds(600);
+        _viewModel.CancelSelectionFix();
     }
 
     // The fix pill carries the same glow border as the recording overlay,
@@ -136,8 +154,8 @@ public partial class MainWindow : Window
         _selectionToolbar.FrameFps = VisualizerFpsCatalog.Resolve(_viewModel.VisualizerFps);
     }
 
-    // Button -> spinner -> green check (on success) or red X (on failure) at the
-    // selection's side. _fixUiBusy is UI-thread-only; it fences watcher events out
+    // Button -> spinner (clicking it again cancels) -> green check (on success) or red X (on failure)
+    // at the selection's side. _fixUiBusy is UI-thread-only; it fences watcher events out
     // of the popup while a fix flow owns it.
     async Task RunFixWithConfirmationAsync()
     {
@@ -163,7 +181,12 @@ public partial class MainWindow : Window
             }
 
             var ok = await _viewModel.FixSelectedTextAsync(_lastSelection?.TargetWindow ?? IntPtr.Zero);
-            if (_selectionToolbar != null && rects != null)
+            if (_viewModel.SelectionFixWasCancelled)
+            {
+                // A cancel is the user's own decision, not a failure: no red X, the pill just goes away.
+                _selectionToolbar?.HidePopup();
+            }
+            else if (_selectionToolbar != null && rects != null)
             {
                 if (ok)
                     _selectionToolbar.ShowConfirmation(rects);

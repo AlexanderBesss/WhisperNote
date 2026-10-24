@@ -36,6 +36,15 @@ public class SelectionFixTests
         Assert.Equal(blocked, SelectionFixer.IsBlocked(running, recording, processing));
     }
 
+    // The pill waits for the button to come up: a flip since the last call (low bit) is not a hold.
+    [Theory]
+    [InlineData((short)0, false)]
+    [InlineData((short)1, false)]
+    [InlineData(short.MinValue, true)]
+    [InlineData(short.MinValue + 1, true)]
+    public void OnlyAHeldMouseButtonCountsAsADrag(short asyncKeyState, bool held) =>
+        Assert.Equal(held, SelectionWatcher.ButtonHeld(asyncKeyState));
+
     private static UiRectPx Rect(int left, int top, int right, int bottom) =>
         new(left, top, right, bottom);
 

@@ -19,7 +19,9 @@
         <!-- The 20-unit margin gives the DropShadowEffect and the GlowBorder halo room;
              without it they clip square at the window bounds. Same pill as the recording
              overlay: #E61A1A1A, radius 16, padding 18,10, and the same drop shadow. -->
-        <Border Background="#E61A1A1A" CornerRadius="16" Padding="18,10" Margin="20">
+        <Border x:Name="Pill" Background="#E61A1A1A" CornerRadius="16" Padding="18,10" Margin="20"
+                MouseEnter="Pill_MouseEnter" MouseLeave="Pill_MouseLeave"
+                MouseLeftButtonUp="Pill_MouseLeftButtonUp">
             <Border.Effect>
                 <DropShadowEffect BlurRadius="18" ShadowDepth="2" Opacity="0.55"/>
             </Border.Effect>
@@ -41,6 +43,18 @@
                         FontSize="12"/>
                 <TextBlock x:Name="ProcessingGlyph"
                            Text="&#xE72C;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="16"
+                           Foreground="#F0F0F0"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed"/>
+                <!-- Hover replacement for the spinner: while a fix runs the pill is the cancel
+                     button, and this X is the only hint that clicking does something. The click
+                     area is the whole pill (the Border handles it, because FixButton is collapsed
+                     in that state), not just this glyph. -->
+                <TextBlock x:Name="CancelGlyph"
+                           Text="&#xE711;"
                            FontFamily="Segoe MDL2 Assets"
                            FontSize="16"
                            Foreground="#F0F0F0"

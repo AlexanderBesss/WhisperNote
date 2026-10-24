@@ -16,7 +16,7 @@ internal static class SelectionToolbarWiringTests
     // flips the WPF shutdown flag for the rest of the fact.
     internal static SelectionToolbarWindow AssertFixPillStyle()
     {
-        var window = new SelectionToolbarWindow(() => { });
+        var window = new SelectionToolbarWindow(() => { }, () => { });
 
         var root = (Grid)window.Content;
         var pill = (Border)root.Children[0];
@@ -39,6 +39,18 @@ internal static class SelectionToolbarWiringTests
         Assert.Same(warm, glow.Palette);
         window.FrameFps = 120;
         Assert.Equal(120, glow.FrameFps);
+
+        // While a fix runs the pill shows progress and the X only replaces the spinner under a real
+        // hover; arming itself waits for the next dispatcher frame so the click that started the
+        // fix cannot cancel it.
+        var processing = (TextBlock)window.FindName("ProcessingGlyph");
+        var cancel = (TextBlock)window.FindName("CancelGlyph");
+        window.ShowProcessing();
+        Assert.Equal(Visibility.Visible, processing.Visibility);
+        Assert.Equal(Visibility.Collapsed, cancel.Visibility);
+
+        window.HidePopup();
+        Assert.Equal(Visibility.Collapsed, processing.Visibility);
         return window;
     }
 }

@@ -33,10 +33,17 @@ Output ONLY the corrected text.";
     public const string FallbackModel = "default";
 
     const int ProbeTimeoutSeconds = 5;
-    const int GrammarTimeoutSeconds = 20;
+    const int ChatMinBudgetSeconds = 8;
+    const int ChatMaxBudgetSeconds = 20;
+    // A self-hosted server that unloaded the model spends tens of seconds loading it before the first
+    // answer, so the availability probe gets a cold-start-sized budget that the dictation path never does.
+    const int PingTimeoutSeconds = 30;
     const int MaxTokens = 1024;
+    const int PingMaxTokens = 1;
     const double Temperature = 0.1;
     const int ProbeRetryCooldownSeconds = 60;
+    const int ChatBreakoutBaseSeconds = 30;
+    const int ChatBreakoutMaxSeconds = 300;
     const int MaxGrowthFactor = 2;
     const int MaxGrowthSlackChars = 80;
     const int TruncateMaxLen = 300;
@@ -47,12 +54,30 @@ Output ONLY the corrected text.";
     readonly string _reasoningEffort;
 
     DateTime? _probeFailedAtUtc;
+    long _chatRetryAfterTick;
+    long _chatTrippedAtTick;
+    int _chatBreakoutSeconds;
+    string? _lastReadyLog;
+    string? _lastTripLog;
+    string? _lastProbeFailureLog;
+
+    static long NowTick => System.Diagnostics.Stopwatch.GetTimestamp();
 
     public string? DetectedModel { get; private set; }
 
     public string ReasoningEffort => _reasoningEffort;
 
     public string? ProbeError { get; private set; }
+
+    public string? ChatError { get; private set; }
+
+    // Stopwatch ticks, not wall clock: an NTP step or a manual clock change must not park the
+    // grammar pass for hours or release it early.
+    public bool ChatUnavailable => _chatRetryAfterTick != 0 && NowTick < _chatRetryAfterTick;
+
+    public int ChatRetryInSeconds => _chatRetryAfterTick == 0
+        ? 0
+        : Math.Max(0, (int)Math.Ceiling((_chatRetryAfterTick - NowTick) / (double)System.Diagnostics.Stopwatch.Frequency));
 
     public GrammarCheckService(string endpoint, string apiKey, string? reasoningEffort = null)
         : this(endpoint, apiKey, new HttpClientHandler(), reasoningEffort)
@@ -66,7 +91,9 @@ Output ONLY the corrected text.";
         _reasoningEffort = NormalizeEffort(reasoningEffort);
         _http = new HttpClient(handler)
         {
-            Timeout = TimeSpan.FromSeconds(GrammarTimeoutSeconds)
+            // PostChatAsync gives every request its own budget; this ceiling only catches one that
+            // outlives its own cancellation, so it must stay above the longest budget.
+            Timeout = TimeSpan.FromSeconds(Math.Max(ChatMaxBudgetSeconds, PingTimeoutSeconds) + 2)
         };
 
         if (!string.IsNullOrEmpty(apiKey))
@@ -99,7 +126,6 @@ Output ONLY the corrected text.";
 
     public async Task<bool> ProbeAsync(CancellationToken ct = default)
     {
-        DetectedModel = null;
         ProbeError = null;
 
         try
@@ -114,8 +140,8 @@ Output ONLY the corrected text.";
             {
                 DetectedModel = FindModelId(body) ?? FallbackModel;
                 var wireEffort = WireEffort(_reasoningEffort);
-                Logger.Info($"Grammar API ready at {_endpoint}: model {DetectedModel}" +
-                    (wireEffort.Length > 0 ? $", effort {wireEffort}" : ""));
+                var summary = $"model {DetectedModel}" + (wireEffort.Length > 0 ? $", effort {wireEffort}" : "");
+                LogReady($"Grammar API ready at {_endpoint}: {summary}");
                 return true;
             }
 
@@ -123,7 +149,7 @@ Output ONLY the corrected text.";
             if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed)
             {
                 DetectedModel = FallbackModel;
-                Logger.Info($"Grammar API at {_endpoint} does not list models; using {FallbackModel}");
+                LogReady($"Grammar API at {_endpoint} does not list models; using {FallbackModel}");
                 return true;
             }
 
@@ -140,9 +166,24 @@ Output ONLY the corrected text.";
                 : $"{_endpoint} unreachable ({ex.Message})";
         }
 
+        // A previously detected model is kept: the listing flaps (429/500/timeout) while a
+        // self-hosted box is busy, and losing the name here would make every pass fall back to the
+        // probe cooldown and skip grammar even though the chat route answers. The chat ping is what
+        // decides availability now, so a stale name is only cleared by a chat failure.
         _probeFailedAtUtc = DateTime.UtcNow;
-        Logger.Warn($"Grammar API probe failed: {ProbeError}");
+        _lastReadyLog = null;
+        LogThrottled(ref _lastProbeFailureLog, $"Grammar API probe failed: {ProbeError}");
         return false;
+    }
+
+    // The periodic check would otherwise repeat the same readiness line every 30 s.
+    void LogReady(string message)
+    {
+        _lastProbeFailureLog = null;
+        if (message == _lastReadyLog)
+            return;
+        _lastReadyLog = message;
+        Logger.Info(message);
     }
 
     public async Task<string?> CorrectAsync(string text, CancellationToken ct = default)
@@ -150,47 +191,70 @@ Output ONLY the corrected text.";
         if (string.IsNullOrWhiteSpace(text))
             return null;
 
+        if (ChatUnavailable)
+        {
+            Logger.Info($"Grammar check skipped: the API was not answering, retrying in {ChatRetryInSeconds}s ({ChatError})");
+            return null;
+        }
+
         if (!await EnsureModelAsync(ct))
             return null;
 
         var model = DetectedModel ?? FallbackModel;
+        var (ok, status, raw, error, elapsedMs) = await PostChatAsync(
+            BuildRequestPayload(model, text, _reasoningEffort), ChatBudgetSeconds(text.Length), ct);
 
+        if (!ok)
+        {
+            Logger.Error($"Grammar request failed: {error}");
+            TripChatBreakout(error ?? $"HTTP {status}");
+            if (model == FallbackModel)
+                DetectedModel = null;
+            return null;
+        }
+
+        CloseChatBreakout();
+
+        var corrected = ExtractContent(raw);
+        if (corrected == null)
+        {
+            Logger.Warn("Grammar API returned no text");
+            return null;
+        }
+
+        if (corrected.Length > text.Length * MaxGrowthFactor + MaxGrowthSlackChars)
+        {
+            Logger.Warn($"Grammar answer is too long, keeping the transcript: {Truncate(corrected)}");
+            return null;
+        }
+
+        Logger.Info($"Grammar ({elapsedMs} ms): \"{Truncate(text)}\" -> \"{Truncate(corrected)}\"");
+        return corrected;
+    }
+
+    // Proofreading sits on the paste path: one stalled call must not park the transcript for the whole
+    // 20 s ceiling, so the budget grows with the text the model has to rewrite.
+    internal static int ChatBudgetSeconds(int textLength) =>
+        Math.Clamp(ChatMinBudgetSeconds + textLength / 200, ChatMinBudgetSeconds, ChatMaxBudgetSeconds);
+
+    async Task<(bool Ok, int Status, string Body, string? Error, int ElapsedMs)> PostChatAsync(
+        string payload, int budgetSeconds, CancellationToken ct)
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(GrammarTimeoutSeconds));
-            using var content = new StringContent(
-                BuildRequestPayload(model, text, _reasoningEffort), Encoding.UTF8, "application/json");
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(budgetSeconds));
+            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
             using var response = await _http.PostAsync(
                 TranscriptionService.BuildEndpointUri(_apiRoot, "/chat/completions"),
                 content, timeoutCts.Token);
             var raw = await response.Content.ReadAsStringAsync(timeoutCts.Token);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                if (model == FallbackModel)
-                    DetectedModel = null;
-
-                Logger.Error($"Grammar request failed: {DescribeStatus(response, raw)}");
-                return null;
-            }
-
-            var corrected = ExtractContent(raw);
-            if (corrected == null)
-            {
-                Logger.Warn("Grammar API returned no text");
-                return null;
-            }
-
-            if (corrected.Length > text.Length * MaxGrowthFactor + MaxGrowthSlackChars)
-            {
-                Logger.Warn($"Grammar answer is too long, keeping the transcript: {Truncate(corrected)}");
-                return null;
-            }
-
-            Logger.Info($"Grammar: \"{Truncate(text)}\" -> \"{Truncate(corrected)}\"");
-            return corrected;
+            return response.IsSuccessStatusCode
+                ? (true, (int)response.StatusCode, raw, null, Elapsed(watch))
+                : (false, (int)response.StatusCode, raw, DescribeStatus(response, raw), Elapsed(watch));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -198,11 +262,92 @@ Output ONLY the corrected text.";
         }
         catch (Exception ex)
         {
-            Logger.Error($"Grammar request failed: {ex.Message}");
-            if (model == FallbackModel)
-                DetectedModel = null;
-            return null;
+            return (false, 0, "", ex.Message, Elapsed(watch));
         }
+    }
+
+    static int Elapsed(System.Diagnostics.Stopwatch watch) => (int)watch.ElapsedMilliseconds;
+
+    // One stalled or rejected chat round trip closes the pass for a while, doubling per consecutive
+    // failure: a hung model costs the user the full budget, so repeating that per dictation is worse
+    // than pasting unproofed text.
+    void TripChatBreakout(string reason, bool escalate = true)
+    {
+        _chatBreakoutSeconds = !escalate
+            ? ChatBreakoutBaseSeconds
+            : _chatBreakoutSeconds <= 0
+                ? ChatBreakoutBaseSeconds
+                : Math.Min(_chatBreakoutSeconds * 2, ChatBreakoutMaxSeconds);
+        _chatTrippedAtTick = NowTick;
+        _chatRetryAfterTick = _chatTrippedAtTick +
+            (long)_chatBreakoutSeconds * System.Diagnostics.Stopwatch.Frequency;
+        ChatError = reason;
+        LogThrottled(ref _lastTripLog,
+            $"Grammar API marked unavailable for {_chatBreakoutSeconds}s: {reason}");
+    }
+
+    void CloseChatBreakout()
+    {
+        if (_chatBreakoutSeconds > 0)
+            Logger.Info($"Grammar API is answering again at {_endpoint}");
+        _chatBreakoutSeconds = 0;
+        _chatRetryAfterTick = 0;
+        _lastTripLog = null;
+        ChatError = null;
+    }
+
+    // An endpoint that is down would otherwise log the same line on every 30 s tick and rotate the
+    // real history away; the caches reset whenever the API recovers, so a fresh outage still logs.
+    static void LogThrottled(ref string? last, string message)
+    {
+        if (last == message)
+            return;
+        last = message;
+        Logger.Warn(message);
+    }
+
+    internal static bool PingFastEnoughForADictation(int elapsedMs) =>
+        elapsedMs <= ChatMinBudgetSeconds * 1000;
+
+    // The check ran in parallel with the dictation path: a ping that started before a newer chat
+    // failure must not erase the backoff that failure just recorded.
+    internal static bool MayReopen(long chatTrippedAtTick, long checkStartedAtTick) =>
+        chatTrippedAtTick <= checkStartedAtTick;
+
+    // The periodic availability check. A model listing is not enough: it stays served while the chat
+    // route is stalled, so availability is decided by a one-token chat ping instead.
+    public async Task<bool> CheckAvailabilityAsync(CancellationToken ct = default)
+    {
+        var startedAtTick = NowTick;
+        if (!await ProbeAsync(ct))
+            return false;
+
+        var model = DetectedModel ?? FallbackModel;
+        var (ok, status, _, error, elapsedMs) = await PostChatAsync(
+            BuildPingPayload(model, _reasoningEffort), PingTimeoutSeconds, ct);
+
+        if (!ok)
+        {
+            TripChatBreakout(error ?? $"HTTP {status}");
+            return false;
+        }
+
+        // The ping budget is deliberately longer than a dictation's, so "it answered" is not proof a
+        // dictation would have finished: only a fast answer reopens the pass. A slow one stays closed
+        // at the base interval without escalating, because the ping itself keeps warming the model.
+        if (!PingFastEnoughForADictation(elapsedMs))
+        {
+            TripChatBreakout(
+                $"availability ping answered in {elapsedMs / 1000.0:F1}s, longer than a dictation budget",
+                escalate: false);
+            return false;
+        }
+
+        if (!MayReopen(_chatTrippedAtTick, startedAtTick))
+            return false;
+
+        CloseChatBreakout();
+        return true;
     }
 
     async Task<bool> EnsureModelAsync(CancellationToken ct)
@@ -263,6 +408,24 @@ Output ONLY the corrected text.";
                 new { role = "system", content = SystemPrompt },
                 new { role = "user", content = ProofreadRequest(text) },
             },
+        };
+
+        var reasoning = WireEffort(effort);
+        if (reasoning.Length > 0)
+            payload["reasoning_effort"] = reasoning;
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    // The ping keeps the wire shape a strict server can reject (model name, reasoning effort) but drops
+    // the proofreader prompt: a check every minute against a metered API must not cost a real request.
+    internal static string BuildPingPayload(string model, string? effort = null)
+    {
+        var payload = new Dictionary<string, object>
+        {
+            ["model"] = model,
+            ["max_tokens"] = PingMaxTokens,
+            ["messages"] = new object[] { new { role = "user", content = "ping" } },
         };
 
         var reasoning = WireEffort(effort);

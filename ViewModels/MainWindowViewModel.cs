@@ -245,6 +245,12 @@ public class MainWindowViewModel : ViewModel, IDisposable
     string? _grammarSignature;
     bool _isProbingGrammar;
 
+    // Availability is refreshed off the dictation path: without this the first pass after a cooldown
+    // pays the probe and, after a stalled model, the full chat budget. The self-hosted grammar box lets
+    // its model go idle between requests, so the cadence is short enough to keep it resident; the ping
+    // itself is one token with no system prompt.
+    readonly DispatcherTimer _grammarHealthTimer = new() { Interval = TimeSpan.FromSeconds(30) };
+
     void RefreshGrammarService()
     {
         var signature = $"{_grammarApiHost}|{_grammarApiKey}|{_grammarEffort}";
@@ -263,6 +269,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         UpdateGrammarStatus();
 
+        if (_grammarEnabled && _grammar != null)
+            _grammarHealthTimer.Start();
+        else
+            _grammarHealthTimer.Stop();
+
         if (_grammarEnabled && _grammar is { DetectedModel: null } && !_isProbingGrammar)
             FireAndForget(ProbeGrammarAsync(), "GrammarProbe");
     }
@@ -277,7 +288,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         UpdateGrammarStatus();
         try
         {
-            await service.ProbeAsync();
+            await service.CheckAvailabilityAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -331,6 +342,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             _grammarState = GrammarState.Probing;
             text = "Checking grammar API...";
+        }
+        else if (_grammar.ChatUnavailable)
+        {
+            _grammarState = GrammarState.Problem;
+            text = $"Grammar API not answering, retrying in {_grammar.ChatRetryInSeconds}s — text is pasted as dictated";
         }
         else if (_grammar.DetectedModel != null)
         {
@@ -456,6 +472,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             _highlightTimer.Stop();
             SetHighlighted(false);
+        };
+        _grammarHealthTimer.Tick += (_, _) =>
+        {
+            if (_grammarEnabled && _grammar != null && !_isProbingGrammar)
+                FireAndForget(ProbeGrammarAsync(), "GrammarProbe");
         };
         RecordingManager.PropertyChanged += (_, e) =>
         {
@@ -1025,6 +1046,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
     // UI-thread-only flag; read cross-thread only via WaitForSelectionFixIdleAsync.
     volatile bool _fixSelectionRunning;
 
+    // Cancel channel for the running fix, set on the UI thread by the pill's X button.
+    CancellationTokenSource? _fixCts;
+
     // Held here so app exit mid-flow can write the user's clipboard snapshot back synchronously.
     string? _pendingClipboardRestore;
 
@@ -1062,6 +1086,17 @@ public class MainWindowViewModel : ViewModel, IDisposable
             await Task.Delay(100);
     }
 
+    // Whether the last fix ended on a cancel. MainWindow branches on this outcome, not on the click
+    // that requested the cancel: a cancel that arrives after the paste must still report success.
+    public bool SelectionFixWasCancelled { get; private set; }
+
+    // Aborts a running fix from the pill. A cancelled grammar pass rethrows instead of failing,
+    // so it never counts against the API availability backoff.
+    public void CancelSelectionFix()
+    {
+        _fixCts?.Cancel();
+    }
+
     // targetWindow is the window that held the selection; injected keys land on the focused window,
     // so focus must be pulled back from WhisperNote's own popup when needed.
     public async Task<bool> FixSelectedTextAsync(IntPtr targetWindow = default)
@@ -1078,9 +1113,12 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
 
         _fixSelectionRunning = true;
+        SelectionFixWasCancelled = false;
+        using var cts = new CancellationTokenSource();
+        _fixCts = cts;
         try
         {
-            return await FixSelectedTextCoreAsync(targetWindow);
+            return await FixSelectedTextCoreAsync(targetWindow, cts.Token);
         }
         catch (Exception ex)
         {
@@ -1090,12 +1128,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
         }
         finally
         {
+            _fixCts = null;
             _pendingClipboardRestore = null;
             _fixSelectionRunning = false;
         }
     }
 
-    async Task<bool> FixSelectedTextCoreAsync(IntPtr targetWindow)
+    async Task<bool> FixSelectedTextCoreAsync(IntPtr targetWindow, CancellationToken ct)
     {
         var service = _grammar;
         if (service == null)
@@ -1122,8 +1161,33 @@ public class MainWindowViewModel : ViewModel, IDisposable
         // copied (re-fixing the same selection): seed a sentinel so any successful Ctrl+C is detectable.
         // Falls back to diffing when the sentinel cannot be written.
         var sentinel = $"__whispernote_copy_probe_{Environment.TickCount:X}__";
-        var probeSent = await TrySetClipboardTextAsync(sentinel) || await TrySetClipboardTextAsync(sentinel);
+        // Only seed the sentinel when there is a text snapshot to put back: with a non-text or empty
+        // clipboard it would be left behind and would then be mistaken for the copied selection.
+        var probeSent = snapshot != null &&
+            (await TrySetClipboardTextAsync(sentinel) || await TrySetClipboardTextAsync(sentinel));
         var probe = snapshot != null && probeSent ? sentinel : snapshot;
+
+        // A cancel must never leave the probe sentinel or the copied text in the user's clipboard,
+        // and must never paste: every checkpoint below ends the flow here.
+        async Task UndoCancelSideEffectsAsync()
+        {
+            if (snapshot == null)
+                return;
+            var current = await TryGetClipboardTextAsync();
+            if (current == null || current == snapshot)
+                return;
+            if (!await TrySetClipboardTextAsync(snapshot))
+                Logger.Error("Selection fix: clipboard restore failed after the cancel");
+        }
+
+        async Task ReportCancelledAsync(string stage)
+        {
+            Logger.Info($"Selection fix: cancelled {stage}");
+            SelectionFixWasCancelled = true;
+            await UndoCancelSideEffectsAsync();
+            ShowFixStatus("Selection fix", "Red", "fix cancelled");
+        }
+
         if (AutoPaster.ReclaimForeignForeground(targetWindow))
             Logger.Info("Selection fix: focus was on a WhisperNote window, restored the target app");
         var copyInjected = AutoPaster.SendCtrlC();
@@ -1136,7 +1200,12 @@ public class MainWindowViewModel : ViewModel, IDisposable
             return false;
         }
 
-        var selected = await WaitForCopiedSelectionAsync(probe);
+        var selected = await WaitForCopiedSelectionAsync(probe, ct);
+        if (ct.IsCancellationRequested)
+        {
+            await ReportCancelledAsync("while copying the selection");
+            return false;
+        }
         if (selected == null)
         {
             Logger.Info("Selection fix: clipboard unchanged after Ctrl+C (nothing selected or copy refused)");
@@ -1160,9 +1229,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
         string? corrected = null;
         try
         {
-            corrected = await service.CorrectAsync(selected);
+            corrected = await service.CorrectAsync(selected, ct);
         }
         catch (OperationCanceledException) { }
+
+        if (ct.IsCancellationRequested)
+        {
+            await ReportCancelledAsync("while correcting");
+            return false;
+        }
 
         if (string.IsNullOrWhiteSpace(corrected))
         {
@@ -1185,6 +1260,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
             return false;
         }
         lastWritten = corrected;
+
+        // Last chance to honour a cancel: everything from here on lands in the user's document.
+        if (ct.IsCancellationRequested)
+        {
+            await ReportCancelledAsync("before the paste");
+            return false;
+        }
 
         await Task.Delay(100);
         AutoPaster.ReclaimForeignForeground(targetWindow);
@@ -1211,9 +1293,9 @@ public class MainWindowViewModel : ViewModel, IDisposable
     }
 
     // The target app fills the clipboard a moment after the injected Ctrl+C.
-    async Task<string?> WaitForCopiedSelectionAsync(string? snapshot)
+    async Task<string?> WaitForCopiedSelectionAsync(string? snapshot, CancellationToken ct)
     {
-        for (var attempt = 0; attempt < 8; attempt++)
+        for (var attempt = 0; attempt < 8 && !ct.IsCancellationRequested; attempt++)
         {
             await Task.Delay(60);
             var current = await TryGetClipboardTextAsync();
@@ -1334,6 +1416,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         // Dispose the queue first: it cancels the running job and drops queued ones so nothing below is touched.
         _queue.Dispose();
         _highlightTimer.Stop();
+        _grammarHealthTimer.Stop();
         _captureLock.Dispose();
         _keyboardHook?.Dispose();
         ServerManager.Dispose();

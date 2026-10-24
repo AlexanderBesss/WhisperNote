@@ -41,6 +41,13 @@ public sealed class SelectionWatcher : IDisposable
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     static extern IntPtr GetForegroundWindow();
 
+    const int VK_LBUTTON = 0x01;
+    const int VK_RBUTTON = 0x02;
+    const int AsyncKeyIsDown = 1 << 15;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern short GetAsyncKeyState(int vKey);
+
     public event Action<SelectionSnapshot?>? SelectionChanged;
 
     readonly AutomationFocusChangedEventHandler _focusHandler;
@@ -60,7 +67,12 @@ public sealed class SelectionWatcher : IDisposable
         _debounce.Tick += (_, _) =>
         {
             _debounce.Stop();
-            ScheduleQuery();
+            // Keep waiting instead of querying: the button-up event lands its own debounce,
+            // so the pill appears once the drag ends rather than over half-selected text.
+            if (DragInProgress())
+                _debounce.Start();
+            else
+                ScheduleQuery();
         };
 
         _focusHandler = (_, _) => ScheduleDebounce();
@@ -88,6 +100,15 @@ public sealed class SelectionWatcher : IDisposable
         _debounce.Stop();
         _debounce.Start();
     }
+
+    // A drag-select reports a new selection on every move, so a query has to wait for the
+    // mouse button to come up; GetAsyncKeyState reads the physical system-wide state.
+    static bool DragInProgress() =>
+        ButtonHeld(GetAsyncKeyState(VK_LBUTTON)) || ButtonHeld(GetAsyncKeyState(VK_RBUTTON));
+
+    // GetAsyncKeyState's low bit only says the state flipped since the last call;
+    // the held state is the high bit.
+    internal static bool ButtonHeld(short asyncKeyState) => (asyncKeyState & AsyncKeyIsDown) != 0;
 
     // Core-era AutomationEventArgs no longer carries Source, so the TextPattern
     // handler is (re)attached to whatever element is focused at query time.

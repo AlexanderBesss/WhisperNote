@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -98,10 +99,14 @@ public partial class SelectionToolbarWindow : Window
     static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
     readonly Action _onClick;
+    readonly Action _onCancel;
+    // True while a fix runs: the pill then acts as the cancel button.
+    bool _cancelArmed;
 
-    public SelectionToolbarWindow(Action onClick)
+    public SelectionToolbarWindow(Action onClick, Action onCancel)
     {
         _onClick = onClick;
+        _onCancel = onCancel;
         InitializeComponent();
         // Park far off-screen so the very first Show() cannot flash at the default spot
         // before SetWindowPos places the window.
@@ -110,6 +115,50 @@ public partial class SelectionToolbarWindow : Window
     }
 
     void FixButton_Click(object sender, RoutedEventArgs e) => _onClick();
+
+    void Pill_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (_cancelArmed)
+            ShowCancelAffordance(true);
+    }
+
+    void Pill_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (_cancelArmed)
+            ShowCancelAffordance(false);
+    }
+
+    void Pill_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_cancelArmed)
+        {
+            // Disarm on the spot: the flow tears the popup down asynchronously, and a second
+            // click before that must not fire the cancel callback twice.
+            ArmCancel(false);
+            _onCancel();
+        }
+    }
+
+    void ArmCancel(bool armed)
+    {
+        _cancelArmed = armed;
+        Pill.Cursor = armed ? Cursors.Hand : Cursors.Arrow;
+        if (!armed)
+        {
+            CancelGlyph.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // The cursor already sits on the pill right after the Fix click, so the affordance
+        // has to appear without waiting for a MouseEnter.
+        ShowCancelAffordance(Pill.IsMouseOver);
+    }
+
+    void ShowCancelAffordance(bool showCancel)
+    {
+        CancelGlyph.Visibility = showCancel ? Visibility.Visible : Visibility.Collapsed;
+        ProcessingGlyph.Visibility = showCancel ? Visibility.Collapsed : Visibility.Visible;
+    }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
@@ -189,6 +238,7 @@ public partial class SelectionToolbarWindow : Window
 
     void FlashGlyphAndAutoHide(IReadOnlyList<UiRectPx> rects, UIElement glyph, int visibleMs)
     {
+        ArmCancel(false);
         FixButton.Visibility = Visibility.Collapsed;
         ProcessingGlyph.Visibility = Visibility.Collapsed;
         DoneGlyph.Visibility = Visibility.Collapsed;
@@ -231,10 +281,21 @@ public partial class SelectionToolbarWindow : Window
             {
                 RepeatBehavior = RepeatBehavior.Forever,
             });
+
+        // Arm on the next dispatcher frame: the click that started this fix is still bubbling, and
+        // leaning on ButtonBase marking its own MouseLeftButtonUp handled is a framework detail.
+        Dispatcher.BeginInvoke(
+            () =>
+            {
+                if (ProcessingGlyph.Visibility == Visibility.Visible)
+                    ArmCancel(true);
+            },
+            DispatcherPriority.Input);
     }
 
     void RestoreButtonMode()
     {
+        ArmCancel(false);
         _spinTransform?.BeginAnimation(RotateTransform.AngleProperty, null);
         ProcessingGlyph.Visibility = Visibility.Collapsed;
         DoneGlyph.Visibility = Visibility.Collapsed;

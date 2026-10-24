@@ -221,6 +221,95 @@ public class GrammarCheckTests
     }
 
     [Fact]
+    public async Task AStalledChatCallSkipsEveryLaterPassWithoutAskingAgain()
+    {
+        // The model listing keeps answering while a load or a full queue stalls the chat route,
+        // so only the chat outcome may gate the pass.
+        var handler = new StubHandler()
+            .Reply("GET", "/v1/models", ModelsBody)
+            .Route("POST", "/v1/chat/completions", _ => throw new TaskCanceledException());
+        using var service = new GrammarCheckService(Host, "", handler);
+
+        Assert.Null(await service.CorrectAsync(Transcript));
+        Assert.True(service.ChatUnavailable);
+        Assert.Null(await service.CorrectAsync(Transcript));
+
+        Assert.Equal(new[] { "GET /v1/models", "POST /v1/chat/completions" }, handler.Requests);
+    }
+
+    [Fact]
+    public async Task ThePeriodicCheckReopensThePassOnceTheChatAnswersAgain()
+    {
+        var failures = 1;
+        var handler = new StubHandler()
+            .Reply("GET", "/v1/models", ModelsBody)
+            .Route("POST", "/v1/chat/completions", _ => failures-- > 0
+                ? new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("") }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(CorrectedBody) });
+        using var service = new GrammarCheckService(Host, "", handler);
+
+        Assert.Null(await service.CorrectAsync(Transcript));
+        Assert.True(service.ChatUnavailable);
+
+        Assert.True(await service.CheckAvailabilityAsync());
+        Assert.False(service.ChatUnavailable);
+        // The ping keeps the model and effort a strict server validates, but not the proofreader prompt:
+        // a check every 30 s must not cost a full request against a metered API.
+        var ping = handler.Bodies.Single(body => body.Contains("\"ping\""));
+        Assert.Contains("\"model\":\"qwen2.5-7b-instruct\"", ping);
+        Assert.DoesNotContain("proofreader", ping);
+        Assert.Equal("I have an apple and two bananas.", await service.CorrectAsync(Transcript));
+    }
+
+    [Theory]
+    [InlineData(500, true)]
+    [InlineData(8000, true)]
+    [InlineData(8001, false)]
+    [InlineData(25500, false)]
+    public void APingThatIsSlowerThanADictationBudgetDoesNotReopenThePass(int elapsedMs, bool usable) =>
+        Assert.Equal(usable, GrammarCheckService.PingFastEnoughForADictation(elapsedMs));
+
+    [Fact]
+    public void ACheckThatStartedBeforeAFailureDoesNotEraseItsBackoff()
+    {
+        const long checkStarted = 10_000_000;
+        Assert.True(GrammarCheckService.MayReopen(checkStarted - 1, checkStarted));
+        Assert.False(GrammarCheckService.MayReopen(checkStarted + 1, checkStarted));
+        Assert.True(GrammarCheckService.MayReopen(0, checkStarted));
+    }
+
+    [Fact]
+    public async Task ACancellingUserIsNotCountedAgainstTheApi()
+    {
+        // The Fix pill's X cancels a pass; that is the user's decision, not an outage, so it must
+        // leave availability alone instead of opening the backoff for the next dictation.
+        var handler = new StubHandler()
+            .Reply("GET", "/v1/models", ModelsBody)
+            .Reply("POST", "/v1/chat/completions", CorrectedBody);
+        using var service = new GrammarCheckService(Host, "", handler);
+
+        // Prime the model name so the cancelled pass really reaches the chat route.
+        Assert.Equal("I have an apple and two bananas.", await service.CorrectAsync(Transcript));
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => service.CorrectAsync(Transcript, cancelled.Token));
+
+        Assert.False(service.ChatUnavailable);
+        Assert.Null(service.ChatError);
+        Assert.NotNull(service.DetectedModel);
+    }
+
+    [Theory]
+    [InlineData(0, 8)]
+    [InlineData(300, 9)]
+    [InlineData(1200, 14)]
+    [InlineData(100000, 20)]
+    public void TheChatBudgetGrowsWithTheTextButStaysShortEnoughToPaste(int length, int expected) =>
+        Assert.Equal(expected, GrammarCheckService.ChatBudgetSeconds(length));
+
+    [Fact]
     public void FailedProbeIsRetriedOnlyAfterTheCooldown()
     {
         var failedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
