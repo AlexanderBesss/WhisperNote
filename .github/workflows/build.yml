@@ -28,7 +28,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       # build.ps1 is the single source of truth: it runs the tests, then
       # publishes, compiling the app exactly once. Any build-setting change

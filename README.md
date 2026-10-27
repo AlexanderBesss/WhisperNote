@@ -19,11 +19,10 @@ For a manual build, right-click `build.cmd` and choose **Run**. It launches
 `build.ps1` with the required PowerShell execution-policy bypass and keeps the
 window open so errors remain visible.
 
-`build.ps1` checks the runtime payload before publishing. If the llama.cpp CUDA
-binaries are missing from `llm-servers/llama/windows/llama`, it runs
-`update-llama.ps1` to download the latest preview, so a fresh clone builds
-without a manual download step. Missing optional backends (Vulkan, NPU) and
-missing model files are reported, not fatal.
+`build.ps1` never downloads or copies any runtime payload: the llama.cpp
+backends and the model files are fetched on first use by the app itself
+(`BackendDownloader` / `ModelDownloader`) into `publish/`, according to the
+machine's hardware or the CPU-only setting.
 
 Publishing is non-destructive: the app is published into `obj/publish-staging`
 and merged into `publish/`, so rebuilding keeps `publish/models/*.gguf`,
@@ -34,10 +33,6 @@ produces are removed.
 | Switch | Effect |
 | --- | --- |
 | `-Kill` | Force-close the running app (and its `llama-server`) before publishing. |
-| `-NoUpdate` | Never download; fail if a required backend is missing. |
-| `-UpdateBackends` | Also fetch the CUDA 12.4 (legacy NVIDIA), Vulkan (iGPU) and NPU backends when missing. |
-| `-ForceUpdate` | Run the update scripts even when binaries are already present. |
-| `-RefreshModels` | Overwrite `publish/models` from the source `models/` folder. |
 
 ## GPU Backends
 
@@ -59,14 +54,13 @@ wrong guess degrades instead of failing. The status chip in the main window
 shows which backend is running. **CPU only mode** in Settings skips every GPU
 backend.
 
-The backend payloads live in `llm-servers/llama/windows/` in this repository
-and are synced into `publish/` by `build.ps1`; `cuda12/update-cuda12.ps1` and
-`vulkan/update-vulkan.ps1` refresh them from llama.cpp preview releases.
+The backend payloads are downloaded into `publish/` by the app on first use,
+and the staging merge in `build.ps1` keeps those folders through every rebuild.
 
 ## Requirements
 
 - Windows 10+
-- .NET 8 Runtime
+- .NET 10 Desktop Runtime
 - llama.cpp server (`llama-server.exe`) for local models
 
 ## Configuration

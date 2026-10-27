@@ -12,6 +12,10 @@ namespace WhisperNote.Services;
 
 // Deliberately kept alive between recordings: the Intel SST mic costs 350-650 ms
 // to wake, and the warm client blocks WASAPI exclusive mode.
+// NAudio 3 marks WasapiCapture obsolete in favour of WasapiRecorder (IAsyncEnumerable
+// capture), but this recorder depends on the event model: the Starting-state confirmation
+// in ConfirmCaptureStarted and the RecordingStopped handshake in StopCaptureAsync.
+#pragma warning disable CS0618
 public class AudioRecorder : IDisposable
 {
     const int DisposeTimeoutMs = 2000;
@@ -422,7 +426,7 @@ public class AudioRecorder : IDisposable
                 using var output = new MemoryStream((int)(rawLength / 4));
                 var buffer = new byte[ConvertChunkBytes];
                 int read;
-                while ((read = resampler.Read(buffer, 0, buffer.Length)) > 0)
+                while ((read = resampler.Read(buffer)) > 0)
                     output.Write(buffer, 0, read);
                 return output.ToArray();
             }

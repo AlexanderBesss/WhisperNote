@@ -240,6 +240,10 @@ Output ONLY the corrected text.";
     async Task<(bool Ok, int Status, string Body, string? Error, int ElapsedMs)> PostChatAsync(
         string payload, int budgetSeconds, CancellationToken ct)
     {
+        // .NET 10 no longer surfaces a pre-cancelled token as an OperationCanceledException
+        // through HttpClient, so the user-cancel contract (throw OCE, leave the backoff
+        // untouched) needs this explicit check.
+        ct.ThrowIfCancellationRequested();
         var watch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
