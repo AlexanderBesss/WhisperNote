@@ -676,7 +676,6 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 _hotkeyPressed = false;
                 if (RecordingManager.IsRecording)
                 {
-                    // The pending-stop fallback only applies while this press's capture is coming up.
                     await StopHoldRecord(queueIfBusy: _captureStarting);
                 }
             }

@@ -164,7 +164,6 @@ public sealed class SettingsViewModel : ViewModel
 
     public PreviewVoiceSource PreviewSource => _previewSource;
 
-    // The same enum the overlay receives, so the preview cannot drift from the setting.
     public Config.VisualizerStyle PreviewStyle => VisualizerCatalog.Resolve(_visualizerStyle);
 
     public IReadOnlyList<VisualizerPalette> VisualizerPaletteOptions { get; } = VisualizerPaletteCatalog.Options;

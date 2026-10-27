@@ -433,7 +433,6 @@
         </Grid>
     </Border>
 
-    <!-- The settings window previews the pick live: the glow repaints the moment a palette or fps is chosen. -->
     <local:GlowBorder Palette="{Binding PreviewPalette}"
                       FrameFps="{Binding VisualizerFps}"
                       Margin="0,0,0,1"/>

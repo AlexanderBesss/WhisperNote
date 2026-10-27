@@ -39,7 +39,6 @@ public sealed class TranscriptionQueue : IDisposable
     public bool Busy => OutstandingCount > 0;
     public int WaitingCount => Volatile.Read(ref _waiting);
 
-    // Jobs waiting plus the one running: the number the UI and the mic gate on.
     public int OutstandingCount => Volatile.Read(ref _waiting) + Volatile.Read(ref _running);
 
     public bool TryEnqueue(QueuedAudio item)

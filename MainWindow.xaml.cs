@@ -133,7 +133,6 @@ public partial class MainWindow : Window
         ApplyToolbarVisualState();
     }
 
-    // The pill shows an X while a fix runs; clicking it stops the fix before anything is pasted.
     void CancelRunningFix()
     {
         if (!_fixUiBusy)
@@ -143,8 +142,6 @@ public partial class MainWindow : Window
         _viewModel.CancelSelectionFix();
     }
 
-    // The fix pill carries the same glow border as the recording overlay,
-    // so it follows the visualizer settings the user picked.
     void ApplyToolbarVisualState()
     {
         if (_selectionToolbar == null)
@@ -326,8 +323,6 @@ public partial class MainWindow : Window
         if (_overlay == null)
             return;
 
-        // Several properties (recording, processing, queue, status) all land here,
-        // so the pill only acts on a real visibility transition.
         var showing = _viewModel.RecordingManager.IsRecording || _viewModel.RecordingManager.IsProcessing;
         if (showing && !_overlay.IsVisible)
             _overlay.ShowRecording();

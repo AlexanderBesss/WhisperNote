@@ -63,7 +63,6 @@ public class TranscriptionParserTests
     [Fact]
     public void SalvageKeepsAChatStyleTranscriptThatDroppedTheAsrTextTag()
     {
-        // Observed in logs.log: the model transcribes the speech correctly but answers in chat style, so the strict parser throws the words away.
         var text = TranscriptionParser.SalvageUnformatted(
             """{"type":"transcript.text.done","text":"language English. Yeah, apply small fixes, low risk."}""");
 

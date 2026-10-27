@@ -113,7 +113,6 @@ Output ONLY the corrected text.";
         return "http://" + value;
     }
 
-    // Add /v1 only when absent: the typed host may already name it.
     internal static string AddApiSegment(string endpoint)
     {
         var trimmed = endpoint.TrimEnd('/');

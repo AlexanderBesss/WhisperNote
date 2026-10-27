@@ -17,7 +17,6 @@ public static class BackendDownloader
 
     sealed record BackendSpec(string Directory, string Label, string[] AssetPatterns);
 
-    // Patterns must match official llama.cpp Windows release zip asset names.
     static readonly Dictionary<HardwareBackend, BackendSpec> Specs = new()
     {
         [HardwareBackend.NvidiaCuda] = new("llama", "CUDA 13 backend",

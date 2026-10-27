@@ -290,7 +290,6 @@ public sealed class VoiceVisualizer : FrameworkElement
                 if (!nominalTick)
                     break;
                 Array.Copy(_traceHistory, 1, _traceHistory, 0, VisualizerLayout.TraceColumns - 1);
-                // _traceHistory is oldest→newest: index ^1 is the newest sample = the trace's right edge.
                 _traceHistory[^1] = _drawnWave[^1];
                 break;
 
@@ -340,7 +339,6 @@ public sealed class VoiceVisualizer : FrameworkElement
 
         RefreshSnapshot();
 
-        // A GPU style falls back to its CPU twin when the shader is unavailable (or suppressed in tests), never a blank pill.
         switch (VisualizerCatalog.CpuTwin(Mode))
         {
             case VisualizerStyle.Waveform:

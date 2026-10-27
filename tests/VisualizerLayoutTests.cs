@@ -130,7 +130,6 @@ public class VisualizerLayoutTests
         Assert.Equal(25.0, DistanceToCentre(ring[7]), 2);
         Assert.Equal(20.0, DistanceToCentre(ring[0]), 2);
 
-        // Out-of-range levels clamp like every other mapping.
         var clamped = VisualizerLayout.BuildFrequencyRing(100, 30, 20f, 10f, Levels(4, -2));
         Assert.Equal(30.0, DistanceToCentre(clamped[0]), 2);
         Assert.Equal(20.0, DistanceToCentre(clamped[1]), 2);

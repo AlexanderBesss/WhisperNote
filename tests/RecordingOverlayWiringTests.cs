@@ -367,8 +367,6 @@ public class RecordingOverlayWiringTests
 
             Assert.Equal(ink.Count, ink.Values.Distinct().Count());
 
-            // Colours travel the same way as the style, and a scheme that never
-            // reaches the control would leave every preset painting the same hue.
             var warm = VisualizerPaletteCatalog.Resolve("Signal Red");
             var cool = VisualizerPaletteCatalog.Resolve("Mint Lime");
             Assert.NotSame(warm, cool);
@@ -491,8 +489,6 @@ public class RecordingOverlayWiringTests
             state.IsProcessing = false;
             Assert.Equal(Visibility.Collapsed, processing.Visibility);
 
-            // The queue bar shows one square per clip the queue holds, and the
-            // counters drive it through the binding.
             var queue = (QueueBar)window.FindName("Queue");
             Assert.Equal(0, queue.Squares);
             state.IsProcessing = true;
@@ -521,8 +517,6 @@ public class RecordingOverlayWiringTests
             Thread.Sleep(400);
             Assert.Equal(0, InkInColumns(ghostBar, 15, 28));
 
-            // The glow outline is wired to the window's palette and fps, paints
-            // a ring around the pill, and its colours flow along the edge.
             var glow = (GlowBorder)window.FindName("Glow");
             Assert.NotNull(glow);
             Assert.Same(window.VisualizerPalette, glow.Palette);
@@ -583,11 +577,8 @@ public class RecordingOverlayWiringTests
         });
     }
 
-    // One pick in settings must retint every accent brush the app's styles read.
     static void AssertPaletteThemeFollowsTheSettingsPalette()
     {
-        // Before any Apply, the XAML fallback and the converter-facing live brush
-        // must both carry the default palette's average.
         var fallback = (SolidColorBrush)Application.Current.Resources["AccentBrush"];
         Assert.Equal(fallback.Color, PaletteTheme.Accent.Color);
 
@@ -633,7 +624,6 @@ public class RecordingOverlayWiringTests
         var server = new WhisperNote.ViewModels.ServerStatusKindToBrushConverter()
             .Convert(Models.ServerStatusKind.Green, typeof(SolidColorBrush), null!, culture);
         Assert.Same(PaletteTheme.Accent, server);
-        // Both the live brush and the DynamicResource snapshot must agree.
         Assert.Equal(((SolidColorBrush)Application.Current.Resources["AccentBrush"]).Color,
             ((SolidColorBrush)status).Color);
     }

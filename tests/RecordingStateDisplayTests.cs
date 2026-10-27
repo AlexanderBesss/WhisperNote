@@ -5,9 +5,6 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
-// The pill and the overlay read this model. Recording and processing are
-// separate dimensions now, so both icons can light up at the same time while
-// the single status line still reads as one coherent state.
 public class RecordingStateDisplayTests
 {
     [Fact]
@@ -127,8 +124,6 @@ public class RecordingStateDisplayTests
             await release.Task;
         });
 
-        // One square per clip the queue holds: the bar must never show a clip
-        // that is not there, and never hide one that is.
         var published = new List<(int Outstanding, int Squares)>();
         queue.Changed += (_, _) =>
         {

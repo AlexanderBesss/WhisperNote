@@ -33,8 +33,6 @@ public sealed class ProcessingOption
     public override string ToString() => Name;
 }
 
-// The style is stored as a display name with fallback, exactly
-// like the visualizer style.
 public static class ProcessingCatalog
 {
     public const string DefaultStyleName = "Wave sweep";

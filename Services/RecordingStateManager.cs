@@ -140,7 +140,6 @@ public class RecordingStateManager : ViewModel
         }
     }
 
-    // Mirrors the queue's counters so the pill/overlay can count down what is left.
     public void SetQueueState(int waitingCount, int outstandingCount)
     {
         _queuedCount = waitingCount;
@@ -200,7 +199,6 @@ public class RecordingStateManager : ViewModel
 
     void RefreshStatus()
     {
-        // The newest activity wins the single pill line; the overlay shows both icons.
         var waiting = _queuedCount > 0 ? $" · {_queuedCount} waiting" : "";
 
         if (_isCapturing)

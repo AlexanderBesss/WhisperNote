@@ -7,8 +7,6 @@ using Xunit;
 
 namespace WhisperNote.Tests;
 
-// Jobs run strictly one at a time in recording order: the paste of message 1
-// finishes before message 2 starts.
 public class TranscriptionQueueTests
 {
     static QueuedAudio Clip(byte number) => new(new byte[] { number, 0 }, 1);

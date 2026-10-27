@@ -198,8 +198,6 @@ public sealed class QueueBar : FrameworkElement
                 new Rect(x, y, SquareSize, SquareSize), 1.5, 1.5);
         }
 
-        // A finished job slides off the bar from the slot the old in-flight
-        // square occupied, so survivors never move.
         if (_animKind == 1)
         {
             var progress = AnimationProgress(now);

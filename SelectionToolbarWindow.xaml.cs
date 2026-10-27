@@ -231,8 +231,6 @@ public partial class SelectionToolbarWindow : Window
     public void ShowConfirmation(IReadOnlyList<UiRectPx> rects) =>
         FlashGlyphAndAutoHide(rects, DoneGlyph, ConfirmationVisibleMs);
 
-    // Flashes a red X at the button's old spot when the fix failed for any reason
-    // (API timeout/unavailable, copy or paste refused, nothing selected...).
     public void ShowFailure(IReadOnlyList<UiRectPx> rects) =>
         FlashGlyphAndAutoHide(rects, FailedGlyph, FailureVisibleMs);
 
@@ -266,7 +264,6 @@ public partial class SelectionToolbarWindow : Window
         _confirmationTimer.Start();
     }
 
-    // Swaps the button for a spinning sync glyph while the API round trip runs.
     public void ShowProcessing()
     {
         FixButton.Visibility = Visibility.Collapsed;
@@ -303,7 +300,6 @@ public partial class SelectionToolbarWindow : Window
         FixButton.Visibility = Visibility.Visible;
     }
 
-    // Hiding always resets to button mode so the next ShowAt shows the button again.
     public void HidePopup()
     {
         _confirmationTimer?.Stop();

@@ -197,7 +197,6 @@ public sealed class ProcessingVisualizer : FrameworkElement
                 return;
             }
 
-            // Shader effect suppressed or unavailable: draw the CPU twin.
             switch (ProcessingCatalog.CpuTwin(Mode))
             {
                 case ProcessingStyle.WaveSweep:

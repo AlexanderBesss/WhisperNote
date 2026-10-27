@@ -1,5 +1,5 @@
 param(
-    [switch]$Kill       # force-close the running app before publishing
+    [switch]$Kill
 )
 
 $ErrorActionPreference = 'Stop'
