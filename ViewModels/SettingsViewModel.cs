@@ -100,8 +100,15 @@ public sealed class SettingsViewModel : ViewModel
     public bool GrammarEnabled
     {
         get => _grammarEnabled;
-        set => SetProperty(ref _grammarEnabled, value);
+        set
+        {
+            if (SetProperty(ref _grammarEnabled, value))
+                OnPropertyChanged(nameof(GrammarFieldsEnabled));
+        }
     }
+
+    // The API fields serve both correction switches, so they stay editable while either one is on.
+    public bool GrammarFieldsEnabled => GrammarEnabled || SelectionToolbarEnabled;
 
     public string GrammarApiHost
     {
@@ -126,7 +133,11 @@ public sealed class SettingsViewModel : ViewModel
     public bool SelectionToolbarEnabled
     {
         get => _selectionToolbarEnabled;
-        set => SetProperty(ref _selectionToolbarEnabled, value);
+        set
+        {
+            if (SetProperty(ref _selectionToolbarEnabled, value))
+                OnPropertyChanged(nameof(GrammarFieldsEnabled));
+        }
     }
 
     public bool VisualizerEnabled
@@ -241,11 +252,12 @@ public sealed class SettingsViewModel : ViewModel
 
         PropertyChanged += (_, e) =>
         {
-            // MicDeviceNumber commits through SetMicSelection instead. PreviewStyle and
-            // PreviewPalette ride along with Style/Palette, and applying twice would
-            // write the config file twice for one pick.
+            // MicDeviceNumber commits through SetMicSelection instead. PreviewStyle,
+            // PreviewPalette and GrammarFieldsEnabled ride along with another property,
+            // so applying for them would write the config file twice for one pick.
             var name = e.PropertyName;
-            if (name != nameof(MicDeviceNumber) && name != nameof(PreviewStyle) && name != nameof(PreviewPalette))
+            if (name != nameof(MicDeviceNumber) && name != nameof(PreviewStyle) &&
+                name != nameof(PreviewPalette) && name != nameof(GrammarFieldsEnabled))
                 Apply();
         };
     }

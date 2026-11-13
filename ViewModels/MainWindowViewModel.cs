@@ -141,9 +141,13 @@ public class MainWindowViewModel : ViewModel, IDisposable
     public bool SelectionToolbarEnabled
     {
         get => _selectionToolbarEnabled;
-        set => SyncSetting(ref _selectionToolbarEnabled, value,
-            () => _state.SelectionToolbarEnabled = value,
-            value ? "Selection toolbar enabled" : "Selection toolbar disabled");
+        set
+        {
+            if (SyncSetting(ref _selectionToolbarEnabled, value,
+                    () => _state.SelectionToolbarEnabled = value,
+                    value ? "Fix button enabled" : "Fix button disabled"))
+                RefreshGrammarService();
+        }
     }
 
     bool _visualizerEnabled = true;
@@ -194,7 +198,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             if (SyncSetting(ref _grammarEnabled, value,
                     () => _state.GrammarCheckEnabled = value,
-                    value ? "Grammar check enabled" : "Grammar check disabled"))
+                    value ? "Dictation correction enabled" : "Dictation correction disabled"))
                 RefreshGrammarService();
         }
     }
@@ -245,6 +249,11 @@ public class MainWindowViewModel : ViewModel, IDisposable
     string? _grammarSignature;
     bool _isProbingGrammar;
 
+    // Either switch needs the API alive: the availability breakout CorrectAsync obeys is only healed
+    // by the health ping, so gating the probe on the dictation switch would park the Fix button in
+    // that breakout for its whole backoff (up to 300 s) after one slow answer.
+    bool GrammarActive => _grammarEnabled || _selectionToolbarEnabled;
+
     // Availability is refreshed off the dictation path: without this the first pass after a cooldown
     // pays the probe and, after a stalled model, the full chat budget. The self-hosted grammar box lets
     // its model go idle between requests, so the cadence is short enough to keep it resident; the ping
@@ -269,12 +278,12 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
         UpdateGrammarStatus();
 
-        if (_grammarEnabled && _grammar != null)
+        if (GrammarActive && _grammar != null)
             _grammarHealthTimer.Start();
         else
             _grammarHealthTimer.Stop();
 
-        if (_grammarEnabled && _grammar is { DetectedModel: null } && !_isProbingGrammar)
+        if (GrammarActive && _grammar is { DetectedModel: null } && !_isProbingGrammar)
             FireAndForget(ProbeGrammarAsync(), "GrammarProbe");
     }
 
@@ -327,26 +336,39 @@ public class MainWindowViewModel : ViewModel, IDisposable
 
     void UpdateGrammarStatus()
     {
-        string text;
-        if (!_grammarEnabled)
+        if (!GrammarActive)
         {
             _grammarState = GrammarState.Off;
-            text = "Grammar check off";
+            GrammarStatus = "Grammar correction is off";
+            OnPropertyChanged(nameof(GrammarStateBrush));
+            return;
         }
-        else if (_grammar == null)
+
+        string text;
+        // One API serves both switches, so the dot's tooltip says which one still asks it for work.
+        string scope = (_grammarEnabled, _selectionToolbarEnabled) switch
+        {
+            (true, false) => " — dictation only",
+            (false, true) => " — Fix button only",
+            _ => "",
+        };
+
+        if (_grammar == null)
         {
             _grammarState = GrammarState.NoHost;
-            text = "Set an API host to start checking";
+            text = "Set an API host to start correcting";
         }
         else if (_isProbingGrammar)
         {
             _grammarState = GrammarState.Probing;
             text = "Checking grammar API...";
+            scope = "";
         }
         else if (_grammar.ChatUnavailable)
         {
             _grammarState = GrammarState.Problem;
-            text = $"Grammar API not answering, retrying in {_grammar.ChatRetryInSeconds}s — text is pasted as dictated";
+            text = $"Grammar API not answering, retrying in {_grammar.ChatRetryInSeconds}s" +
+                   (_grammarEnabled ? " — text is pasted as dictated" : "");
         }
         else if (_grammar.DetectedModel != null)
         {
@@ -363,7 +385,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
                 : $"Skipped: {_grammar.ProbeError}";
         }
 
-        GrammarStatus = text;
+        GrammarStatus = text + scope;
         OnPropertyChanged(nameof(GrammarStateBrush));
     }
 
@@ -475,7 +497,7 @@ public class MainWindowViewModel : ViewModel, IDisposable
         };
         _grammarHealthTimer.Tick += (_, _) =>
         {
-            if (_grammarEnabled && _grammar != null && !_isProbingGrammar)
+            if (GrammarActive && _grammar != null && !_isProbingGrammar)
                 FireAndForget(ProbeGrammarAsync(), "GrammarProbe");
         };
         RecordingManager.PropertyChanged += (_, e) =>
@@ -1140,6 +1162,15 @@ public class MainWindowViewModel : ViewModel, IDisposable
         {
             Logger.Info("Selection fix skipped: no grammar API host set");
             ShowFixStatus("Selection fix", "Red", "no grammar API host set");
+            return false;
+        }
+
+        // Bail out before the clipboard window opens: CorrectAsync refuses the same request anyway,
+        // so this only saves the user's clipboard from a pointless probe sentinel and restore.
+        if (service.ChatUnavailable)
+        {
+            Logger.Info($"Selection fix skipped: the API was not answering, retrying in {service.ChatRetryInSeconds}s ({service.ChatError})");
+            ShowFixStatus("Selection fix", "Red", $"grammar API not answering, retry in {service.ChatRetryInSeconds}s");
             return false;
         }
 

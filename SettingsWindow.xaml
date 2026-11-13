@@ -188,22 +188,34 @@
                                   Height="28"
                                   Margin="0,0,0,10"/>
 
-                        <TextBlock Text="Grammar" Style="{StaticResource FieldLabel}"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <TextBlock Text="Grammar API" Style="{StaticResource FieldLabel}"
+                                       Margin="0" VerticalAlignment="Center"/>
+                            <Ellipse Width="7" Height="7" Fill="{Binding GrammarStateBrush}"
+                                     Margin="6,0,0,0" VerticalAlignment="Center"
+                                     ToolTip="{Binding GrammarStatus}"/>
+                        </StackPanel>
+                        <Grid Style="{StaticResource SettingRow}" Margin="0,4,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Correct dictation" Style="{StaticResource SettingRowName}"/>
+                            <ToggleButton Grid.Column="1" Style="{StaticResource SwitchToggle}"
+                                          IsChecked="{Binding GrammarEnabled, Mode=TwoWay}"
+                                          VerticalAlignment="Center"
+                                          ToolTip="Re-read every dictation with the grammar API and paste the corrected text instead"/>
+                        </Grid>
                         <Grid Style="{StaticResource SettingRow}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="Grammar check" Style="{StaticResource SettingRowName}"/>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Ellipse Width="7" Height="7" Fill="{Binding GrammarStateBrush}"
-                                         Margin="0,0,8,0"
-                                         ToolTip="{Binding GrammarStatus}"/>
-                                <ToggleButton Style="{StaticResource SwitchToggle}"
-                                              IsChecked="{Binding GrammarEnabled, Mode=TwoWay}"
-                                              VerticalAlignment="Center"
-                                              ToolTip="Re-read the transcript with a custom LLM and copy the corrected text instead"/>
-                            </StackPanel>
+                            <TextBlock Text="Fix button" Style="{StaticResource SettingRowName}"/>
+                            <ToggleButton Grid.Column="1" Style="{StaticResource SwitchToggle}"
+                                          IsChecked="{Binding SelectionToolbarEnabled, Mode=TwoWay}"
+                                          VerticalAlignment="Center"
+                                          ToolTip="Show a small &quot;Fix&quot; button next to selected text; click it to proofread and replace the selection. Works in apps that expose text selection (browsers, Office, WordPad)."/>
                         </Grid>
 
                         <Grid Margin="0,0,0,5">
@@ -214,7 +226,7 @@
                             <TextBlock Text="API host" Style="{StaticResource SettingRowName}"/>
                             <TextBox Grid.Column="1" Style="{StaticResource SettingsField}"
                                      Tag="https://api.openai.com/v1"
-                                     IsEnabled="{Binding GrammarEnabled}"
+                                     IsEnabled="{Binding GrammarFieldsEnabled}"
                                      Text="{Binding GrammarApiHost, Mode=TwoWay}"
                                      ToolTip="Root of an OpenAI-compatible API: /v1/models and /v1/chat/completions are appended to it"/>
                         </Grid>
@@ -227,7 +239,7 @@
                             <TextBlock Text="API key" Style="{StaticResource SettingRowName}"/>
                             <PasswordBox x:Name="ApiKeyBox" Grid.Column="1" Style="{StaticResource SettingsPasswordField}"
                                          Tag="not required for a local server"
-                                         IsEnabled="{Binding GrammarEnabled}"
+                                         IsEnabled="{Binding GrammarFieldsEnabled}"
                                          ToolTip="Masked on screen; sent as a Bearer token and saved in whispernote.json"/>
                         </Grid>
 
@@ -241,7 +253,7 @@
                                       ItemsSource="{Binding GrammarEffortOptions}"
                                       SelectedValuePath="Value"
                                       SelectedValue="{Binding GrammarEffort, Mode=TwoWay}"
-                                      IsEnabled="{Binding GrammarEnabled}"
+                                      IsEnabled="{Binding GrammarFieldsEnabled}"
                                       ToolTip="Sent to the API as reasoning_effort. Off answers fastest (the model is told not to think out loud); Server default sends nothing and leaves it to the endpoint."/>
                         </Grid>
                     </StackPanel>
@@ -257,18 +269,6 @@
                                   Height="28"
                                   Margin="0,0,0,6"
                                   ToolTip="Hold this key to dictate; release to stop and transcribe."/>
-
-                        <Grid Style="{StaticResource SettingRow}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Selection toolbar" Style="{StaticResource SettingRowName}"/>
-                            <ToggleButton Grid.Column="1" Style="{StaticResource SwitchToggle}"
-                                          IsChecked="{Binding SelectionToolbarEnabled, Mode=TwoWay}"
-                                          VerticalAlignment="Center"
-                                          ToolTip="Show a small &quot;Fix&quot; button next to selected text; click it to proofread and replace the selection. Works in apps that expose text selection (browsers, Office, WordPad)."/>
-                        </Grid>
 
                         <Grid Style="{StaticResource SettingRow}">
                             <Grid.ColumnDefinitions>

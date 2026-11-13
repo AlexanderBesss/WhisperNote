@@ -9,6 +9,7 @@ Voice-to-text desktop app for Windows. Hold a key, speak, release — transcribe
 - **Local GGUF models** — llama.cpp runs the selected model entirely on this machine
 - **Grammar correction** — the transcription prompt already turns speech into proper English
 - **Grammar check (optional)** — an extra pass over the transcript through your own LLM endpoint
+- **Fix button (optional)** — proofreads whatever text you select in another app, in place
 - **VRAM offload** — stop server after each request to free GPU memory
 - **Run on startup** — optional Windows auto-start
 - **System tray** — minimize to the notification area and keep the hotkey active
@@ -69,19 +70,27 @@ Edit `whispernote.json` in the application folder to add providers, change the h
 
 ### Grammar check
 
-The **Grammar** tab adds an optional second pass: recording → transcript → your LLM rewrites it →
+The **Model** tab's **Grammar API** section adds an optional second pass: recording → transcript → your LLM rewrites it →
 the **corrected** text is what gets copied and pasted. Fill in the **API host** of any OpenAI-compatible
 server (`https://api.openai.com/v1`, `http://localhost:8082`, an Ollama or vLLM address) and, when the
 server needs one, the **API key**; there is no model field because WhisperNote reads the model the server
 reports for itself from `/v1/models` and shows it under the fields — that same request is how it knows
 whether the endpoint is reachable at all.
 
+Two switches sit above those fields and work independently of each other. **Correct dictation** rewrites
+what you dictate before it is pasted; **Fix button** puts the small pill next to selected text in another
+app and replaces that selection in place. Turning one off leaves the other alone, and either of them keeps
+the endpoint warm and reachable, so switching the dictation pass off does not stop the Fix button from
+working.
+
 The pass is attempted **once** per recording. A host that does not answer, a rejected key or a model that
 answers instead of correcting leaves the original transcript untouched and says so in the main window
-("Copied and pasted · grammar API unavailable"). In the Grammar tab the dot next to the switch carries the
-same state — grey idle, amber checking, green reachable, red skipped — and its tooltip spells out the
-reason. A failed probe is not retried for a minute, so an offline endpoint never stalls your dictation.
-The API key is stored in plain text in `whispernote.json`.
+("Copied and pasted · grammar API unavailable"). The dot in the section header carries the same state — grey
+idle, amber checking, green reachable, red skipped — and its tooltip spells out the reason, together with
+which of the two switches still asks the API for work. A failed probe is not retried for a minute, so an
+offline endpoint never stalls your dictation; a Fix click that lands inside that retry window is refused
+before your clipboard is touched, and says how long to wait. The API key is stored in plain text in
+`whispernote.json`.
 
 **Thinking effort** decides how much the model may think before answering, forwarded as the standard
 `reasoning_effort` chat parameter: **Server default** sends no parameter at all (what an endpoint without
@@ -118,7 +127,7 @@ understand the `language` field drops it after the first refusal instead of fail
 
 **Numbers** become digits in two stages. A dedicated ASR model transcribes verbatim, so WhisperNote's own
 number pass converts what it can parse with certainty (`twenty five dollars` → `$25`, `three point five` → `3.5`)
-and deliberately leaves idioms in words (`one of them`, `a hundred times`). When the grammar check is on, the
+and deliberately leaves idioms in words (`one of them`, `a hundred times`). When dictation correction is on, the
 proofreader then handles the ambiguous cases a rule cannot judge — `five thirty tomorrow` → `5:30 tomorrow`,
 `one thousand dollars` → `$1,000` — while keeping everyday counts and set phrases in words (`two bananas`,
 `one more day`, `Chapter One`) and leaving digits that are already there exactly as they are (`$1,000`,
