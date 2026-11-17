@@ -86,6 +86,7 @@ public partial class MainWindow : Window
             {
                 _selectionWatcher = new SelectionWatcher();
                 _selectionWatcher.SelectionChanged += OnSelectionSnapshot;
+                Logger.Info("Selection watcher started (mouse hook + win-event focus hook)");
             }
             catch (Exception ex)
             {

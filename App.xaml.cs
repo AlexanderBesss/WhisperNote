@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using WhisperNote.Config;
 using WhisperNote.Services;
@@ -16,6 +17,7 @@ public partial class App : Application
     static LlmServer? _server;
     Mutex? _instanceMutex;
     EventWaitHandle? _restoreEvent;
+    bool _startupComplete;
 
     public static void RegisterServerForCleanup(LlmServer server) => _server = server;
 
@@ -23,11 +25,26 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // A dead tray icon means a dead hotkey, so once startup is over a UI bug is
+        // logged and skipped rather than taken as a reason to close the app. Exceptions
+        // thrown from native callbacks (WPF's WinEvent hooks) never come through here;
+        // the AppDomain handler below is the only net for those, and they always kill
+        // the process.
         DispatcherUnhandledException += (_, args) =>
         {
             Logger.Error($"Unhandled UI exception: {args.Exception}");
+            if (!_startupComplete)
+            {
+                Shutdown(1);
+                return;
+            }
             args.Handled = true;
-            Shutdown(1);
+        };
+
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            Logger.Error($"Unobserved task exception: {args.Exception}");
+            args.SetObserved();
         };
 
         try
@@ -65,6 +82,8 @@ public partial class App : Application
             MainWindow = mainWindow;
             if (!startHidden)
                 mainWindow.Show();
+
+            _startupComplete = true;
         }
         catch (Exception ex)
         {

@@ -50,7 +50,7 @@ public sealed class SelectionWatcher : IDisposable
 
     public event Action<SelectionSnapshot?>? SelectionChanged;
 
-    readonly AutomationFocusChangedEventHandler _focusHandler;
+    FocusChangeHook? _focusHook;
     readonly AutomationEventHandler _selectionHandler;
     readonly DispatcherTimer _debounce;
     readonly Dispatcher _dispatcher;
@@ -75,23 +75,21 @@ public sealed class SelectionWatcher : IDisposable
                 ScheduleQuery();
         };
 
-        _focusHandler = (_, _) => ScheduleDebounce();
         _selectionHandler = (_, _) => ScheduleDebounce();
 
-        // Install the mouse hook first: if it throws, no global UIA focus handler
-        // has been registered that MainWindow cannot clean up (MainWindow nulls
-        // the watcher on failure, and a static handler would keep it alive).
+        // The mouse hook goes first: if it throws, MainWindow drops the watcher, and a
+        // focus hook installed before that would keep running on an abandoned instance.
         _mouseHook = new GlobalMouseHook(ScheduleDebounce);
         try
         {
-            // Core-era rename of Framework's AddFocusChangedEventHandler; no CacheRequest overload.
-            Automation.AddAutomationFocusChangedEventHandler(_focusHandler);
+            _focusHook = new FocusChangeHook(() => _dispatcher.BeginInvoke(ScheduleDebounce));
         }
-        catch
+        catch (Exception ex)
         {
-            _mouseHook.Dispose();
-            _mouseHook = null;
-            throw;
+            // The mouse hook and the TextPattern handler still cover selection changes,
+            // so a refused focus hook costs re-query prompts, not the whole feature.
+            Logger.Warn($"SelectionWatcher: focus hook unavailable: {ex.Message}");
+            _focusHook = null;
         }
     }
 
@@ -238,11 +236,7 @@ public sealed class SelectionWatcher : IDisposable
         // dies with the process instead of hanging the exit.
         try
         {
-            var detach = Task.Run(() =>
-            {
-                Automation.RemoveAutomationFocusChangedEventHandler(_focusHandler);
-                SubscribeToElement(null);
-            });
+            var detach = Task.Run(() => SubscribeToElement(null));
             if (!detach.Wait(TimeSpan.FromSeconds(2)))
                 Logger.Error("Selection watcher UIA detach still pending; leaving it to process exit");
         }
@@ -250,6 +244,8 @@ public sealed class SelectionWatcher : IDisposable
         {
             Logger.Error($"Selection watcher detach failed: {ex.Message}");
         }
+        _focusHook?.Dispose();
+        _focusHook = null;
         _mouseHook?.Dispose();
         _mouseHook = null;
     }
